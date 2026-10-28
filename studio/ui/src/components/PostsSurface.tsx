@@ -45,7 +45,8 @@ export function PostsSurface({
   onOpenActivity,
   onOpenSetup,
 }: {
-  onOpenLead: (leadId: string) => void;
+  /** Opens the person in Leads, with the post they were opened from. */
+  onOpenLead: (leadId: string, fromPost?: string) => void;
   onOpenActivity?: () => void;
   onOpenSetup?: () => void;
 }) {
@@ -145,7 +146,12 @@ export function PostsSurface({
         {usualLine
           ? `Your usual, the median of your posts older than ${data.settled_after_days} days: ${usualLine}.`
           : noUsualReason(data as PostsInsights & Unmeasured)}{" "}
-        A post is compared with it only once it is {data.settled_after_days} days old.
+        A post is compared with it only once it is {data.settled_after_days} days old
+        {data.settled_after
+          ? data.settled_after.measured
+            ? `, an age measured from your own ${data.settled_after.posts} posts' readings: by then most of their reactions had arrived.`
+            : ", an age the studio assumes until your readings can say when your posts settle."
+          : "."}
       </p>
 
       {/* Filter, search and sort: the whole history is behind the table, so
@@ -298,6 +304,9 @@ function noUsualReason(data: PostsInsights & Unmeasured): string {
   );
 }
 
+/** How many of a post's people the table names; the detail lists them all. */
+const PEOPLE_NAMED = 3;
+
 function PostRow({
   post,
   best,
@@ -347,11 +356,21 @@ function PostRow({
       <RatioCell value={post.reactions} ratio={post.against_usual?.reactions} />
       <RatioCell value={post.comments} ratio={post.against_usual?.comments} />
       <RatioCell value={post.impressions} ratio={post.against_usual?.impressions} />
-      <td className="py-2.5">
+      <td className="max-w-[28ch] py-2.5">
         <span className="studio-meta text-[10px] tabular-nums text-ink-secondary">
           {post.people_count} {post.people_count === 1 ? "PERSON" : "PEOPLE"}
           {post.conversations > 0 && ` · ${post.conversations} CONVO${post.conversations > 1 ? "S" : ""}`}
         </span>
+        {/* Who it brought, by name, in the summary's order: commenters
+            first, then by name, never by score. */}
+        {post.people.length > 0 && (
+          <p className="mt-0.5 truncate text-[11px] text-ink-muted">
+            {post.people.slice(0, PEOPLE_NAMED).map((person) => person.name).join(", ")}
+            {post.people_count > Math.min(post.people.length, PEOPLE_NAMED)
+              ? ` and ${post.people_count - Math.min(post.people.length, PEOPLE_NAMED)} more`
+              : ""}
+          </p>
+        )}
       </td>
     </tr>
   );

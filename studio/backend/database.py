@@ -21,7 +21,7 @@ import os
 import json
 import logging
 import threading
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
 try:
@@ -543,17 +543,12 @@ def init_db() -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_leads_account ON leads(account_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_interactions_account ON lead_interactions(account_id)")
 
-    # Seed foundational launch drafts (Days 02 through 08).
-    # Demo content: these are the author's own posts, in their first person,
-    # about a campaign a new user is not running.
-    if demo_data_enabled():
-        seed_day02_draft(conn)
-        seed_day03_draft(conn)
-        seed_day04_draft(conn)
-        seed_day05_draft(conn)
-        seed_day06_draft(conn)
-        seed_day07_draft(conn)
-        seed_day08_draft(conn)
+    # The Launch Kit (days 02 to 17) is no longer seeded, even in demo mode:
+    # it is the original author's first-person campaign about scraping and
+    # building this product, not a creator's queue. Its seeders stay, because
+    # the cleanup re-runs them to recognise what an earlier version seeded
+    # (purge_seeded_drafts). Demo mode seeds the sample creator's own queue
+    # and drafts instead (seed_demo_queue).
 
     conn.commit()
 
@@ -2414,6 +2409,118 @@ def purge_seeded_posts(
             conn.close()
 
 
+# ---------------------------------------------------------------------------
+# The demo's queue and drafts
+# ---------------------------------------------------------------------------
+#
+# What a creator's own queue holds: drafts, and posts queued at their next
+# open slots, in the sample creator's voice (DEMO_CREATOR). The queue's times
+# are taken from the slots when it is seeded, so they are recorded as seeded
+# (DEMO_QUEUE_SEEDED_KEY) and the cleanup compares each row with what was
+# written, exactly as _as_seeded does for the fixed demo rows: a post the
+# creator rescheduled or rewrote is theirs.
+
+RETIRED_DEMO_POST_IDS = ("post-enterprise-scheduled", "post-enterprise-decoupling-scheduled")
+
+_DEMO_QUEUE_BODY = "\n\nA sample post the demo seeds (demo data), not something anyone wrote."
+DEMO_QUEUE_DRAFTS = (
+    ("demo-draft-1", "Three things we stopped doing in dispatch this year, and what replaced them." + _DEMO_QUEUE_BODY),
+    ("demo-draft-2", "Our handover notes got shorter and the night shift got calmer." + _DEMO_QUEUE_BODY),
+    ("demo-draft-3", "What should an operations dashboard leave out?" + _DEMO_QUEUE_BODY),
+)
+DEMO_QUEUE_POSTS = (
+    ("demo-queued-1", "Every late shipment we traced last month started with a handoff, not a truck." + _DEMO_QUEUE_BODY),
+    ("demo-queued-2", "How do you know a process is finished?" + _DEMO_QUEUE_BODY),
+)
+DEMO_QUEUE_SEEDED_KEY = "demo_queue_seeded"
+# Queued posts sit at least this far apart, the queue's own cooldown.
+_DEMO_QUEUE_GAP_HOURS = 12
+
+
+def _demo_queue_times(conn: sqlite3.Connection, count: int) -> List[str]:
+    """
+    The creator's next open slots from tomorrow, at least the queue's cooldown
+    apart, as the queue stores a time (UTC). Slot times are local wall-clock
+    times, as the scheduler reads them.
+    """
+    slots = [(r[0], r[1]) for r in conn.execute(
+        "SELECT day_of_week, time_slot FROM queue_slots WHERE is_active = 1 ORDER BY day_of_week, time_slot")]
+    times: List[datetime] = []
+    day = datetime.now().date() + timedelta(days=1)
+    for _ in range(21):
+        for weekday, slot in slots:
+            if weekday != day.weekday():
+                continue
+            try:
+                hour, minute = (int(part) for part in str(slot).split(":")[:2])
+            except ValueError:
+                continue
+            moment = datetime(day.year, day.month, day.day, hour, minute).astimezone(timezone.utc)
+            if not times or (moment - times[-1]).total_seconds() >= _DEMO_QUEUE_GAP_HOURS * 3600:
+                times.append(moment)
+            if len(times) == count:
+                return [t.strftime("%Y-%m-%dT%H:%M:%S.000Z") for t in times]
+        day += timedelta(days=1)
+    return [t.strftime("%Y-%m-%dT%H:%M:%S.000Z") for t in times]
+
+
+def seed_demo_queue(conn: sqlite3.Connection) -> int:
+    """
+    Seeds the demo's drafts and queued posts once, and records what it wrote.
+
+    Returns how many posts it wrote; none once seeded, or with no slots.
+    """
+    if conn.execute("SELECT 1 FROM settings WHERE key = ?", (DEMO_QUEUE_SEEDED_KEY,)).fetchone():
+        return 0
+    times = _demo_queue_times(conn, len(DEMO_QUEUE_POSTS))
+    rows = [{"id": post_id, "content": text, "status": "draft"} for post_id, text in DEMO_QUEUE_DRAFTS]
+    rows += [{"id": post_id, "content": text, "status": "scheduled", "scheduled_for": when}
+             for (post_id, text), when in zip(DEMO_QUEUE_POSTS, times)]
+    with conn:
+        for row in rows:
+            if conn.execute("SELECT 1 FROM posts WHERE id = ?", (row["id"],)).fetchone():
+                continue
+            conn.execute("INSERT INTO posts (id, content, status, scheduled_for) VALUES (?, ?, ?, ?)",
+                         (row["id"], row["content"], row["status"], row.get("scheduled_for")))
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                     (DEMO_QUEUE_SEEDED_KEY, json.dumps({r["id"]: r for r in rows})))
+    return len(rows)
+
+
+def purge_seeded_queue(
+    conn: Optional[sqlite3.Connection] = None,
+    dry_run: bool = True,
+) -> Dict[str, Any]:
+    """
+    Remove the demo's drafts and queued posts that still hold exactly what was
+    seeded. Every column the seeder set must hold the recorded value, and the
+    rest must be as it was left (_as_seeded); the record goes once nothing it
+    names is left as seeded.
+    """
+    owns = conn is None
+    conn = conn or get_db()
+    try:
+        recorded = conn.execute("SELECT value FROM settings WHERE key = ?", (DEMO_QUEUE_SEEDED_KEY,)).fetchone()
+        seeded: Dict[str, Dict[str, Any]] = json.loads(recorded[0]) if recorded and recorded[0] else {}
+        found, kept = [], []
+        if seeded:
+            marks = ",".join("?" for _ in seeded)
+            for r in conn.execute(f"SELECT * FROM posts WHERE id IN ({marks})", list(seeded)).fetchall():
+                (found if _as_seeded(conn, "posts", r, seeded[r["id"]]) else kept).append(r["id"])
+        report = {"seeded": found, "kept": kept, "dry_run": dry_run, "deleted": 0}
+        if dry_run or not seeded:
+            return report
+        with conn:
+            if found:
+                report["deleted"] = conn.execute(
+                    f"DELETE FROM posts WHERE id IN ({','.join('?' for _ in found)})", found).rowcount
+            conn.execute("DELETE FROM settings WHERE key = ?", (DEMO_QUEUE_SEEDED_KEY,))
+        return report
+    finally:
+        if owns:
+            conn.close()
+
+
 def purge_all_seeded_data(
     conn: Optional[sqlite3.Connection] = None,
     dry_run: bool = True,
@@ -2432,6 +2539,7 @@ def purge_all_seeded_data(
             "analytics": purge_seeded_analytics(conn, dry_run=dry_run),
             "demographics": purge_seeded_demographics(conn, dry_run=dry_run),
             "posts": purge_seeded_posts(conn, dry_run=dry_run),
+            "queue": purge_seeded_queue(conn, dry_run=dry_run),
             "leads": purge_seeded_leads(conn, dry_run=dry_run),
             "drafts": purge_seeded_drafts(conn, dry_run=dry_run),
             "identity": purge_seeded_identity(conn, dry_run=dry_run),
@@ -2454,7 +2562,8 @@ def _demo_rows_found(report: Dict[str, Any]) -> Dict[str, int]:
     return {
         "leads": n(report["leads"]["seeded"]) + n(identity.get("leads")),
         "drafts": n(report["drafts"]["seeded"]),
-        "posts": n(report["posts"]["seeded"]) + n(report["drafts"]["posts"]) + n(identity.get("own_posts")),
+        "posts": (n(report["posts"]["seeded"]) + n((report.get("queue") or {}).get("seeded"))
+                  + n(report["drafts"]["posts"]) + n(identity.get("own_posts"))),
         "analytics_days": n(report["analytics"]["seeded"]),
         "audience_rows": n(report["demographics"]["seeded"]),
     }
@@ -2588,26 +2697,6 @@ def seed_initial_data():
     if not demo_data_enabled():
         clean_up_demo_data(conn)
 
-    # Seed Days 02 through 17 Launch Kit drafts. Demo content, same reason as
-    # the Days 02 to 08 block in init_db. Both call sites are gated: gating one
-    # leaves the behaviour reachable through the other.
-    if demo_data_enabled():
-        seed_day02_draft(conn)
-        seed_day03_draft(conn)
-        seed_day04_draft(conn)
-        seed_day05_draft(conn)
-        seed_day06_draft(conn)
-        seed_day07_draft(conn)
-        seed_day08_draft(conn)
-        seed_day09_draft(conn)
-        seed_day10_draft(conn)
-        seed_day11_draft(conn)
-        seed_day12_draft(conn)
-        seed_day13_draft(conn)
-        seed_day14_draft(conn)
-        seed_day15_draft(conn)
-        seed_day16_draft(conn)
-        seed_day17_draft(conn)
 
     # Check if leads need seeding. Demo content: four invented people with
     # pipeline states, one of them at "Meeting Booked", which registers as a
@@ -2656,6 +2745,13 @@ def seed_initial_data():
     # the next start once slots could be edited.
     _settle_queue_slots(cursor)
 
+    # A creator's own queue and drafts, in the sample creator's voice, where
+    # the Launch Kit used to be (see init_db). After the slots, which the
+    # queued posts are placed at.
+    if demo_data_enabled():
+        conn.commit()
+        seed_demo_queue(conn)
+
     if not seed_demo_metrics:
         # Real rows are never deleted. An empty table is the honest state of a
         # studio that has not captured anything yet.
@@ -2693,7 +2789,10 @@ def seed_initial_data():
     # impressions on a post the creator never wrote, immediately below a KPI
     # strip that was honestly reporting that it knew nothing.
     if seed_demo_metrics:
-        for p in posts_data:
+        # The two September posts are no longer seeded: a demo opened after
+        # their date showed a queue of missed posts, one of them the original
+        # author's. demo_post_rows keeps them, so the cleanup still knows them.
+        for p in (row for row in posts_data if row[0] not in RETIRED_DEMO_POST_IDS):
             cursor.execute("""
             INSERT OR REPLACE INTO posts (id, content, media_urls, status, scheduled_for, published_at, impressions, reactions, comments, shares, tags)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

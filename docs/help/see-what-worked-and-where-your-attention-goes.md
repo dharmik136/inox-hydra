@@ -19,6 +19,10 @@ Each figure on a settled row is followed by how it compares with your usual, for
 
 The settled posts furthest above your usual reactions are marked **WORTH REPURPOSING**, and the ones furthest below **UNDERPERFORMED**.
 
+The **People** column counts the people each post brought and names the first three, commenters first and then by name, for example "Asha Rao, Ben Okoro, Cora Lind and 9 more"; it never orders them by score. The line under the title also says whether the age at which a post is called settled was measured from your own posts' readings, with how many, or is the studio's assumption until your readings can say.
+
+A post's detail lists its **Readings**: every reading the studio keeps, oldest first, as a series for each page it was read from (your Activity page, its analytics page, or network reading), with "READ 4 TIMES" and, for each reading, the post's age, the day and its impressions, reactions and comments, "about" beside a figure LinkedIn rounded and "not read" where a page did not show one. When old readings are rolled up (**Settings**, **Storage and privacy**), readings older than the rule's age keep only the first and last of each day and every one at 36 to 72 hours old, and the detail says an older post may have been read more often. Above it, **AT ABOUT TWO DAYS OLD** gives the reading nearest 48 hours, which **Today** compares posts at, with the page and age it was read at; without one it says why: not two days old yet, not read yet while it is (open its analytics page now), or not read while it was.
+
 Click a post to see the people the studio captured engaging with it. Click a name to open their dossier in **Leads**. **CONVERSATIONS** counts the people from that post whose lead status you moved to **Connected** or **Meeting Booked**. If a post shows nobody, open it with **Open the post**; its commenters are read when it opens in the bridge browser. Reactions older than 24 months are kept as counts once the studio folds them (see [Choose what the studio keeps](choose-what-the-studio-keeps.md)), so the detail can name fewer people than the row counts; it says how many more are kept only as a count.
 
 Under the table, **Published here, not yet seen on LinkedIn** lists any post marked published in the studio that the bridge has not read on LinkedIn yet, such as one sent with **Send to LinkedIn**. It has no figures or people until the bridge reads it, from your posts page in the bridge browser, and then it moves into the table. The group is not shown when there are none.
@@ -56,15 +60,19 @@ LinkedIn's archive names the post you reacted to or commented on, but not its au
 
 | Section | What it shows |
 | --- | --- |
-| **Engaged back** | People you engage with who have also engaged with one of your posts |
+| **Engaged back, matched by display name** | People you engage with who have also engaged with one of your posts |
 | **One-way** | People and pages you have engaged with at least three times who have not engaged with your posts |
 | **Most engaged with** | Everyone you engage with, most first, with your reactions, your comments, and on how many of your posts they appeared |
+
+In **Most engaged with**, **FIRST SEEN** is when the studio first saw you engage with that account, which is when it read your Activity page, not necessarily the day you engaged. **WHAT YOU LAST SAID TO THEM** is your last comment, or "Only reactions" with the kind of your last reaction (like, celebrate, support, love, insightful or funny), followed by the opening of the last post of theirs you engaged with.
+
+Click the arrow beside a name to open that account: every post of theirs you engaged with, newest first, with what you did and said; and, where the name is one captured person's, their engagements on your posts, with how many days after each of yours they next engaged with one of your posts. Both sides are when the studio saw them, so the days between are as the studio saw it.
 
 **One-way** is not shown until the studio has read who engaged with at least half of your posts. Until then it says how many it has read. Opening your posts in the bridge browser, for example from **Posts**, is what reads them.
 
 > [!NOTE]
-> "Engaged back" is matched by display name. A reaction records the author's name, not their profile, so two people with the same name would be counted together.
+> "Engaged back" is matched by display name, and says so beside the figure and the list. A reaction records the author's name, not their profile. A name more than one person you have captured answers to is not matched at all: its row says how many people have that name instead of counting them together.
 
 ## Lead history
 
-In a lead's dossier in **Leads**, each change you make under **Pipeline** is now kept, and listed under the buttons with its date. That history is what lets **Posts** count conversations.
+In a lead's dossier in **Leads**, each change you make under **Pipeline** is now kept, and listed under the buttons with its date, and with the post it came from when you opened the person from one (in **Replies**, or from **Who engaged** in a post's detail). That history is what lets **Posts** count conversations.

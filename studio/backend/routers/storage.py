@@ -94,6 +94,18 @@ def post_storage_review_keep(payload: LeadChoice):
     return _refused(lambda: retention.keep_leads(payload.lead_ids))
 
 
+@router.get("/api/v1/storage/kept", tags=["Support & Maintenance"])
+def get_storage_kept():
+    """The people you kept from the review, and when, so a keep can be seen and taken back."""
+    return retention.kept_list()
+
+
+@router.delete("/api/v1/storage/kept/{lead_id}", tags=["Support & Maintenance"])
+def delete_storage_kept(lead_id: str):
+    """Takes a keep back."""
+    return retention.unkeep(lead_id)
+
+
 @router.post("/api/v1/storage/backups/scrub", tags=["Support & Maintenance"])
 def post_storage_scrub(payload: Optional[ScrubChoice] = None):
     """Removes forgotten people from backups too, or, with leave, lets rotation do it."""

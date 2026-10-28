@@ -202,15 +202,16 @@ def test_day17_launch_manifesto_and_full_roadmap_integrity():
     tags17 = json.loads(row17[2])
     assert "#sovereignSoftware" in tags17
 
-    # Verify total drafts count is >= 17
-    cursor.execute("SELECT COUNT(*) FROM drafts")
-    drafts_count = cursor.fetchone()[0]
-    assert drafts_count >= 17, f"Expected >= 17 drafts across the roadmap, got {drafts_count}"
-
-    # Verify posts table has corresponding entries
-    cursor.execute("SELECT COUNT(*) FROM posts")
-    posts_count = cursor.fetchone()[0]
-    assert posts_count >= 17, f"Expected >= 17 posts across the roadmap, got {posts_count}"
+    # Every day of the roadmap seeds its draft and its post row. The Launch
+    # Kit is no longer seeded at start (cycle 4, track 4, phase b), so each
+    # seeder is run here, as the cleanup runs them to recognise its rows.
+    import database
+    for seeder in database._DEMO_DRAFT_SEEDERS:
+        draft_id = seeder(conn)
+        assert draft_id is not None, f"{seeder.__name__} seeded nothing"
+        day = seeder.__name__.split("_")[1][3:]
+        cursor.execute("SELECT COUNT(*) FROM posts WHERE id = ?", (f"post-day{day}-{draft_id}",))
+        assert cursor.fetchone()[0] == 1, f"day {day}'s draft has no post row"
 
     conn.close()
 

@@ -28,6 +28,11 @@ except ImportError:
         last_provider_failure = None
 
 
+# The clichés Command's instruction names, which the Composer's "What the
+# model is told" lists from here. The answer is not checked against them.
+COMMAND_CLICHES = ("In today's fast-paced world", "game-changer", "delve", "testament")
+
+
 def _ask_provider(cfg, prompt: str, system_prompt: str, max_tokens: int) -> str:
     """
     The configured provider's answer.
@@ -241,7 +246,8 @@ def command_ai_engine(command: Optional[str], context: Optional[str] = None) -> 
         "Your writing style is punchy, high-signal, authentic, and authoritative.\n"
         "CRITICAL FORMATTING RULES:\n"
         "1. NEVER use em-dashes (\u2014) or en-dashes (–). Use commas, periods, or clean line breaks instead.\n"
-        "2. NO corporate clichés or generic buzzwords (avoid: 'In today's fast-paced world', 'game-changer', 'delve', 'testament').\n"
+        "2. NO corporate clichés or generic buzzwords (avoid: "
+        + ", ".join(f"'{phrase}'" for phrase in COMMAND_CLICHES) + ").\n"
         "3. Format for mobile dwell time: short paragraphs (1-2 sentences max), generous spacing.\n"
         "4. Hook rule: The first line must stop the scroll instantly.\n"
         "5. Conclude with an authentic, thoughtful question or takeaway."

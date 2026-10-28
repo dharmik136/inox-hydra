@@ -4,7 +4,7 @@ Make a Telegram bot of your own, set it up under Local security, and the message
 
 ## What it is, and what it is not
 
-- It is optional and off until you set it up. The studio asks Telegram for your bot's messages while it is running, and opens no port. Each request is counted under the `ingress` row of **What has left this machine** in Brand Studio's **Local security** tab.
+- It is optional and off until you set it up. The studio asks Telegram for your bot's messages while it is running, and opens no port. Each request is counted under the `ingress` row of **What has left this machine** under **Local security** in **Settings**.
 - The phone sends a link, never a figure. Nothing you send is written as a reading: a post link becomes a request to read that post here, where the extension reads the real page.
 - The bot never replies. You get no confirmation in Telegram.
 - Your message text passes through Telegram's servers. See [What leaves this machine, and when](what-leaves-this-machine.md).
@@ -19,7 +19,7 @@ Your own bot token and your own numeric chat id. Creating a bot and finding your
 
 ## Set it up
 
-1. Open **Settings** from the rail, which opens **Brand Studio**, then **Local security**.
+1. Open **Settings** from the rail, then **Local security**.
 2. Under **Your phone, through Telegram**, paste the bot token into **Bot token** and your chat id into **Your numeric chat id**.
 3. Click **Save and start**. The panel reads **SET, SEALED** beside the token, your chat id beside **Your chat id**, and **YES** beside **Asking Telegram for messages**.
 

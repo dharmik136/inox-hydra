@@ -255,10 +255,13 @@ def test_the_command_article_describes_the_prompt_panel():
 
 
 def test_brand_studio_is_described_with_all_six_tabs():
+    # Brand Studio's six tabs are two screens now (cycle 4, track 4, phase b):
+    # Brand opens on Profile with Identity and Watermark beside it, Settings on
+    # Overview with the other four. Every one is still named.
     text = read(os.path.join(HELP, "set-up-brand-studio.md"))
     assert "four tabs" not in text
-    assert "six tabs" in text
-    for tab in ("Identity", "Watermark", "Grounding", "Local security", "Storage and privacy", "Licence"):
+    for tab in ("Profile", "Identity", "Watermark", "Overview", "Grounding", "Local security",
+                "Storage and privacy", "Licence"):
         assert tab in text, f"{tab} is not named"
 
 

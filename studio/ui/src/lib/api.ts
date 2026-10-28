@@ -472,6 +472,31 @@ export interface AiStatus {
   capabilities: string[];
 }
 
+/** What a Composer writing request carries beyond your words (GET /api/v1/composer/told). */
+export interface ModelTold {
+  provider: { configured: boolean; provider: string | null; model: string | null };
+  voice: {
+    sent: boolean;
+    /** Lines about you, from your confirmed profile. */
+    who: string[];
+    /** "Measured across N of their posts:" and the habits, once habits_need posts are held. */
+    habits: string[];
+    posts_measured: number;
+    habits_need: number;
+    /** The opening lines of your best posts, as they are appended. */
+    openers: string[];
+    openers_rule: string;
+    sent_with: string[];
+  };
+  scar_tissue: { phrases: string[]; checked_on: string[]; named_in_command: string[] };
+  grounding: { sources: number; sources_on: number; sent_with: string[] };
+  images: { model_writes: string | null; studio_adds: string[]; refused_when: string };
+}
+
+export async function fetchModelTold(): Promise<ModelTold> {
+  return call<ModelTold>("/api/v1/composer/told");
+}
+
 export async function fetchAiStatus(): Promise<AiStatus> {
   return call<AiStatus>("/api/ai/status");
 }
@@ -539,6 +564,10 @@ export interface LeadStageEvent {
   from_status: string | null;
   to_status: string;
   changed_at: string;
+  /** The post the change came from; null for one made with no post in view. */
+  post_urn?: string | null;
+  /** That post's opening, when the studio holds the post. */
+  post_excerpt?: string | null;
 }
 
 /** Reactions older than 24 months that retention folded into counts (studio/backend/retention.py). */
@@ -680,6 +709,53 @@ export interface ScheduledPost {
   id: string;
   content: string;
   scheduled_for: string | null;
+  /**
+   * Its nearest post inside the cadence rule (validate_schedule_cadence), or
+   * null when nothing is that close: which post, when, and how far apart.
+   */
+  collision?: {
+    other_id: string;
+    other_excerpt: string | null;
+    other_status: string | null;
+    other_at: string | null;
+    distance_hours: number;
+    kind: "duplicate" | "cadence";
+  } | null;
+}
+
+/** One decision the scheduler made about a post whose time came (queue_dispatches). */
+export interface QueueDispatch {
+  post_id: string;
+  scheduled_for: string | null;
+  noticed_at: string;
+  late_minutes: number | null;
+  outcome: "due_on_time" | "due_within_grace" | "missed_due" | "published_by_linkedin";
+}
+
+/** A month of your posts by your own calendar day (GET /api/queue/calendar). */
+export interface QueueCalendar {
+  month: string;
+  /** 0 is Monday. */
+  first_weekday: number;
+  days_in_month: number;
+  days: Record<string, {
+    kind: "published" | "scheduled" | "due" | "missed";
+    at: string | null;
+    ref: string;
+    excerpt: string | null;
+    late_minutes?: number | null;
+    /** What became of a missed post: its status when next seen ("published", "scheduled", "draft"), or "deleted". */
+    resolution?: string | null;
+  }[]>;
+  counts: Record<"published" | "scheduled" | "due" | "missed", number>;
+  /** The month's own published posts by weekday, Monday first. */
+  by_weekday: number[];
+  /** Published posts in each of the twelve months ending with this one. */
+  months: { month: string; published: number }[];
+}
+
+export async function fetchQueueCalendar(month: string): Promise<QueueCalendar> {
+  return call<QueueCalendar>(`/api/queue/calendar?month=${encodeURIComponent(month)}`);
 }
 
 export interface NextSlot {
@@ -761,11 +837,19 @@ export async function toggleQueuePause(paused: boolean): Promise<boolean> {
   return data.queue_paused;
 }
 
-export async function dispatchQueueNow(): Promise<string[]> {
+/** What one check of the queue decided, post by post: which rule, and how late. */
+export interface DispatchAction {
+  post_id: string;
+  action: QueueDispatch["outcome"];
+  overdue_minutes: number;
+}
+
+export async function dispatchQueueNow(): Promise<DispatchAction[]> {
   const data = await call<{ actions?: unknown }>("/api/v1/scheduler/dispatch/now", { method: "POST" });
   const actions = data.actions;
-  if (Array.isArray(actions)) return actions.map((a) => (typeof a === "string" ? a : JSON.stringify(a)));
-  return [];
+  return Array.isArray(actions)
+    ? actions.filter((a): a is DispatchAction => typeof a === "object" && a !== null && "action" in a)
+    : [];
 }
 
 // ---------------------------------------------------------------------------
@@ -919,10 +1003,15 @@ export async function runAiCommand(command: string, context?: string): Promise<R
 /** The four the backend accepts. Anything else is rejected with a 400. */
 export const LEAD_STATUSES = ["New Lead", "Outreach Sent", "Connected", "Meeting Booked"] as const;
 
-export async function updateLeadStatus(leadId: string, status: string): Promise<void> {
+/**
+ * Moves a lead to a stage. postUrn is the post the change came from, when the
+ * dossier was opened from one; the studio refuses it (422) for a post the
+ * person never engaged with rather than record it.
+ */
+export async function updateLeadStatus(leadId: string, status: string, postUrn?: string | null): Promise<void> {
   await call(`/api/leads/${encodeURIComponent(leadId)}/status`, {
     method: "PUT",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(postUrn ? { status, post_urn: postUrn } : { status }),
   });
 }
 
@@ -1247,6 +1336,12 @@ export interface AuthStatus {
    * not the first, was removed when this version started (decision D9).
    */
   session_removed?: { at: string; message: string } | null;
+  /** Whether anything is stored, usable or not: a stored session the client cannot use is still deletable. */
+  stored?: boolean;
+  /** When the stored session was saved; null when none is held. */
+  saved_at?: string | null;
+  /** Whose it is, known only for a session the extension's Sync captured. */
+  account?: { vanity: string } | null;
 }
 
 export async function fetchAuthStatus(): Promise<AuthStatus> {
@@ -1514,6 +1609,10 @@ export interface BackupArchive {
   restorable?: boolean;
   /** "backup" for a ZIP of database and media, "database" for a database copy alone. */
   kind?: string;
+  /** Whether its integrity check passed when it was made; null when no check was recorded. */
+  verified?: boolean | null;
+  /** The schema version of the database it holds, or null when unreadable. */
+  schema_version?: number | null;
 }
 
 export interface BackupListing {
@@ -2251,6 +2350,8 @@ export interface PostsInsights extends Paging {
   best: string[];
   worst: string[];
   settled_after_days: number;
+  /** Whether that age was measured from the creator's own readings or assumed (results.settled_after_hours). */
+  settled_after?: SettledAfter;
   sort: string;
   settled_state: string | null;
   q: string | null;
@@ -2309,6 +2410,33 @@ export interface PostDetail {
   edited_first_seen_at?: string | null;
   /** The kind of post when a source said (post_format.py): "video", "text" and so on, or "unknown". */
   format?: string | null;
+  /** Every reading the studio keeps of the post, from every page, oldest first. */
+  readings?: PostReading[];
+  /** The reading nearest two days old, which Today compares at, or why there is none. */
+  two_day?: TwoDayReading;
+  /** Readings older than this many days are thinned by the roll-up; null when it is off. */
+  readings_thinned_after_days?: number | null;
+}
+
+/** One reading of a post, from one page, at one moment. */
+export interface PostReading {
+  observed_at: string;
+  age_hours: number | null;
+  source: string;
+  precision: string | null;
+  impressions: number | null;
+  reactions: number | null;
+  comments: number | null;
+  reposts: number | null;
+}
+
+export interface TwoDayReading {
+  /** read; too_new (younger than the window); not_yet (in it, unread); missed (past it, unread); unknown_age. */
+  state: "read" | "too_new" | "not_yet" | "missed" | "unknown_age";
+  reading: (Partial<PostReading> & { age_hours: number; source: string | null }) | null;
+  age_hours: number | null;
+  at_hours: number;
+  window: [number, number];
 }
 
 export async function fetchPostDetail(activityUrn: string): Promise<PostDetail> {
@@ -2380,6 +2508,38 @@ export interface OutboundAuthor {
   lead_id: string | null;
   /** How many captured people answer to this name. More than 1 cannot be told apart. */
   named_people: number;
+  /** When the studio first saw you engage with them: when it read your Activity page, not when you engaged. */
+  first_seen_at: string | null;
+  /** Your last reaction to them: like, celebrate, support, love, insightful or funny. */
+  last_reaction_kind: string | null;
+  /** The opening of the last post of theirs you engaged with, clipped. */
+  last_excerpt: string | null;
+}
+
+/** One account one level down (GET /api/v1/insights/outbound/author). */
+export interface OutboundAuthorDetail {
+  name: string;
+  named_people: number;
+  lead_id: string | null;
+  /** Every post of theirs you engaged with, newest first, as the studio first saw each. */
+  targets: {
+    target_activity_urn: string;
+    target_excerpt: string | null;
+    kind: "reaction" | "comment";
+    reaction_kind: string | null;
+    my_text: string | null;
+    first_seen_at: string;
+    last_seen_at: string;
+  }[];
+  /** Theirs on your posts, newest first; null when the name is not one captured person's. */
+  inbound: { post_urn: string; interaction_type: string | null; interacted_at: string; post_excerpt: string | null }[] | null;
+  /** From each engagement of yours to their next one on a post of yours, as the studio saw both. */
+  lags: { from: string; to: string; days: number }[] | null;
+  matched_by: string;
+}
+
+export async function fetchOutboundAuthor(name: string): Promise<OutboundAuthorDetail> {
+  return call<OutboundAuthorDetail>(`/api/v1/insights/outbound/author?name=${encodeURIComponent(name)}`);
 }
 
 export interface GoneQuietAuthor {
@@ -3067,6 +3227,8 @@ export interface TodayDuePost {
   excerpt: string;
   /** Present when the post was missed while the studio was closed or asleep. */
   missed?: { scheduled_for: string; noticed_at: string | null; late_minutes: number | null } | null;
+  /** How late it was when the studio marked it due, and by which rule (the Queue's list only). */
+  dispatch?: QueueDispatch | null;
 }
 
 /**
@@ -3985,6 +4147,70 @@ export interface UpdateStatus {
   last_checked: string | null;
   last_seen_version: string | null;
   releases_url: string;
+}
+
+/** Your profile as LinkedIn last showed it (GET /api/v1/brand/profile). */
+export interface BrandProfile {
+  confirmed: boolean;
+  profile: {
+    vanity: string | null;
+    name: string | null;
+    headline: string | null;
+    about: string | null;
+    location: string | null;
+    company: string | null;
+    followers: number | null;
+    connections: number | null;
+    /** One read of your profile page writes these fields together. */
+    read_at: string | null;
+    confirmed_at: string | null;
+  } | null;
+  positions: { title: string | null; company: string | null; date_range: string | null; location: string | null; description: string | null; read_at: string | null }[];
+  education: { school: string | null; degree: string | null; date_range: string | null; read_at: string | null }[];
+  skills: { skill: string; read_at: string | null }[];
+  /** Follower and connection counts on the days they were read. */
+  audience: { date: string; followers: number | null; connections: number | null }[];
+}
+
+export async function fetchBrandProfile(): Promise<BrandProfile> {
+  return call<BrandProfile>("/api/v1/brand/profile");
+}
+
+/** What Settings opens on (GET /api/v1/settings/overview). */
+export interface SettingsOverview {
+  backup: { enabled: boolean; last: { name: string; made_at: string; bytes: number; verified: boolean | null } | null; next_due: string | null; stale: boolean; never: boolean };
+  cleanup: { runs: string; jobs: { job: string; state: "on" | "off" | "waiting for you"; rows: number | null }[] };
+  egress: { total_performed: number; total_refused: number; master_off: boolean; since: string };
+  licence: { status: string; tier_label: string; expires_at: string | null; updates_until: string | null };
+  updates: { enabled: boolean; last_checked: string | null; last_seen_version: string | null; current_version: string };
+  autostart: { supported: boolean; enabled: boolean; available: boolean; platform: string | null };
+}
+
+export async function fetchSettingsOverview(): Promise<SettingsOverview> {
+  return call<SettingsOverview>("/api/v1/settings/overview");
+}
+
+/** Starts the studio with your computer, or stops doing so (POST /api/v1/desktop/autostart). */
+export async function setAutostart(enabled: boolean): Promise<void> {
+  await call("/api/v1/desktop/autostart", { method: "POST", body: JSON.stringify({ enabled }) });
+}
+
+/** The people you kept from the review, and when (GET /api/v1/storage/kept). */
+export interface KeptPerson {
+  lead_id: string;
+  name: string | null;
+  headline: string | null;
+  kept_at: string;
+}
+
+export async function fetchKeptList(): Promise<KeptPerson[]> {
+  const data = await call<{ kept?: KeptPerson[] }>("/api/v1/storage/kept");
+  return data.kept ?? [];
+}
+
+export async function unkeepLead(leadId: string): Promise<number> {
+  const data = await call<{ removed?: number }>(`/api/v1/storage/kept/${encodeURIComponent(leadId)}`, { method: "DELETE" });
+  return data.removed ?? 0;
 }
 
 export async function fetchUpdateStatus(): Promise<UpdateStatus> {

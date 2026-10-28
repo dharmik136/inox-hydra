@@ -207,6 +207,30 @@ def disclosure(max_openers: int = 3) -> List[str]:
     return said
 
 
+# How the openers are chosen, in the creator's terms (results.ranking).
+OPENERS_RULE = ("the opening lines of your posts that did best against your own usual, among posts old enough "
+                "for their figures to have settled, by the one ranking every screen reads")
+
+
+def told(max_openers: int = 3) -> Dict[str, Any]:
+    """
+    The pack as the Composer's "What the model is told" shows it: the lines
+    prompt_block() appends, part by part, from the same reads, so the panel
+    shows exactly what a Re-Hook or Command request carries.
+    """
+    who, habits, openers, post_count = _read(max_openers)
+    return {
+        "sent": bool(who or habits or openers),
+        "who": who,
+        "habits": habits,
+        "posts_measured": post_count,
+        "habits_need": MIN_POSTS_FOR_HABITS,
+        "openers": openers,
+        "openers_rule": OPENERS_RULE,
+        "sent_with": ["Re-Hook", "Command"],
+    }
+
+
 def get_voice_pack(max_openers: int = 3) -> Dict[str, Any]:
     """
     The voice pack as a brief section, and what went into it.

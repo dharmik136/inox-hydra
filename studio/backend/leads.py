@@ -308,7 +308,13 @@ def batch_add_leads(leads_list: List[Dict]) -> Dict:
         conn.close()
 
 
-def update_lead_status(lead_id: str, new_status: str, notes: Optional[str] = None) -> Dict:
+def update_lead_status(lead_id: str, new_status: str, notes: Optional[str] = None,
+                       post_urn: Optional[str] = None) -> Dict:
+    """
+    Moves a lead to a stage and records the change. post_urn is the post the
+    change came from, which the caller has checked the person engaged with
+    (routers/crm.py); None when the change was made with no post in view.
+    """
     if new_status not in VALID_LEAD_STATUSES:
         return {
             "status": "error",
@@ -341,8 +347,9 @@ def update_lead_status(lead_id: str, new_status: str, notes: Optional[str] = Non
         # Re-selecting the current status is not a change and is not recorded.
         if updated and previous is not None and previous[0] != new_status:
             c.execute(
-                "INSERT INTO lead_stage_events (lead_id, from_status, to_status, changed_at) VALUES (?,?,?,?)",
-                (lead_id, previous[0], new_status, datetime.now(timezone.utc).isoformat()),
+                "INSERT INTO lead_stage_events (lead_id, from_status, to_status, changed_at, post_urn) "
+                "VALUES (?,?,?,?,?)",
+                (lead_id, previous[0], new_status, datetime.now(timezone.utc).isoformat(), post_urn),
             )
         conn.commit()
         conn.close()

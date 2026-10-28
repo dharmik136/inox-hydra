@@ -230,8 +230,13 @@ def test_the_session_delete_asks_once_before_it_deletes(page, studio_url):
         page.on("request", lambda r: cookie_deletes.append(r.url)
                 if r.method == "DELETE" and "/api/auth/cookies" in r.url else None)
         page.route("**/api/auth/cookies", _fulfil({"status": "success"}))
+        # The session's one control is in Settings, under Local security, since
+        # Setup's Delete and Brand Studio's Save became one (cycle 4, track 4,
+        # phase b); Setup points there.
         _open_setup(page, studio_url)
-        section = page.locator("section", has_text="LINKEDIN SESSION")
+        page.get_by_role("button", name="Open Settings").click()
+        page.get_by_role("tab", name="Local security").click()
+        section = page.locator("section", has_text="LinkedIn session")
         section.get_by_role("button", name="Delete", exact=True).click()
         page.wait_for_timeout(300)
         assert cookie_deletes == []

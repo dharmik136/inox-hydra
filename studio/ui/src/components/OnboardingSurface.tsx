@@ -5,7 +5,6 @@ import {
   confirmIdentity,
   copyExtensionPath,
   createBackup,
-  deleteLinkedInSession,
   fetchBackups,
   fetchBrowserBridge,
   fetchOnboardingState,
@@ -95,13 +94,13 @@ type SetupState = OnboardingState & {
 export function OnboardingSurface({
   onOpenToday,
   onOpenHealth,
-}: { onOpenToday?: () => void; onOpenHealth?: () => void } = {}) {
+  onOpenSettings,
+}: { onOpenToday?: () => void; onOpenHealth?: () => void; onOpenSettings?: () => void } = {}) {
   const [state, setState] = useState<SetupState | null>(null);
   const [bridge, setBridge] = useState<BrowserBridge | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<Note | null>(null);
-  const [sessionConfirm, setSessionConfirm] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -421,47 +420,18 @@ export function OnboardingSurface({
         )}
       </section>
 
-      {/* The one stored thing that could act as the creator on LinkedIn.
-          Captured only from the extension's Sync button, kept only for the
-          live send in the publish dialog, and deletable here. */}
-      <section className="border-t border-edge pt-4">
-        <p className="studio-meta text-[10px] text-ink-muted">LINKEDIN SESSION</p>
-        <div className="mt-1 flex items-center justify-between gap-4">
-          <p className="text-[13px] text-ink-secondary">
-            {state.session.stored
-              ? `Stored${state.session.saved_at ? ` since ${state.session.saved_at.slice(0, 10)}` : ""}, used only to hand a post to LinkedIn's scheduler.`
-              : "Not stored. Only needed to schedule posts on LinkedIn itself; the extension's Sync button captures it."}
-          </p>
-          {state.session.stored && !sessionConfirm && (
-            <Secondary disabled={busy !== null} onPress={() => setSessionConfirm(true)}>
-              Delete
-            </Secondary>
-          )}
-          {state.session.stored && sessionConfirm && (
-            <div className="flex shrink-0 items-center gap-2">
-              <Secondary
-                disabled={busy !== null}
-                onPress={() =>
-                  void act(
-                    "session",
-                    async () => {
-                      await deleteLinkedInSession();
-                      setSessionConfirm(false);
-                      return "The LinkedIn session is deleted. The extension's Sync button captures it again.";
-                    },
-                    "session",
-                  )
-                }
-              >
-                Yes, delete the session
-              </Secondary>
-              <Secondary disabled={busy !== null} onPress={() => setSessionConfirm(false)}>
-                Keep it
-              </Secondary>
-            </div>
-          )}
-        </div>
-        {note?.at === "session" && <NoteView note={note} />}
+      {/* The one stored thing that could act as the creator on LinkedIn has
+          one control now, in Settings under Local security, with Save and
+          Delete (sections report, batch 5): Setup showed it with Delete and
+          Brand Studio with Save, each answered from its own key. */}
+      <section className="flex flex-wrap items-center justify-between gap-3 border-t border-edge pt-4">
+        <p className="text-[13px] leading-snug text-ink-secondary">
+          {state.session.stored
+            ? "A LinkedIn session is stored, used only to hand a post to LinkedIn's scheduler. "
+            : "No LinkedIn session is stored. It is only needed to schedule posts on LinkedIn itself. "}
+          It is kept, and deleted, in <strong className="font-medium text-ink-primary">Settings</strong>, under Local security.
+        </p>
+        {onOpenSettings && <Secondary onPress={onOpenSettings}>Open Settings</Secondary>}
       </section>
     </article>
     </NoteContext.Provider>
@@ -799,7 +769,7 @@ function ForgetPanel({
           What you asked From your record for, its daily cards, your marks on them and your notes, and the saved posts,
           follows, votes, articles, reposts and searches your archive brought
         </li>
-        <li>The name, headline and company Setup filled in Brand Studio, unless you changed them</li>
+        <li>The name, headline and company Setup filled in your Brand byline, unless you changed them</li>
       </ul>
       <p className="mt-2 text-[12px] text-ink-muted">Your leads, drafts and the posts you wrote in the studio are kept.</p>
 

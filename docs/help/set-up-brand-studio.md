@@ -1,32 +1,45 @@
-# Set up Brand Studio: identity, watermark, grounding, security, storage and licence
-Save the name and headline your previews show, and find the watermark, grounding, privacy, storage and licence settings.
+# Set up your Brand and your Settings
+See your profile as LinkedIn last showed it and set how you sign your images in **Brand**; see your backups, what has left this machine and your licence in **Settings**.
 
-## Open it
+## Open them
 
-Press **Brand** or **Settings** in the rail: until the two are separated, both open **Brand Studio**. It has six tabs, in this order: **Identity**, **Watermark**, **Grounding**, **Local security**, **Storage and privacy** and **Licence**.
+**Brand** and **Settings** are two entries in the rail. They used to open one screen, Brand Studio, with six tabs that opened on a Name, Headline and Company form; they are two screens now, each opening on what it is for, with the rest one level down.
 
-## How saving works
+- **Brand** opens on **Profile**, with **Identity** and **Watermark** beside it.
+- **Settings** opens on **Overview**, with **Grounding**, **Local security**, **Storage and privacy** and **Licence** beside it.
 
-The **Save** button at the top right saves **Identity** and **Watermark** only, together.
+## Brand: your profile as LinkedIn last showed it
 
-- It is greyed out until you first change something, and while a save is running. After a save it stays available.
-- The mark beside it reads UNSAVED, SAVING, SAVED or SAVE FAILED. Hover over SAVE FAILED to read the reason.
-- While it reads UNSAVED or SAVE FAILED, switching profile asks first, naming "Your Brand Studio edits", because the switch reloads the studio and the edits would be lost.
+**Profile** shows what the bridge read from your own LinkedIn profile, once you have confirmed it in **Setup**: your name and headline, your location, company and About, your roles with their dates, location and description, your education and your skills. Each says when it was read, for example READ TUE 20 OCT; your name, headline, About and the rest of the top of your profile are read together, so they share one date. Nothing here is edited: it changes when the bridge next reads your profile.
 
-The controls on **Grounding**, **Local security**, **Storage and privacy** and **Licence** act as soon as you use them and do not need **Save**.
+Beside it, **Followers and connections** lists the counts on the days your profile was read, newest first. They are the days it was read, not every day, and the screen says how many. **How you sign images and slides** shows your byline as the feed preview draws it, and **How you write** your habits, measured across your posts once three are held.
 
-## Identity
+Before you confirm your profile, **Profile** says so and offers **Go to Setup**.
 
-1. Open the **Identity** tab.
-2. Fill in **Name** ("How you sign your work"), **Headline** ("The line under your name") and, if you like, **Company** ("Optional").
+## Brand: Identity, your two identities side by side
+
+The studio holds two identities. **Your profile on LinkedIn** is the one **Setup** confirmed and the bridge reads; it is shown here, read only, with when it was read. **Your byline** is how the studio signs images, slides and the feed preview: **Name** ("How you sign your work"), **Headline** ("The line under your name") and **Company** ("Optional").
+
+Your byline starts as your LinkedIn profile when you confirm it in **Setup**, where its fields are empty; what you typed there is never replaced. When the two differ, **Use what LinkedIn shows** copies your profile's name, headline and company into the byline; press **Save** to keep it.
+
+1. Open **Brand**, then **Identity**.
+2. Fill in or change **Name**, **Headline** and, if you like, **Company**.
 3. Check the **As the feed shows it** card beside the fields. It shows Unnamed and No headline while they are empty, and your company when there is no headline.
 4. Press **Save**.
 
-Until a name has been saved, the tab reads UNTIL A NAME IS SAVED, WATERMARKS AND THE FEED PREVIEW STAY UNNAMED RATHER THAN GUESSING ONE.
+Until a name has been saved, the screen reads UNTIL A NAME IS SAVED, WATERMARKS AND THE FEED PREVIEW STAY UNNAMED RATHER THAN GUESSING ONE. Outside **Brand**, your byline is used in two places only: the **Preview** tab and the **Brand** tab of the inspector beside the **Composer**. It is not added to your posts.
 
-Outside Brand Studio, your identity is used in two places only: the **Preview** tab and the **Brand** tab of the inspector beside the **Composer**. It is not added to your posts.
+## How saving works
 
-## Watermark
+**Save**, at the top right of **Brand** while **Identity** or **Watermark** is open, saves both together.
+
+- It is greyed out until you first change something, and while a save is running. After a save it stays available.
+- The mark beside it reads UNSAVED, SAVING, SAVED or SAVE FAILED. Hover over SAVE FAILED to read the reason.
+- While it reads UNSAVED or SAVE FAILED, leaving **Brand** or switching profile asks first, naming "Your Brand edits", because the edits would be lost.
+
+The controls in **Settings** act as soon as you use them and do not need **Save**.
+
+## Brand: Watermark
 
 | Control | What it sets |
 | --- | --- |
@@ -40,13 +53,26 @@ The **Preview frame** shows the mark where you placed it. It is labelled A DRAWN
 > [!WARNING]
 > These settings are saved, but nothing in the interface applies them yet. Images you generate from the **Media** tab are never stamped with your watermark, whatever you choose here.
 
-## Grounding
+## Settings: Overview
 
-This tab lets you register local programs (MCP servers) that the studio may run to read reference material. Adding one stores a command this machine will execute, so it is a larger grant than anything else here. See [Add a grounding source (MCP), and what you are allowing](add-a-grounding-source.md).
+**Overview** shows six values, each with a link to the place one level down where it can be changed:
 
-## Local security
+| Value | What it says |
+| --- | --- |
+| **Last backup** | When the newest backup was made, whether its check passed ("verified", "its check failed", or "made before checks were recorded"), and when the next daily backup is due, or that the daily backup is off |
+| **Next cleanup** | For old telemetry, old post readings and old reactions: on, off or waiting for you, and how many rows a cleanup would remove now. Cleanups run every hour while the studio runs, behind a checked backup |
+| **What has left this machine** | How many counted requests have left since the studio started, and how many were refused |
+| **Licence** | Your tier, and when it ends or until when it gets updates |
+| **Update check** | On or off, and when it last checked. **Turn it on** or **Turn it off** changes it here. While it is off, no request leaves this machine for a version check |
+| **Start with your computer** | Whether the studio starts when you sign in, with **Turn it on** or **Turn it off**, or that it is not available on this system |
 
-The tab opens with "This install processes your work on this machine." and four status rows.
+## Settings: Grounding
+
+This lets you register local programs (MCP servers) that the studio may run to read reference material. Adding one stores a command this machine will execute, so it is a larger grant than anything else here. See [Add a grounding source (MCP), and what you are allowing](add-a-grounding-source.md).
+
+## Settings: Local security
+
+It opens with "This install processes your work on this machine." and four status rows.
 
 | Row | What it shows | What it really means |
 | --- | --- | --- |
@@ -57,21 +83,34 @@ The tab opens with "This install processes your work on this machine." and four 
 
 Below the rows, a short list says what stays and what leaves: your drafts, posts, leads, analytics and media stay on this machine, and three actions send something only when you use them. **Send to LinkedIn** sends the post's text to LinkedIn with your session. With an AI provider connected, **Re-Hook**, **Command** and the other writing actions send the draft or instruction text to it; the line says whether one is connected. **Generate** in the Media tab sends a prompt built from your image description to an image service. Then come three sections:
 
-- **What has left this machine**, the egress ledger. See [What leaves this machine, and when](what-leaves-this-machine.md).
-- **LinkedIn session**, where you paste your session. See [Connect your LinkedIn session](connect-your-linkedin-session.md).
-- **Your data**, with **Back up now**, **Export JSON** and **Export CSV**, which is now the first thing on the **Storage and privacy** tab rather than the foot of this one. See [Back up, restore and export](back-up-restore-and-export.md) and [Choose what the studio keeps](choose-what-the-studio-keeps.md).
+- **What has left this machine**, the egress ledger. Each kind of request now also shows the switch that controls it, whether it is on by default, and the last place it was sent or refused. See [What leaves this machine, and when](what-leaves-this-machine.md).
+- **LinkedIn session**, the one control for your session: whether one is stored, when it was saved and, for a session the extension's **Sync** captured, which account it belongs to; **Delete**, which asks "Yes, delete the session" or "Keep it"; and the fields to paste one by hand. **Setup** used to show the session with its own **Delete**; it now points here. See [Connect your LinkedIn session](connect-your-linkedin-session.md).
+- **Your phone, through Telegram**. See [Send a post idea from Telegram](send-a-post-idea-from-telegram.md).
+
+## Settings: Storage and privacy
+
+**Your data** comes first, with **Back up now**, **Export JSON** and **Export CSV**, and the backup list. Each backup in the list says whether its check passed when it was made (VERIFIED, CHECK FAILED, or NOT CHECKED for one made before checks were recorded) and the schema of the database it holds. The list opens on the newest five; **Show all** lists every one. See [Back up, restore and export](back-up-restore-and-export.md) and [Choose what the studio keeps](choose-what-the-studio-keeps.md).
+
+At the foot, **Kept from the review** lists the people you chose to keep in the silent-lead review, with the day you kept each. **Take back** removes the keep, so the person can be listed for review again when they qualify.
+
+## Settings: Licence
+
+Your tier, your licence and its end, and how many creator profiles it covers. See [Keep each creator separate, and enter a licence](keep-each-creator-separate-and-enter-a-licence.md).
 
 ## What happens
 
-- **Identity** and **Watermark** are stored together as one record in the settings table of the local database. Each **Save** replaces the whole record.
+- **Identity** and **Watermark** are stored together as one record in the settings table of the local database. Each **Save** replaces the whole record. Your profile as LinkedIn showed it is kept apart from it, and only the bridge changes it.
 - Nothing is sent anywhere when you save.
 - Backups include the record. Exports do not, because they leave out the settings table.
-- `python -m studio.cli reset --yes` clears the whole settings table, so it clears your identity and watermark too, after taking a safety backup.
+- `python -m studio.cli reset --yes` clears the whole settings table, so it clears your byline and watermark too, after taking a safety backup.
 
 ## If it does not work
 
 | What you see | What it means |
 | --- | --- |
-| LOADING BRAND STUDIO stays on screen | The profile has not arrived. Reload the page |
-| THE PROFILE COULD NOT BE READ. | The request failed, usually because the server stopped. See [The studio will not open](the-studio-will-not-open.md) |
+| LOADING YOUR BRAND stays on screen | The byline has not arrived. Reload the page |
+| YOUR BRAND COULD NOT BE READ. | The request failed, usually because the server stopped. See [The studio will not open](the-studio-will-not-open.md) |
+| SETTINGS COULD NOT BE READ. IS THE STUDIO RUNNING? | The overview could not be read. It reads again when the studio answers |
 | SAVE FAILED | Hover over it for the server's reason. Your edits are still in the form, so press **Save** again once it is fixed |
+
+<!-- Strict Invariants: zero em-dashes. -->

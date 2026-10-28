@@ -19,7 +19,7 @@ import { PostsSurface } from "@/components/PostsSurface";
 import { OutboundSurface } from "@/components/OutboundSurface";
 import { PatternsSurface } from "@/components/PatternsSurface";
 import { AnalyticsSurface } from "@/components/AnalyticsSurface";
-import { BrandStudioSurface } from "@/components/BrandStudioSurface";
+import { BrandSurface, SettingsSurface } from "@/components/BrandStudioSurface";
 import { QueueSurface } from "@/components/QueueSurface";
 import { DocsSurface } from "@/components/DocsSurface";
 import { PublishDialog } from "@/components/PublishDialog";
@@ -1066,7 +1066,13 @@ export default function App() {
                   onSave={() => (holdsPosted ? onCorrectPosted() : void onSave())}
                 />
               )}
-              {active === "setup" && <OnboardingSurface onOpenToday={() => navigate("today")} onOpenHealth={() => navigate("health")} />}
+              {active === "setup" && (
+                <OnboardingSurface
+                  onOpenToday={() => navigate("today")}
+                  onOpenHealth={() => navigate("health")}
+                  onOpenSettings={() => navigate("settings")}
+                />
+              )}
               {active === "today" && (
                 <TodaySurface
                   onOpenSetup={() => navigate("setup")}
@@ -1104,10 +1110,13 @@ export default function App() {
               {active === "replies" && (
                 <RepliesSurface
                   onOpenSetup={() => navigate("setup")}
-                  onOpenLead={(leadId) => {
+                  onOpenLead={(leadId, fromPost) => {
                     if (!navigate("leads")) return;
                     focusNonce.current += 1;
-                    setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
+                    setFocus({
+                      section: "leads",
+                      target: { id: leadId, anchor: null, post: fromPost ?? null, nonce: focusNonce.current },
+                    });
                   }}
                 />
               )}
@@ -1126,10 +1135,13 @@ export default function App() {
                 <PostsSurface
                   onOpenActivity={() => navigate("activity")}
                   onOpenSetup={() => navigate("setup")}
-                  onOpenLead={(leadId) => {
+                  onOpenLead={(leadId, fromPost) => {
                     if (!navigate("leads")) return;
                     focusNonce.current += 1;
-                    setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
+                    setFocus({
+                      section: "leads",
+                      target: { id: leadId, anchor: null, post: fromPost ?? null, nonce: focusNonce.current },
+                    });
                   }}
                 />
               )}
@@ -1145,10 +1157,10 @@ export default function App() {
               )}
               {active === "patterns" && <PatternsSurface onOpenSetup={() => navigate("setup")} />}
               {active === "analytics" && <AnalyticsSurface />}
-              {/* Brand and Settings both open Brand Studio until the two are
-                  split; each registers its unsaved edits under its own entry,
-                  so leaving either asks first. */}
-              {(active === "brand" || active === "settings") && <BrandStudioSurface key={active} section={active} />}
+              {/* Brand, about you, and Settings, about this machine: Brand
+                  Studio split in two (sections report, batch 5). */}
+              {active === "brand" && <BrandSurface onOpenSetup={() => navigate("setup")} />}
+              {active === "settings" && <SettingsSurface />}
               {active === "queue" && <QueueSurface onEditText={(postId) => void onEditText(postId)} />}
               {active === "docs" && <DocsSurface focus={focusFor("docs")} />}
               {active === "devtools" && <DevtoolsSurface />}

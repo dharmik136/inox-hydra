@@ -652,7 +652,7 @@ HELP_SECTIONS = [
     {
         "id": "ai",
         "title": "Bring your own AI",
-        "blurb": "Connect an AI provider, run an instruction on your draft, set up Brand Studio and its grounding sources, and add images.",
+        "blurb": "Connect an AI provider, run an instruction on your draft, set up your Brand and Settings and their grounding sources, and add images.",
         "paths": [
             "help/connect-your-own-ai-provider.md",
             "help/run-an-instruction-on-your-draft.md",
@@ -728,6 +728,7 @@ HELP_SECTIONS = [
             "quality/cycle4/t6-posture.md",
             "quality/cycle4/t4-sections.md",
             "quality/cycle4/t2-show.md",
+            "quality/cycle4/t4-phase-b.md",
             # Cycle 4, track 6: the phone pairing design (item 27) and the
             # answer on LinkedIn's public-client OAuth flow (decision D2).
             "PHONE_PAIRING_DESIGN.md",

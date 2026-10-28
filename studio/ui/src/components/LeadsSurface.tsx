@@ -57,6 +57,11 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
   const [leads, setLeads] = useState<Lead[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [selected, setSelected] = useState<string | null>(focus?.id ?? null);
+  // The post the creator came from, for the lead they were opened on: a stage
+  // change made in that dossier records it. Another lead chosen here has none.
+  const [fromPost, setFromPost] = useState<{ lead: string; post: string } | null>(
+    focus?.post ? { lead: focus.id, post: focus.post } : null,
+  );
   // Below the md breakpoint there is room for one pane. A fixed 340 pixel
   // stream beside the rail left the dossier 0 pixels wide on a phone, so
   // choosing a lead changed nothing visible. There the stream and the dossier
@@ -150,6 +155,7 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
   useEffect(() => {
     if (!focus) return;
     setSelected(focus.id);
+    setFromPost(focus.post ? { lead: focus.id, post: focus.post } : null);
     setPane("dossier");
     setQuery("");
     setSearched("");
@@ -297,6 +303,7 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
         {selected ? (
           <Dossier
             leadId={selected}
+            fromPost={fromPost && fromPost.lead === selected ? fromPost.post : null}
             onChanged={reload}
             onForgotten={(name) => {
               setNotice(`FORGOT ${name.toUpperCase()}, WITH EVERYTHING THE STUDIO HAD RECORDED ABOUT THEM.`);
@@ -331,10 +338,13 @@ function FoldedReactionsNote({ folded }: { folded: FoldedReactions }) {
 
 function Dossier({
   leadId,
+  fromPost = null,
   onChanged,
   onForgotten,
 }: {
   leadId: string;
+  /** The post this dossier was opened from, which a stage change made here records. */
+  fromPost?: string | null;
   onChanged: () => void;
   onForgotten: (name: string) => void;
 }) {
@@ -428,6 +438,13 @@ function Dossier({
   if (!data) return <Centered>LOADING DOSSIER</Centered>;
 
   const { lead, interactions } = data;
+  // The opening of the post this dossier was opened from, as this person's
+  // engagement on it names it (one post can be spelled two ways by LinkedIn).
+  const postOpening = (urn: string): string | null => {
+    const id = urn.match(/(\d{6,})$/)?.[1];
+    const on = interactions.find((item) => item.post_urn === urn || (id && item.post_urn?.endsWith(id)));
+    return on?.post_excerpt ?? null;
+  };
   const folded = data.folded_reactions ?? null;
   const ownEngagements = ownPostEngagements(interactions);
   // A suggested reply is stored per interaction, so the most recent one that
@@ -642,7 +659,7 @@ function Dossier({
                 setBusy(true);
                 setActionError(null);
                 try {
-                  await updateLeadStatus(lead.id, candidate);
+                  await updateLeadStatus(lead.id, candidate, fromPost);
                   await refresh();
                   onChanged();
                 } catch (caught) {
@@ -665,13 +682,26 @@ function Dossier({
             </button>
           ))}
         </div>
-        {/* How this lead got here. Each change is recorded now, so "which
-            post brought people I ended up talking to" has an answer. */}
+        {/* Opened from a post (Replies, or a post's detail): a change made
+            here records that post, so "which post brought the people I ended
+            up talking to" has an answer. */}
+        {fromPost && (
+          <p className="studio-meta mt-2 text-[10px] text-ink-muted">
+            OPENED FROM YOUR POST
+            {postOpening(fromPost) ? ` "${postOpening(fromPost)}"` : ""}: A STAGE CHANGE HERE RECORDS IT
+          </p>
+        )}
+        {/* How this lead got here, and from which post where one was in view. */}
         {(data.stage_history ?? []).length > 0 && (
           <ol className="mt-2 flex flex-col gap-0.5">
             {(data.stage_history ?? []).map((event) => (
               <li key={event.changed_at} className="studio-meta text-[10px] text-ink-muted">
                 {localDate(event.changed_at).toUpperCase()}: {event.from_status ?? "NEW"} TO {event.to_status.toUpperCase()}
+                {event.post_urn
+                  ? event.post_excerpt
+                    ? `, FROM YOUR POST "${event.post_excerpt}"`
+                    : ", FROM ONE OF YOUR POSTS"
+                  : ""}
               </li>
             ))}
           </ol>
@@ -815,7 +845,7 @@ function Dossier({
                     setBusy(true);
                     setActionError(null);
                     try {
-                      await updateLeadStatus(lead.id, "Outreach Sent");
+                      await updateLeadStatus(lead.id, "Outreach Sent", fromPost);
                       await refresh();
                       onChanged();
                     } catch (caught) {
@@ -856,7 +886,7 @@ function Dossier({
  * here stays in the older ones until they go; Storage and privacy can remove
  * them from backups too (batch R4's secure delete).
  */
-const BACKUPS_KEEP_THEM = "Older backups still hold them until rotation removes those backups; to remove them from backups too, use Brand Studio, Storage and privacy.";
+const BACKUPS_KEEP_THEM = "Older backups still hold them until rotation removes those backups; to remove them from backups too, use Settings, Storage and privacy.";
 
 /**
  * A post, named the way a drafted message can quote it: its first sentence,

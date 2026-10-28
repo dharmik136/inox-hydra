@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCheck, Copy, Pause, Play, Plus, Trash2, Undo2, Zap } from "lucide-react";
+import { CheckCheck, ChevronLeft, ChevronRight, Copy, Pause, Play, Plus, Trash2, Undo2, Zap } from "lucide-react";
 import {
   addQueueSlot,
   deleteQueueSlot,
@@ -9,6 +9,7 @@ import {
   fetchDraftsWaiting,
   fetchDuePosts,
   fetchNextSlot,
+  fetchQueueCalendar,
   fetchSmartSlots,
   publishNow,
   returnToDrafts,
@@ -16,7 +17,10 @@ import {
   toggleQueuePause,
   type CadenceHealth,
   type CadenceInsights,
+  type DispatchAction,
   type DraftSummary,
+  type QueueCalendar as QueueCalendarData,
+  type QueueDispatch,
   type DraftsWaiting,
   type QueueSlot,
   type ScheduledPost,
@@ -25,7 +29,7 @@ import {
 } from "@/lib/api";
 import { NOT_MEASURED, formatDays, gapOrNotMeasured } from "@/lib/cadence";
 import { useRefresh } from "@/lib/refresh";
-import { formatLocal, formatSlotTime } from "@/lib/time";
+import { formatLocal, formatLocalTime, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -96,6 +100,8 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dispatchNote, setDispatchNote] = useState<string | null>(null);
+  // The week (what goes out next) or a month of it, one level down.
+  const [view, setView] = useState<"week" | "calendar">("week");
 
   const load = useCallback(async () => {
     try {
@@ -160,11 +166,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
     setDispatchNote(null);
     try {
       const actions = await dispatchQueueNow();
-      setDispatchNote(
-        actions.length
-          ? `${actions.length} post${actions.length === 1 ? "" : "s"} marked due`
-          : "Nothing was due",
-      );
+      setDispatchNote(actions.length ? dispatchSentence(actions) : "Nothing was due");
       await load();
     } catch (error) {
       setDispatchNote(error instanceof Error ? error.message : "The check was refused");
@@ -307,6 +309,32 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
         </p>
       )}
 
+      {/* The week is what the Queue opens on; a month of it is one level
+          down, read when asked for. */}
+      <div role="tablist" aria-label="Queue views" className="mt-3 flex gap-1">
+        {QUEUE_VIEWS.map((candidate) => (
+          <button
+            key={candidate.id}
+            type="button"
+            role="tab"
+            aria-selected={view === candidate.id}
+            onClick={() => setView(candidate.id)}
+            className={cn(
+              "rounded-md border px-2.5 py-0.5 text-[11px] transition-colors",
+              view === candidate.id
+                ? "border-edge-strong bg-soft text-ink-primary"
+                : "border-edge text-ink-muted hover:text-ink-secondary",
+            )}
+          >
+            {candidate.label}
+          </button>
+        ))}
+      </div>
+
+      {view === "calendar" ? (
+        <QueueCalendar />
+      ) : (
+      <>
       <ThisWeek slots={slots} scheduled={scheduled} due={due} />
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
@@ -345,6 +373,9 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
                     {formatLocal(post.scheduled_for).toUpperCase()}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-[12px] text-ink-primary">{post.excerpt}</span>
+                  {post.dispatch && (
+                    <span className="studio-meta w-full text-[10px] text-ink-muted sm:order-last">{dispatchLine(post.dispatch)}</span>
+                  )}
                   <span className="flex shrink-0 items-center gap-2">
                     <button
                       type="button"
@@ -412,6 +443,19 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
                   <span className="studio-meta shrink-0 text-[11px]">{formatLocal(post.scheduled_for)}</span>
                   <span className="min-w-0 flex-1 truncate text-[12px] text-ink-secondary">
                     {post.content.split("\n")[0]}
+                    {/* Its nearest post inside the cadence rule, by time and
+                        distance; the other post's words are in the title, so
+                        this row never repeats them. */}
+                    {post.collision && (
+                      <span
+                        className="studio-meta ml-2 text-[10px] text-signal-orange-text"
+                        title={post.collision.other_excerpt ?? undefined}
+                      >
+                        {post.collision.kind === "duplicate" ? "SAME SLOT AS" : `${post.collision.distance_hours} H FROM`} THE POST{" "}
+                        {post.collision.other_status === "published" ? "PUBLISHED" : "QUEUED"} FOR{" "}
+                        {formatLocal(post.collision.other_at).toUpperCase()}
+                      </span>
+                    )}
                   </span>
                   {/* Opens the post in the Composer, which asks before it
                       changes a queued post's text. */}
@@ -483,7 +527,196 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
           <WeeklySlots slots={slots} onChanged={load} />
         </div>
       </div>
+      </>
+      )}
     </div>
+  );
+}
+
+const QUEUE_VIEWS = [
+  { id: "week", label: "This week" },
+  { id: "calendar", label: "Calendar" },
+] as const;
+
+/** Each rule the scheduler applies when a post's time comes, in the screen's words. */
+const DISPATCH_RULES: Record<QueueDispatch["outcome"], string> = {
+  due_on_time: "ON TIME",
+  due_within_grace: "WITHIN THE TWO HOUR GRACE",
+  missed_due: "MISSED, MORE THAN TWO HOURS LATE",
+  published_by_linkedin: "ALREADY PUBLISHED BY LINKEDIN",
+};
+
+/** What one check decided, rule by rule, with how late each was. */
+function dispatchSentence(actions: DispatchAction[]): string {
+  const parts = (Object.keys(DISPATCH_RULES) as QueueDispatch["outcome"][])
+    .map((rule) => {
+      const these = actions.filter((action) => action.action === rule);
+      if (!these.length) return null;
+      const late = rule === "due_on_time" || rule === "published_by_linkedin"
+        ? ""
+        : ` (${these.map((action) => `${lateness(action.overdue_minutes)} late`).join(", ")})`;
+      return `${these.length} ${DISPATCH_RULES[rule].toLowerCase()}${late}`;
+    })
+    .filter(Boolean);
+  return `Checked: ${parts.join("; ")}`;
+}
+
+/** How late a post was when the studio marked it due, and by which rule. */
+function dispatchLine(dispatch: QueueDispatch): string {
+  const late = dispatch.late_minutes ?? 0;
+  if (dispatch.outcome === "due_on_time") {
+    return `MARKED DUE ${late < 1 ? "AT ITS TIME" : `${lateness(late).toUpperCase()} AFTER ITS TIME`}, ON TIME`;
+  }
+  if (dispatch.outcome === "due_within_grace") return `MARKED DUE ${lateness(late).toUpperCase()} LATE, WITHIN THE TWO HOUR GRACE`;
+  if (dispatch.outcome === "missed_due") return `MARKED DUE ${lateness(late).toUpperCase()} LATE: MISSED, MORE THAN TWO HOURS`;
+  return "ALREADY PUBLISHED BY LINKEDIN AT ITS TIME";
+}
+
+const WEEKDAY_SHORT = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+
+/** What a missed post became, as the studio next saw it. */
+const MISSED_THEN: Record<string, string> = {
+  published: "THEN POSTED",
+  scheduled: "THEN QUEUED AGAIN",
+  draft: "THEN BACK IN THE DRAFTS",
+  deleted: "THEN DELETED",
+};
+
+function monthOf(day: Date): string {
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function shiftMonth(month: string, by: number): string {
+  const [year, number] = month.split("-").map(Number);
+  return monthOf(new Date(year, number - 1 + by, 1));
+}
+
+/**
+ * A month of your posts by your own calendar day: published (as the bridge
+ * read them), scheduled, due, and missed, which the queue keeps after a
+ * missed post moves on, with what became of it. Under it, your own counts by
+ * weekday for the month and by month for the year. No best day is named:
+ * they are what you did, not advice.
+ */
+function QueueCalendar() {
+  const [month, setMonth] = useState(() => monthOf(new Date()));
+  const [data, setData] = useState<QueueCalendarData | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    setData(null);
+    setFailed(false);
+    fetchQueueCalendar(month)
+      .then((answer) => live && setData(answer))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [month]);
+
+  const [year, number] = month.split("-").map(Number);
+  const title = new Date(year, number - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const cells: (number | null)[] = data
+    ? [...Array(data.first_weekday).fill(null), ...Array.from({ length: data.days_in_month }, (_, i) => i + 1)]
+    : [];
+  while (cells.length % 7) cells.push(null);
+  const weeks = Array.from({ length: cells.length / 7 }, (_, i) => cells.slice(i * 7, i * 7 + 7));
+
+  return (
+    <section aria-labelledby="queue-calendar" className="mt-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p id="queue-calendar" className="studio-label">{title}</p>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setMonth(shiftMonth(month, -1))}
+            aria-label="Previous month"
+            className="grid size-6 place-items-center rounded-md border border-edge text-ink-muted hover:text-ink-primary"
+          >
+            <ChevronLeft className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setMonth(shiftMonth(month, 1))}
+            aria-label="Next month"
+            className="grid size-6 place-items-center rounded-md border border-edge text-ink-muted hover:text-ink-primary"
+          >
+            <ChevronRight className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+      {failed ? (
+        <p className="text-[13px] text-ink-muted">This month could not be read. Is the studio running?</p>
+      ) : !data ? (
+        <p className="text-[13px] text-ink-muted">Reading the month.</p>
+      ) : (
+        <>
+          <p className="studio-meta mb-2 text-[10px] text-ink-muted">
+            {data.counts.published} PUBLISHED · {data.counts.scheduled} SCHEDULED · {data.counts.due} DUE ·{" "}
+            {data.counts.missed} MISSED, BY YOUR OWN CALENDAR DAY
+          </p>
+          <table className="w-full table-fixed border-collapse text-[11px]">
+            <thead>
+              <tr>
+                {WEEKDAY_SHORT.map((day) => (
+                  <th key={day} scope="col" className="studio-meta pb-1 text-left text-[10px] font-normal text-ink-muted">
+                    {day}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {weeks.map((week, row) => (
+                <tr key={row}>
+                  {week.map((day, column) => {
+                    const key = day ? `${month}-${String(day).padStart(2, "0")}` : "";
+                    const items = day ? data.days[key] ?? [] : [];
+                    return (
+                      <td key={column} className="h-20 border border-edge p-1 align-top">
+                        {day && <p className="studio-meta text-[10px] text-ink-muted">{day}</p>}
+                        {items.map((item, index) => (
+                          <p
+                            key={`${item.kind}-${item.ref}-${index}`}
+                            className={cn(
+                              "truncate leading-snug",
+                              item.kind === "published" && "text-signal-green-text",
+                              item.kind === "scheduled" && "text-ink-secondary",
+                              (item.kind === "due" || item.kind === "missed") && "text-signal-orange-text",
+                            )}
+                            title={item.excerpt ?? undefined}
+                          >
+                            <span className="studio-meta text-[9px]">
+                              {item.kind.toUpperCase()}
+                              {item.kind === "missed" && item.resolution ? ` ${MISSED_THEN[item.resolution] ?? ""}` : ""}
+                            </span>{" "}
+                            {formatLocalTime(item.at)} {item.excerpt ?? ""}
+                          </p>
+                        ))}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-2 text-[12px] leading-snug text-ink-secondary">
+            Published this month by weekday:{" "}
+            {WEEKDAY_SHORT.map((day, index) => `${day.charAt(0)}${day.slice(1).toLowerCase()} ${data.by_weekday[index]}`).join(", ")}.
+            No best day is named: these are your own counts, not advice.
+          </p>
+          <p className="studio-meta mt-1 text-[10px] text-ink-muted">
+            PUBLISHED IN THE LAST TWELVE MONTHS:{" "}
+            {data.months
+              .map((entry) => {
+                const [y, m] = entry.month.split("-").map(Number);
+                return `${new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "short" }).toUpperCase()} ${entry.published}`;
+              })
+              .join(" · ")}
+          </p>
+        </>
+      )}
+    </section>
   );
 }
 

@@ -205,7 +205,7 @@ def _locked_message(entry: Dict[str, Any]) -> str:
         why = f"Your {state['tier_label']} licence covers {limit} creator profile{'s' if limit != 1 else ''}"
     return (
         f"{why}, so {entry['name']} stays closed. To open it again, renew the Agency licence and paste "
-        f"the new key in Brand Studio, Licence. Nothing in it was deleted: you can still back it up or "
+        f"the new key in Settings, Licence. Nothing in it was deleted: you can still back it up or "
         f"export it from the command line (backup --profile {entry['id']}, export --profile {entry['id']}), "
         f"or delete it."
     )

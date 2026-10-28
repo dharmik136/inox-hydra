@@ -102,7 +102,10 @@ def test_the_demo_flag_restores_all_of_it():
     thing: that the seeds were deleted rather than gated.
     """
     counts = _boot(demo_flag="1")
-    assert counts["drafts"] >= 16
+    # The Launch Kit, the original author's first-person campaign, is not
+    # seeded even in demo mode now (cycle 4, track 4, phase b): demo mode
+    # seeds the sample creator's own queue and drafts into posts instead.
+    assert counts["drafts"] == 0
     assert counts["leads"] == 4
     assert counts["posts"] > 0
 

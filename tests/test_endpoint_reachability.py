@@ -406,9 +406,23 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Then GET /api/v1/record/lines, today's cards one line each, which Today's
 # block reads. Total 216 -> 217, reached 168 -> 169, unreachable stays 48.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 217
-REACHED_BY_INTERFACE = 169
-UNREACHABLE = 48
+# Cycle 4, track 4, phase b (for 2.10.0), each path counted as it lands:
+# Outbound's one account, /api/v1/insights/outbound/author, which the screen
+# opens: 216 paths, 168 reached, 48 unreachable. The Queue's month,
+# /api/queue/calendar, which its Calendar view reads: 217, 169, 48. What the
+# model is told, /api/v1/composer/told, which the Prompt tab reads: 218, 170, 48.
+# Brand and Settings split from Brand Studio: /api/v1/brand/profile and
+# /api/v1/settings/overview, which they open on, and the kept list's two
+# paths, GET /api/v1/storage/kept and DELETE /api/v1/storage/kept/{lead_id},
+# all reached; and /api/v1/desktop/autostart, which no screen reached before,
+# reached by the overview's switch: 222 paths, 175 reached, 47 unreachable.
+# ---------------------------------------------------------------------------
+# 2.10.0 integration of tracks 7 and 4 (phase 2 and phase b), measured on the
+# merged tree: 224 paths, 177 reached, 47 unreachable.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 224
+REACHED_BY_INTERFACE = 177
+UNREACHABLE = 47
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

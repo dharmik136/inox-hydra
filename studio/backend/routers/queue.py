@@ -9,21 +9,23 @@ Strict Invariants:
 - 100% local SQLite state with zero cloud egress.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 try:
     from ..database import get_db, neutral_slot_label
     from ..scheduler import native_scheduler, parse_datetime_flexible, DAY_NAMES
     from .. import today as today_module
+    from ..text_cut import clip
 except ImportError:
     from database import get_db, neutral_slot_label
     from scheduler import native_scheduler, parse_datetime_flexible, DAY_NAMES
     import today as today_module
+    from text_cut import clip
 
 router = APIRouter()
 
@@ -54,14 +56,34 @@ def get_smart_slots():
             "SELECT id, content, scheduled_for FROM posts WHERE status = 'scheduled' ORDER BY scheduled_for ASC"
         )
         scheduled_posts = [dict(r) for r in cursor.fetchall()]
-
-        return {
-            "status": "success",
-            "slots": slots,
-            "scheduled_posts": scheduled_posts,
-        }
+        excerpts = {r["id"]: r["content"] for r in conn.execute(
+            "SELECT id, content FROM posts WHERE status IN ('scheduled', 'due', 'published')")}
     finally:
         conn.close()
+    # Each queued post's nearest neighbour inside the cadence rule, by the
+    # rule the publish dialog warns with (validate_schedule_cadence): which
+    # post, when, and how far apart. None when nothing is that close.
+    for post in scheduled_posts:
+        post["collision"] = None
+        if not post["scheduled_for"]:
+            continue
+        check = native_scheduler.validate_schedule_cadence(post["scheduled_for"], post_id=post["id"])
+        nearest = check.get("nearest_conflict")
+        distance = check.get("distance_to_nearest_hours")
+        if nearest and distance is not None and distance < native_scheduler.min_cooldown_hours:
+            post["collision"] = {
+                "other_id": nearest.get("id"),
+                "other_excerpt": clip(" ".join((excerpts.get(nearest.get("id")) or "").split()), 80) or None,
+                "other_status": nearest.get("status"),
+                "other_at": nearest.get("datetime"),
+                "distance_hours": round(distance, 1),
+                "kind": "duplicate" if distance < 0.08 else "cadence",
+            }
+    return {
+        "status": "success",
+        "slots": slots,
+        "scheduled_posts": scheduled_posts,
+    }
 
 
 class SlotPayload(BaseModel):
@@ -173,6 +195,77 @@ def get_due_posts():
         return {"status": "success", "due": today_module.due_posts(conn, limit=None)}
     finally:
         conn.close()
+
+
+def _local_day(moment: Optional[str]) -> Optional[str]:
+    """The creator's own calendar day of a stored time, on this machine's clock."""
+    parsed = parse_datetime_flexible(moment) if moment else None
+    return parsed.astimezone().date().isoformat() if parsed else None
+
+
+@router.get("/api/queue/calendar", tags=["Smart Queue"])
+def get_queue_calendar(month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$")):
+    """
+    A month of your posts by your own calendar day: published (from what the
+    bridge read of your posts), scheduled, due, and missed, which the queue
+    now keeps after a missed post moves on (queue_dispatches). With your own
+    counts by weekday for the month and by month for the last twelve, and no
+    best day: the counts are what you did, not a recommendation.
+    """
+    year, number = (int(part) for part in month.split("-"))
+    first = date(year, number, 1)
+    after = date(year + (number == 12), number % 12 + 1, 1)
+    # The month's bounds on this machine's clock, read a day wider in UTC so
+    # every time that falls on one of its local days is in reach.
+    low = (datetime(first.year, first.month, first.day) - timedelta(days=1)).isoformat()
+    high = (datetime(after.year, after.month, after.day) + timedelta(days=1)).isoformat()
+    days: Dict[str, List[Dict[str, Any]]] = {}
+
+    def add(kind: str, at: Optional[str], words: Optional[str], ref: str, **extra: Any) -> None:
+        day = _local_day(at)
+        if not day or not (first.isoformat() <= day < after.isoformat()):
+            return
+        days.setdefault(day, []).append({"kind": kind, "at": at, "ref": ref,
+                                         "excerpt": clip(" ".join((words or "").split()), 80) or None, **extra})
+
+    conn = get_db()
+    try:
+        for r in conn.execute("SELECT activity_urn, text, published_at FROM own_posts "
+                              "WHERE published_at >= ? AND published_at < ?", (low, high)):
+            add("published", r["published_at"], r["text"], r["activity_urn"])
+        for r in conn.execute("SELECT id, content, status, scheduled_for FROM posts "
+                              "WHERE status IN ('scheduled', 'due') AND scheduled_for >= ? AND scheduled_for < ?",
+                              (low, high)):
+            add(r["status"], r["scheduled_for"], r["content"], r["id"])
+        texts = {r["id"]: r["content"] for r in conn.execute("SELECT id, content FROM posts")}
+        for r in conn.execute("SELECT post_id, scheduled_for, late_minutes, resolution FROM queue_dispatches "
+                              "WHERE outcome = 'missed_due' AND scheduled_for >= ? AND scheduled_for < ?",
+                              (low, high)):
+            add("missed", r["scheduled_for"], texts.get(r["post_id"]), r["post_id"],
+                late_minutes=r["late_minutes"], resolution=r["resolution"])
+        months: List[Dict[str, Any]] = []
+        for back in range(11, -1, -1):
+            index = year * 12 + number - 1 - back
+            start = date(index // 12, index % 12 + 1, 1)
+            end = date((index + 1) // 12, (index + 1) % 12 + 1, 1)
+            count = sum(1 for (at,) in conn.execute(
+                "SELECT published_at FROM own_posts WHERE published_at >= ? AND published_at < ?",
+                ((datetime(start.year, start.month, start.day) - timedelta(days=1)).isoformat(),
+                 (datetime(end.year, end.month, end.day) + timedelta(days=1)).isoformat()))
+                if start.isoformat() <= (_local_day(at) or "") < end.isoformat())
+            months.append({"month": start.strftime("%Y-%m"), "published": count})
+    finally:
+        conn.close()
+    for items in days.values():
+        items.sort(key=lambda item: item["at"] or "")
+    counts = {kind: sum(1 for items in days.values() for item in items if item["kind"] == kind)
+              for kind in ("published", "scheduled", "due", "missed")}
+    by_weekday = [0] * 7
+    for day, items in days.items():
+        by_weekday[date.fromisoformat(day).weekday()] += sum(1 for item in items if item["kind"] == "published")
+    return {"status": "success", "month": month, "first_weekday": first.weekday(),
+            "days_in_month": (after - first).days, "days": days, "counts": counts,
+            "by_weekday": by_weekday, "months": months}
 
 
 @router.get("/api/queue/cadence-health", tags=["Smart Queue"])

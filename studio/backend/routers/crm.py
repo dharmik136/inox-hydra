@@ -50,6 +50,9 @@ router = APIRouter()
 class LeadStatusUpdate(BaseModel):
     status: str
     notes: Optional[str] = None
+    # The post the change came from: the dossier was opened from Replies or a
+    # post's detail. Checked against what the person engaged with.
+    post_urn: Optional[str] = None
 
 
 class LeadNotesUpdate(BaseModel):
@@ -121,9 +124,37 @@ def export_leads_csv_route(status: Optional[str] = None, search: Optional[str] =
     )
 
 
+def _engaged_post(lead_id: str, post_urn: str) -> Optional[str]:
+    """
+    The post as this person's engagement names it, when they engaged with the
+    post asked for under any of LinkedIn's spellings of it; None otherwise.
+    """
+    wanted = onboarding._activity_id(post_urn)
+    if not wanted:
+        return None
+    conn = get_db()
+    try:
+        for row in conn.execute("SELECT DISTINCT post_urn FROM lead_interactions WHERE lead_id = ? "
+                                "AND post_urn IS NOT NULL", (lead_id,)):
+            if onboarding._activity_id(row[0]) == wanted:
+                return row[0]
+    finally:
+        conn.close()
+    return None
+
+
 @router.put("/api/leads/{lead_id}/status")
 def update_lead(lead_id: str, payload: LeadStatusUpdate):
-    result = update_lead_status(lead_id, payload.status, payload.notes)
+    post_urn = None
+    if payload.post_urn:
+        # A change is recorded as coming from a post only when the person
+        # engaged with that post; otherwise it is refused, not recorded
+        # without it, so the screen can say so.
+        post_urn = _engaged_post(lead_id, payload.post_urn)
+        if post_urn is None:
+            raise HTTPException(status_code=422, detail="This person has not engaged with that post, so the change "
+                                                        "cannot be recorded as coming from it.")
+    result = update_lead_status(lead_id, payload.status, payload.notes, post_urn=post_urn)
     if result.get("status") == "not_found":
         raise HTTPException(status_code=404, detail=f"Lead '{lead_id}' not found")
     if result.get("status") == "error":
@@ -260,7 +291,24 @@ def get_lead_interaction_timeline(lead_id: str):
     res = reverse_crm.get_lead_timeline(lead_id)
     if res["status"] == "not_found":
         raise HTTPException(status_code=404, detail="Lead not found")
-    res["interactions"] = onboarding.annotate_interactions(res["interactions"])
+    conn = get_db()
+    try:
+        stage_history = [dict(r) for r in conn.execute(
+            "SELECT from_status, to_status, changed_at, post_urn FROM lead_stage_events WHERE lead_id = ? "
+            "ORDER BY changed_at", (lead_id,))]
+    finally:
+        conn.close()
+    # One annotation for one read (tests/test_qc3_t7_leads_dossier.py): the
+    # interactions, and the stage changes made from a post, each given its
+    # post's opening by the same reading of the creator's posts.
+    from_posts = [event for event in stage_history if event["post_urn"]]
+    interactions = res["interactions"]
+    res["interactions"] = onboarding.annotate_interactions(interactions + from_posts)[:len(interactions)]
+    for event in stage_history:
+        if not event["post_urn"]:
+            event["post_excerpt"] = None
+        event.pop("post_origin", None)
+    res["stage_history"] = stage_history
     # Reactions older than 24 months that retention folded into counts: how
     # many, and on whose posts; which posts is no longer kept.
     res["folded_reactions"] = retention.folded_for_lead(lead_id)
@@ -271,13 +319,6 @@ def get_lead_interaction_timeline(lead_id: str):
     res["lead"]["scored"] = (bool(res["interactions"]) or bool(res["folded_reactions"])
                              or float(res["lead"].get("icp_score") or 0) > 0)
     res["lead"]["qualification_tier"] = qualification_tier(res["lead"].get("icp_score"))
-    conn = get_db()
-    try:
-        res["stage_history"] = [dict(r) for r in conn.execute(
-            "SELECT from_status, to_status, changed_at FROM lead_stage_events WHERE lead_id = ? ORDER BY changed_at",
-            (lead_id,))]
-    finally:
-        conn.close()
     return res
 
 

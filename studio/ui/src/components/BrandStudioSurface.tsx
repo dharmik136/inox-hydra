@@ -4,37 +4,56 @@ import { useState as useLocalState } from "react";
 import { Archive, Check, Loader2, Network, RotateCcw, ShieldCheck } from "lucide-react";
 import {
   createBackup,
+  deleteLinkedInSession,
   exportData,
   fetchAiStatus,
   dismissSessionRemovedNotice,
   fetchAuthStatus,
   fetchBackups,
+  fetchBrandProfile,
   fetchEgressStatus,
+  fetchKeptList,
+  fetchModelTold,
   fetchProfile,
+  fetchSettingsOverview,
   restoreBackup,
   saveSessionCookies,
   saveProfile,
+  setAutostart,
+  setUpdatePreference,
+  unkeepLead,
   type AiStatus,
   type AuthStatus,
   type BackupListing,
+  type BrandProfile,
   type EgressStatus,
   type CreatorProfile,
+  type KeptPerson,
   type ProfileResponse,
+  type SettingsOverview,
 } from "@/lib/api";
 import { useStudioBack } from "@/lib/refresh";
-import type { SectionId } from "@/lib/navigation";
+import { formatLocal, formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { hasUnsavedWork, registerUnsavedWork, reloadStudio, unsavedWorkLabels } from "@/lib/unsaved";
 import { GroundingWorkspace } from "./GroundingWorkspace";
 import { LicenceWorkspace } from "./LicenceWorkspace";
 import { StoragePrivacyWorkspace } from "./StoragePrivacyWorkspace";
 
-type Workspace = "Identity" | "Watermark" | "Grounding" | "Local security" | "Storage and privacy" | "Licence";
+// Brand Studio was one screen of six tabs that opened on a Name, Headline and
+// Company form, the sections report's one outright one-view failure. It is
+// two now (batch 5): Brand, about you, opens on your profile as LinkedIn last
+// showed it, with its editors one level down; Settings, about this machine,
+// opens on an overview, with the rest one level down. Both live in this file,
+// so the code that says what leaves this machine stays where its guards read it.
+type BrandView = "Profile" | "Identity" | "Watermark";
+const BRAND_VIEWS: BrandView[] = ["Profile", "Identity", "Watermark"];
 
 // Grounding sits beside the other settings rather than in the composer: it
 // is a standing grant about what this machine will run and what leaves it,
 // not a per-draft choice.
-const WORKSPACES: Workspace[] = ["Identity", "Watermark", "Grounding", "Local security", "Storage and privacy", "Licence"];
+type SettingsView = "Overview" | "Grounding" | "Local security" | "Storage and privacy" | "Licence";
+const SETTINGS_VIEWS: SettingsView[] = ["Overview", "Grounding", "Local security", "Storage and privacy", "Licence"];
 
 /** The nine placements the backend accepts, laid out as they read on an image. */
 const POSITIONS = [
@@ -48,17 +67,19 @@ const STYLES = ["glass_pill", "solid_bar", "plain_text"] as const;
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "failed";
 
 /**
- * Brand Studio (blueprint section 14).
+ * Brand: what your profile shows, when each part was read, and how you sign
+ * your images (sections report, batch 5, rail row 11).
  *
- * Settings reframed as three workspaces with real previews, rather than a form
- * of labelled inputs. The watermark is positioned against an image sized frame
- * so the choice is made where it will be seen.
+ * Opens on the profile as LinkedIn last showed it. The identity and
+ * watermark editors are one level down, and the identity editor puts the
+ * two identities side by side: the profile LinkedIn showed, and the byline
+ * the studio signs images and slides with, which starts as that profile.
  */
-export function BrandStudioSurface({ section = "settings" }: { section?: SectionId } = {}) {
+export function BrandSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}) {
   const [profile, setProfile] = useState<CreatorProfile | null>(null);
   const [loaded, setLoaded] = useState<ProfileResponse | null>(null);
-  const [ai, setAi] = useState<AiStatus | null>(null);
-  const [workspace, setWorkspace] = useState<Workspace>("Identity");
+  const [asRead, setAsRead] = useState<BrandProfile | null>(null);
+  const [view, setView] = useState<BrandView>("Profile");
   const [state, setState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -69,40 +90,44 @@ export function BrandStudioSurface({ section = "settings" }: { section?: Section
   unsaved.current = state === "dirty" || state === "failed";
   useEffect(
     () =>
-      registerUnsavedWork("brand-studio", {
-        label: "Your Brand Studio edits",
-        // Whichever rail entry is showing it, Brand or Settings, so leaving
-        // that entry asks first.
-        section,
+      registerUnsavedWork("brand", {
+        label: "Your Brand edits",
+        section: "brand",
         check: () => unsaved.current,
       }),
-    [section],
+    [],
   );
 
   // Read again when the studio answers after an outage, but only while the
-  // profile is still missing: a profile on screen may hold edits not saved yet.
+  // byline is still missing: one on screen may hold edits not saved yet.
   const back = useStudioBack();
   const hasProfile = useRef(false);
   hasProfile.current = profile !== null;
   useEffect(() => {
-    if (hasProfile.current) return;
     let live = true;
-    Promise.all([fetchProfile(), fetchAiStatus().catch(() => null)])
-      .then(([profileResponse, aiStatus]) => {
+    fetchBrandProfile()
+      .then((answer) => live && setAsRead(answer))
+      .catch(() => undefined);
+    if (hasProfile.current) {
+      return () => {
+        live = false;
+      };
+    }
+    fetchProfile()
+      .then((profileResponse) => {
         if (!live) return;
         setLoaded(profileResponse);
         setProfile(profileResponse.profile);
-        setAi(aiStatus);
         setError(null);
       })
-      .catch(() => live && setError("The profile could not be read."));
+      .catch(() => live && setError("Your brand could not be read."));
     return () => {
       live = false;
     };
   }, [back]);
 
   if (error && !profile) return <Centered>{error.toUpperCase()}</Centered>;
-  if (!profile) return <Centered>LOADING BRAND STUDIO</Centered>;
+  if (!profile) return <Centered>LOADING YOUR BRAND</Centered>;
 
   /** Edits one field, keeping every other field intact for the write. */
   function edit<K extends keyof CreatorProfile>(key: K, value: CreatorProfile[K]) {
@@ -126,97 +151,580 @@ export function BrandStudioSurface({ section = "settings" }: { section?: Section
   }
 
   return (
-    <div className="mx-auto max-w-[86ch] px-8 py-8">
-      <div className="flex flex-wrap items-baseline justify-between gap-4">
-        <h1 className="studio-title">Brand Studio</h1>
-        <div className="flex items-center gap-3">
-          <span className="studio-meta" role="status" aria-live="polite">
-            {state === "saving" && (
-              <span className="flex items-center gap-1.5">
-                <Loader2 className="size-3 animate-spin" aria-hidden="true" />
-                SAVING
-              </span>
-            )}
-            {state === "saved" && (
-              <span className="flex items-center gap-1.5 text-signal-green-text">
-                <Check className="size-3" aria-hidden="true" />
-                SAVED
-              </span>
-            )}
-            {state === "dirty" && <span className="text-signal-orange-text">UNSAVED</span>}
-            {state === "failed" && (
-              <span className="text-signal-orange-text" title={error ?? undefined}>
-                SAVE FAILED
-              </span>
-            )}
-          </span>
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={state === "saving" || state === "idle"}
-            className="rounded-md bg-signal-orange px-3 py-1 text-xs font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
-          >
-            Save
-          </button>
+    <div className="mx-auto max-w-[96ch] px-8 py-8">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="studio-label">Brand</p>
+          <h1 className="studio-title mt-1">What your profile shows</h1>
         </div>
+        {view !== "Profile" && <SaveControl state={state} error={error} onSave={onSave} />}
       </div>
 
-      {/* Wraps rather than running off a phone width window, where the last
-          two tabs could only be reached by a sideways scroll. */}
-      <div className="mt-6 flex flex-wrap items-center gap-1" role="tablist" aria-label="Brand workspaces">
-        {WORKSPACES.map((candidate) => (
-          <button
-            key={candidate}
-            type="button"
-            role="tab"
-            aria-selected={workspace === candidate}
-            onClick={() => setWorkspace(candidate)}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-[12px] font-medium",
-              "transition-colors duration-(--studio-motion-fast) ease-(--ease-standard)",
-              workspace === candidate ? "bg-soft text-ink-primary" : "text-ink-muted hover:text-ink-secondary",
-            )}
-          >
-            {candidate}
-          </button>
-        ))}
-      </div>
+      <ViewTabs label="Brand views" views={BRAND_VIEWS} view={view} onView={setView} />
 
       <div className="mt-6">
-        {workspace === "Identity" && <IdentityWorkspace profile={profile} edit={edit} isSet={loaded?.is_set ?? false} />}
-        {workspace === "Watermark" && <WatermarkWorkspace profile={profile} edit={edit} />}
-        {workspace === "Grounding" && <GroundingWorkspace />}
-        {workspace === "Local security" && <SecurityWorkspace loaded={loaded} ai={ai} />}
-        {/* Your data first in this pane, and no longer at the foot of Local
-            security, where it sat at y=1322 in a 900 pixel window under a tab
-            about what leaves the machine. A creator looking for a copy of
-            their work looks in the pane named for their storage. */}
-        {workspace === "Storage and privacy" && (
-          <div className="flex flex-col gap-8">
-            <YourData />
-            <StoragePrivacyWorkspace />
-          </div>
+        {view === "Profile" && <ProfileAsRead asRead={asRead} byline={profile} onOpenSetup={onOpenSetup} onEdit={() => setView("Identity")} />}
+        {view === "Identity" && (
+          <IdentityWorkspace profile={profile} edit={edit} isSet={loaded?.is_set ?? false} asRead={asRead} />
         )}
-        {workspace === "Licence" && <LicenceWorkspace />}
+        {view === "Watermark" && <WatermarkWorkspace profile={profile} edit={edit} />}
       </div>
     </div>
   );
 }
 
+/**
+ * Settings: what leaves this machine, what is kept and backed up, what runs
+ * here, and what licence you hold (sections report, batch 5, rail row 16).
+ *
+ * Opens on an overview with the values that matter visible, and the rest one
+ * level down: Grounding, Local security, Storage and privacy, Licence.
+ */
+export function SettingsSurface() {
+  const [view, setView] = useState<SettingsView>("Overview");
+  const [loaded, setLoaded] = useState<ProfileResponse | null>(null);
+  const [ai, setAi] = useState<AiStatus | null>(null);
+
+  // What Local security says about the model and the session; each is read
+  // on its own, so one failing leaves the rest of Settings standing.
+  const back = useStudioBack();
+  useEffect(() => {
+    let live = true;
+    fetchProfile()
+      .then((answer) => live && setLoaded(answer))
+      .catch(() => undefined);
+    fetchAiStatus()
+      .then((answer) => live && setAi(answer))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [back]);
+
+  return (
+    <div className="mx-auto max-w-[96ch] px-8 py-8">
+      <p className="studio-label">Settings</p>
+      <h1 className="studio-title mt-1">What runs here, and what leaves</h1>
+
+      <ViewTabs label="Settings views" views={SETTINGS_VIEWS} view={view} onView={setView} />
+
+      <div className="mt-6">
+        {view === "Overview" && <SettingsOverviewView onOpen={setView} />}
+        {view === "Grounding" && <GroundingWorkspace />}
+        {view === "Local security" && <SecurityWorkspace loaded={loaded} ai={ai} />}
+        {/* Your data first in this pane: a creator looking for a copy of
+            their work looks in the pane named for their storage. */}
+        {view === "Storage and privacy" && (
+          <div className="flex flex-col gap-8">
+            <YourData />
+            <StoragePrivacyWorkspace />
+            <KeptList />
+          </div>
+        )}
+        {view === "Licence" && <LicenceWorkspace />}
+      </div>
+    </div>
+  );
+}
+
+/** One level down, as tabs that wrap rather than run off a phone width window. */
+function ViewTabs<V extends string>({
+  label,
+  views,
+  view,
+  onView,
+}: {
+  label: string;
+  views: V[];
+  view: V;
+  onView: (view: V) => void;
+}) {
+  return (
+    <div className="mt-6 flex flex-wrap items-center gap-1" role="tablist" aria-label={label}>
+      {views.map((candidate) => (
+        <button
+          key={candidate}
+          type="button"
+          role="tab"
+          aria-selected={view === candidate}
+          onClick={() => onView(candidate)}
+          className={cn(
+            "rounded-md px-3 py-1.5 text-[12px] font-medium",
+            "transition-colors duration-(--studio-motion-fast) ease-(--ease-standard)",
+            view === candidate ? "bg-soft text-ink-primary" : "text-ink-muted hover:text-ink-secondary",
+          )}
+        >
+          {candidate}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SaveControl({ state, error, onSave }: { state: SaveState; error: string | null; onSave: () => void }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="studio-meta" role="status" aria-live="polite">
+        {state === "saving" && (
+          <span className="flex items-center gap-1.5">
+            <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+            SAVING
+          </span>
+        )}
+        {state === "saved" && (
+          <span className="flex items-center gap-1.5 text-signal-green-text">
+            <Check className="size-3" aria-hidden="true" />
+            SAVED
+          </span>
+        )}
+        {state === "dirty" && <span className="text-signal-orange-text">UNSAVED</span>}
+        {state === "failed" && (
+          <span className="text-signal-orange-text" title={error ?? undefined}>
+            SAVE FAILED
+          </span>
+        )}
+      </span>
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={state === "saving" || state === "idle"}
+        className="rounded-md bg-signal-orange px-3 py-1 text-xs font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
+      >
+        Save
+      </button>
+    </div>
+  );
+}
+
+/** "READ TUE 20 OCT": when a part of the profile was read, or that it was not. */
+function readOn(at: string | null | undefined): string {
+  return at ? `READ ${formatLocalDay(at).toUpperCase()}` : "READ DATE NOT KNOWN";
+}
+
+/**
+ * Your profile as LinkedIn last showed it, each part with the date it was
+ * read; the follower and connection counts on the days they were read; how
+ * you sign images; and how you write, measured. Nothing here is edited: it
+ * is what the bridge read, and it changes when you next open your profile.
+ */
+function ProfileAsRead({
+  asRead,
+  byline,
+  onOpenSetup,
+  onEdit,
+}: {
+  asRead: BrandProfile | null;
+  byline: CreatorProfile;
+  onOpenSetup?: () => void;
+  onEdit: () => void;
+}) {
+  const [habits, setHabits] = useState<string[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetchModelTold()
+      .then((told) => live && setHabits(told.voice.habits))
+      .catch(() => live && setHabits([]));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (asRead === null) return <p className="studio-meta text-ink-muted">READING YOUR PROFILE</p>;
+  if (!asRead.confirmed || !asRead.profile) {
+    return (
+      <p className="text-[13px] leading-relaxed text-ink-secondary">
+        Your profile is shown here once you confirm which LinkedIn profile is yours in Setup, and the bridge reads it.
+        {onOpenSetup && (
+          <>
+            {" "}
+            <button type="button" onClick={onOpenSetup} className="underline decoration-edge-strong underline-offset-2 hover:text-ink-primary">
+              Go to Setup
+            </button>
+          </>
+        )}
+      </p>
+    );
+  }
+  const you = asRead.profile;
+  const audience = [...asRead.audience].reverse();
+  const skillsRead = asRead.skills.map((s) => s.read_at ?? "").sort().pop() || null;
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+      <div className="flex min-w-0 flex-col gap-5">
+        <section>
+          <p className="text-[15px] font-medium text-ink-primary">{you.name ?? "Name not read"}</p>
+          <p className="text-[13px] text-ink-secondary">{you.headline ?? "Headline not read"}</p>
+          <p className="studio-meta mt-1 text-[10px] text-ink-muted">
+            {[you.location, you.company].filter(Boolean).join(" · ").toUpperCase()}
+            {you.location || you.company ? " · " : ""}
+            {readOn(you.read_at)}
+          </p>
+          {you.about && <p className="mt-2 line-clamp-4 text-[13px] leading-relaxed text-ink-secondary">{you.about}</p>}
+        </section>
+
+        <section>
+          <p className="studio-label mb-1.5">Roles</p>
+          {asRead.positions.length === 0 ? (
+            <p className="text-[12px] text-ink-muted">No role read yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {asRead.positions.map((role, index) => (
+                <li key={`${role.title}-${index}`}>
+                  <p className="text-[13px] text-ink-primary">{[role.title, role.company].filter(Boolean).join(", ")}</p>
+                  <p className="studio-meta text-[10px] text-ink-muted">
+                    {[role.date_range, role.location].filter(Boolean).join(" · ").toUpperCase()}
+                    {role.date_range || role.location ? " · " : ""}
+                    {readOn(role.read_at)}
+                  </p>
+                  {role.description && <p className="mt-0.5 line-clamp-2 text-[12px] text-ink-secondary">{role.description}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section>
+          <p className="studio-label mb-1.5">Education</p>
+          {asRead.education.length === 0 ? (
+            <p className="text-[12px] text-ink-muted">No school read yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {asRead.education.map((school, index) => (
+                <li key={`${school.school}-${index}`} className="text-[13px] text-ink-secondary">
+                  {[school.school, school.degree].filter(Boolean).join(", ")}
+                  <span className="studio-meta ml-2 text-[10px] text-ink-muted">
+                    {school.date_range ? `${school.date_range.toUpperCase()} · ` : ""}
+                    {readOn(school.read_at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section>
+          <p className="studio-label mb-1.5">Skills</p>
+          {asRead.skills.length === 0 ? (
+            <p className="text-[12px] text-ink-muted">No skill read yet.</p>
+          ) : (
+            <p className="text-[13px] leading-relaxed text-ink-secondary">
+              {asRead.skills.map((s) => s.skill).join(", ")}
+              <span className="studio-meta ml-2 text-[10px] text-ink-muted">{readOn(skillsRead)}</span>
+            </p>
+          )}
+        </section>
+      </div>
+
+      <aside className="flex min-w-0 flex-col gap-5">
+        <section>
+          <p className="studio-label mb-1.5">Followers and connections</p>
+          {audience.length === 0 ? (
+            <p className="text-[12px] text-ink-muted">Not read yet: they are read each time your profile is.</p>
+          ) : (
+            <>
+              <table className="w-full text-left text-[12px]">
+                <thead>
+                  <tr className="studio-meta text-[10px] text-ink-muted">
+                    <th className="py-0.5 font-normal">DAY READ</th>
+                    <th className="py-0.5 text-right font-normal">FOLLOWERS</th>
+                    <th className="py-0.5 text-right font-normal">CONNECTIONS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-edge text-ink-secondary">
+                  {audience.slice(0, 6).map((point) => (
+                    <tr key={point.date}>
+                      <td className="py-0.5">{formatLocalDay(`${point.date}T12:00:00Z`)}</td>
+                      <td className="py-0.5 text-right tabular-nums">{point.followers === null ? "not read" : point.followers.toLocaleString()}</td>
+                      <td className="py-0.5 text-right tabular-nums">{point.connections === null ? "not read" : point.connections.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="studio-meta mt-1 text-[10px] text-ink-muted">
+                ON THE {audience.length} {audience.length === 1 ? "DAY" : "DAYS"} YOUR PROFILE WAS READ, NOT EVERY DAY
+              </p>
+            </>
+          )}
+        </section>
+
+        <section>
+          <p className="studio-label mb-1.5">How you sign images and slides</p>
+          <div className="rounded-lg border border-edge bg-raised p-3">
+            <p className="truncate text-[13px] font-medium text-ink-primary">{byline.name || <span className="text-ink-muted">Unnamed</span>}</p>
+            <p className="truncate text-[11px] text-ink-muted">{byline.headline || byline.company || "No headline"}</p>
+          </div>
+          <button type="button" onClick={onEdit} className="mt-1.5 text-[12px] text-ink-secondary underline decoration-edge-strong underline-offset-2 hover:text-ink-primary">
+            Change it under Identity
+          </button>
+        </section>
+
+        <section>
+          <p className="studio-label mb-1.5">How you write</p>
+          {habits === null ? (
+            <p className="studio-meta text-ink-muted">READING</p>
+          ) : habits.length === 0 ? (
+            <p className="text-[12px] text-ink-muted">Measured once three of your posts are held.</p>
+          ) : (
+            <ul className="flex flex-col gap-0.5 text-[12px] leading-snug text-ink-secondary">
+              {habits.map((line) => (
+                <li key={line}>{line.replace(/^- /, "").replace("of their posts", "of your posts")}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </aside>
+    </div>
+  );
+}
+
+/**
+ * The values Settings opens on, each from the module that owns it, with the
+ * place one level down where it can be changed.
+ */
+function SettingsOverviewView({ onOpen }: { onOpen: (view: SettingsView) => void }) {
+  const [overview, setOverview] = useState<SettingsOverview | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const back = useStudioBack();
+
+  const read = useCallback(() => {
+    fetchSettingsOverview()
+      .then((answer) => {
+        setOverview(answer);
+        setFailed(false);
+      })
+      .catch(() => setFailed(true));
+  }, []);
+  useEffect(() => read(), [read, back]);
+
+  if (failed && !overview) return <p className="studio-meta text-ink-muted">SETTINGS COULD NOT BE READ. IS THE STUDIO RUNNING?</p>;
+  if (!overview) return <p className="studio-meta text-ink-muted">READING</p>;
+
+  const { backup, cleanup, egress, licence, updates, autostart } = overview;
+  const JOB_NAMES: Record<string, string> = { telemetry: "Old telemetry", readings: "Old post readings", reactions: "Old reactions" };
+
+  async function toggle(action: () => Promise<unknown>, done: string) {
+    setNote(null);
+    try {
+      await action();
+      setNote(done);
+    } catch (caught) {
+      setNote(caught instanceof Error ? caught.message : "The change was refused.");
+    }
+    read();
+  }
+
+  return (
+    <div className="grid gap-px border border-edge bg-edge sm:grid-cols-2">
+      <OverviewCard title="Last backup" action="Storage and privacy" onOpen={onOpen}>
+        {backup.last
+          ? `${formatLocal(backup.last.made_at)}, ${backup.last.verified === true ? "verified" : backup.last.verified === false ? "its check failed" : "made before checks were recorded"}.`
+          : "None yet."}{" "}
+        {backup.enabled ? (backup.next_due ? `The next is due ${formatLocal(backup.next_due)}.` : "") : "The daily backup is off."}
+        {backup.stale && " The daily backup has stopped producing backups."}
+      </OverviewCard>
+      <OverviewCard title="Next cleanup" action="Storage and privacy" onOpen={onOpen}>
+        {cleanup.jobs
+          .map((job) => `${JOB_NAMES[job.job] ?? job.job}: ${job.state}${job.rows !== null && job.state !== "off" ? `, ${job.rows.toLocaleString()} rows now` : ""}`)
+          .join("; ")}
+        . Cleanups run {cleanup.runs}.
+      </OverviewCard>
+      <OverviewCard title="What has left this machine" action="Local security" onOpen={onOpen}>
+        {egress.total_performed === 0
+          ? "No counted request"
+          : `${egress.total_performed.toLocaleString()} counted request${egress.total_performed === 1 ? "" : "s"}`}{" "}
+        since {egress.since}
+        {egress.total_refused > 0 ? `, ${egress.total_refused.toLocaleString()} refused` : ""}.
+        {egress.master_off && " Every connection is refused."}
+      </OverviewCard>
+      <OverviewCard title="Licence" action="Licence" onOpen={onOpen}>
+        {licence.tier_label}
+        {licence.expires_at ? `, ends ${licence.expires_at}` : licence.updates_until ? `, updates until ${licence.updates_until}` : ""}.
+      </OverviewCard>
+      <OverviewCard title="Update check">
+        {updates.enabled
+          ? `On. Studio ${updates.current_version}${updates.last_checked ? `, last checked ${formatLocal(updates.last_checked)}` : ", not checked yet"}.`
+          : "Off: no request leaves this machine for a version check."}{" "}
+        <button
+          type="button"
+          onClick={() => void toggle(() => setUpdatePreference(!updates.enabled), updates.enabled ? "The update check is off." : "The update check is on.")}
+          className="underline decoration-edge-strong underline-offset-2 hover:text-ink-primary"
+        >
+          {updates.enabled ? "Turn it off" : "Turn it on"}
+        </button>
+      </OverviewCard>
+      <OverviewCard title="Start with your computer">
+        {!autostart.supported || !autostart.available ? (
+          "Not available on this system."
+        ) : (
+          <>
+            {autostart.enabled ? "On: the studio starts when you sign in." : "Off."}{" "}
+            <button
+              type="button"
+              onClick={() => void toggle(() => setAutostart(!autostart.enabled), autostart.enabled ? "The studio no longer starts with your computer." : "The studio starts with your computer.")}
+              className="underline decoration-edge-strong underline-offset-2 hover:text-ink-primary"
+            >
+              {autostart.enabled ? "Turn it off" : "Turn it on"}
+            </button>
+          </>
+        )}
+      </OverviewCard>
+      {note && (
+        <p role="status" className="bg-ink px-3 py-2 text-[12px] text-ink-secondary sm:col-span-2">
+          {note}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function OverviewCard({
+  title,
+  action,
+  onOpen,
+  children,
+}: {
+  title: string;
+  action?: SettingsView;
+  onOpen?: (view: SettingsView) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="bg-ink px-3 py-2.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="studio-label">{title}</p>
+        {action && onOpen && (
+          <button type="button" onClick={() => onOpen(action)} className="text-[11px] text-ink-muted underline decoration-edge underline-offset-2 hover:text-ink-primary">
+            {action}
+          </button>
+        )}
+      </div>
+      <p className="mt-1 text-[12px] leading-snug text-ink-secondary">{children}</p>
+    </section>
+  );
+}
+
+/**
+ * The people you kept from the review, and when, with the keep taken back
+ * one at a time. Kept people were read only as an exclusion, so a keep could
+ * be made and never seen again.
+ */
+function KeptList() {
+  const [kept, setKept] = useState<KeptPerson[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const read = useCallback(() => {
+    fetchKeptList()
+      .then((answer) => {
+        setKept(answer);
+        setFailed(false);
+      })
+      .catch(() => setFailed(true));
+  }, []);
+  useEffect(() => read(), [read]);
+
+  return (
+    <section aria-labelledby="kept-heading">
+      <p id="kept-heading" className="studio-label mb-2">Kept from the review</p>
+      {failed ? (
+        <p className="studio-meta text-ink-muted">THE KEPT LIST COULD NOT BE READ</p>
+      ) : kept === null ? (
+        <p className="studio-meta text-ink-muted">READING</p>
+      ) : kept.length === 0 ? (
+        <p className="text-[12px] text-ink-muted">Nobody is kept. People you keep from the silent-lead review are listed here.</p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-edge border-y border-edge">
+          {kept.map((person) => (
+            <li key={person.lead_id} className="flex items-baseline justify-between gap-3 py-1.5">
+              <span className="min-w-0 truncate text-[12px] text-ink-secondary">
+                {person.name ?? "A person with no name"}
+                <span className="studio-meta ml-2 text-[10px] text-ink-muted">KEPT {formatLocalDay(person.kept_at).toUpperCase()}</span>
+              </span>
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => {
+                  setBusy(person.lead_id);
+                  void unkeepLead(person.lead_id).finally(() => {
+                    setBusy(null);
+                    read();
+                  });
+                }}
+                className="shrink-0 rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                aria-label={`Take back the keep of ${person.name ?? "this person"}`}
+              >
+                Take back
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 type Editor = <K extends keyof CreatorProfile>(key: K, value: CreatorProfile[K]) => void;
 
+/**
+ * The two identities, side by side, as one control (sections report, batch
+ * 5). Your profile as LinkedIn showed it is what Setup confirmed and the
+ * bridge reads; your byline is how the studio signs images, slides and the
+ * feed preview. The byline starts as the profile when you confirm it, and is
+ * yours to change here; "Use what LinkedIn shows" brings them back in line.
+ */
 function IdentityWorkspace({
   profile,
   edit,
   isSet,
+  asRead,
 }: {
   profile: CreatorProfile;
   edit: Editor;
   isSet: boolean;
+  asRead: BrandProfile | null;
 }) {
+  const linkedIn = asRead?.confirmed ? asRead.profile : null;
+  const differs =
+    linkedIn !== null &&
+    ((linkedIn.name ?? "") !== profile.name ||
+      (linkedIn.headline ?? "") !== profile.headline ||
+      (linkedIn.company ?? "") !== profile.company);
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
       <div className="flex flex-col gap-4">
+        <section className="rounded-md border border-edge px-3 py-2.5">
+          <p className="studio-label">Your profile on LinkedIn</p>
+          {linkedIn ? (
+            <>
+              <dl className="mt-1.5 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-[12px]">
+                <dt className="text-ink-muted">Name</dt>
+                <dd className="text-ink-secondary">{linkedIn.name ?? "not read"}</dd>
+                <dt className="text-ink-muted">Headline</dt>
+                <dd className="text-ink-secondary">{linkedIn.headline ?? "not read"}</dd>
+                <dt className="text-ink-muted">Company</dt>
+                <dd className="text-ink-secondary">{linkedIn.company ?? "not read"}</dd>
+              </dl>
+              <p className="studio-meta mt-1 text-[10px] text-ink-muted">CONFIRMED IN SETUP · {readOn(linkedIn.read_at)}</p>
+              {differs && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    edit("name", linkedIn.name ?? "");
+                    edit("headline", linkedIn.headline ?? "");
+                    edit("company", linkedIn.company ?? "");
+                  }}
+                  className="mt-2 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+                >
+                  Use what LinkedIn shows
+                </button>
+              )}
+            </>
+          ) : (
+            <p className="mt-1 text-[12px] text-ink-muted">Not confirmed yet. Setup confirms which LinkedIn profile is yours.</p>
+          )}
+        </section>
+        <p className="studio-label">Your byline, on images, slides and the feed preview</p>
         <Field label="Name" value={profile.name} onChange={(v) => edit("name", v)} placeholder="How you sign your work" />
         <Field
           label="Headline"
@@ -474,8 +982,12 @@ function SecurityWorkspace({ loaded, ai }: { loaded: ProfileResponse | null; ai:
  * to a directory on this machine, and telling you where it went is more useful
  * than handing back bytes the browser would put somewhere else.
  */
+/** How many backups the list opens on; the rest are one click away. */
+const BACKUPS_SHOWN = 5;
+
 function YourData() {
   const [listing, setListing] = useState<BackupListing | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -653,13 +1165,28 @@ function YourData() {
             {listing.count} ARCHIVE{listing.count === 1 ? "" : "S"}
           </p>
           <ul className="flex flex-col gap-1">
-            {listing.backups.slice(0, 5).map((archive) => (
+            {(showAll ? listing.backups : listing.backups.slice(0, BACKUPS_SHOWN)).map((archive) => (
               <li key={archive.name} className="flex items-center justify-between gap-3">
                 <span className="min-w-0 flex-1 truncate text-[12px] text-ink-secondary">{archive.name}</span>
                 <span className="studio-meta shrink-0 text-[10px] text-ink-muted">
                   {readableBytes(archive.bytes)}
                   <span className="mx-1.5">·</span>
                   {archive.modified.slice(0, 16).replace("T", " ")}
+                  {/* Whether its integrity check passed when it was made, and
+                      the schema it holds, which the inspector read and the
+                      list dropped (sections report, batch 5). */}
+                  {archive.kind === "backup" && (
+                    <>
+                      <span className="mx-1.5">·</span>
+                      {archive.verified === true ? "VERIFIED" : archive.verified === false ? "CHECK FAILED" : "NOT CHECKED"}
+                    </>
+                  )}
+                  {archive.schema_version != null && (
+                    <>
+                      <span className="mx-1.5">·</span>
+                      SCHEMA {archive.schema_version}
+                    </>
+                  )}
                 </span>
                 {archive.restorable && (
                   <button
@@ -680,6 +1207,15 @@ function YourData() {
               </li>
             ))}
           </ul>
+          {listing.backups.length > BACKUPS_SHOWN && (
+            <button
+              type="button"
+              onClick={() => setShowAll(!showAll)}
+              className="mt-1.5 text-[11px] text-ink-secondary underline decoration-edge-strong underline-offset-2 hover:text-ink-primary"
+            >
+              {showAll ? `Show the newest ${BACKUPS_SHOWN}` : `Show all ${listing.backups.length}`}
+            </button>
+          )}
           <p className="studio-meta mt-2 break-all text-[10px] text-ink-muted">
             {listing.directory}
           </p>
@@ -764,7 +1300,7 @@ function EgressLedger() {
 
           <ul className="flex flex-col gap-1">
             {status.categories.map((category) => (
-              <li key={category.name} className="flex items-baseline justify-between gap-3">
+              <li key={category.name} className="flex flex-wrap items-baseline justify-between gap-x-3">
                 <span className="text-[12px] text-ink-secondary">
                   {category.name}
                   {!category.allowed && (
@@ -779,6 +1315,13 @@ function EgressLedger() {
                       {category.refused} refused
                     </>
                   )}
+                </span>
+                {/* Its switch, its default, and the last place it went or was
+                    refused, which the ledger held and the screen dropped. */}
+                <span className="studio-meta w-full text-[10px] leading-snug text-ink-muted">
+                  {category.flag} · {category.default_allowed ? "ON" : "OFF"} BY DEFAULT
+                  {category.last_destination ? ` · LAST SENT TO ${category.last_destination}` : ""}
+                  {category.last_refused_endpoint ? ` · LAST REFUSED ${category.last_refused_endpoint}` : ""}
                 </span>
               </li>
             ))}
@@ -847,6 +1390,23 @@ function SessionConnection() {
   const [jsession, setJsession] = useLocalState("");
   const [busy, setBusy] = useLocalState(false);
   const [note, setNote] = useLocalState<string | null>(null);
+  // Deleting asks once, as Setup's control did before it moved here.
+  const [confirming, setConfirming] = useLocalState(false);
+
+  async function onDelete() {
+    setBusy(true);
+    setNote(null);
+    try {
+      await deleteLinkedInSession();
+      setConfirming(false);
+      setAuth(await fetchAuthStatus());
+      setNote("The LinkedIn session is deleted. The extension's Sync button captures it again.");
+    } catch (caught) {
+      setNote(caught instanceof Error ? caught.message : "The delete was refused.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     let live = true;
@@ -908,13 +1468,58 @@ function SessionConnection() {
           <dd
             className={cn(
               "studio-meta",
-              auth?.client_session ? "text-signal-green-text" : "text-ink-muted",
+              auth?.client_session ? "text-signal-green-text" : auth?.stored ? "text-signal-orange-text" : "text-ink-muted",
             )}
           >
-            {auth === null ? "READING" : auth.client_session ? "PRESENT" : "NONE"}
+            {auth === null ? "READING" : auth.client_session ? "PRESENT" : auth.stored ? "STORED, NOT USABLE" : "NONE"}
           </dd>
         </div>
+        {(auth?.client_session || auth?.stored) && (
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="text-[12px] text-ink-secondary">Saved</dt>
+            <dd className="studio-meta text-ink-muted">
+              {auth.saved_at ? formatLocal(auth.saved_at).toUpperCase() : "WHEN IS NOT KNOWN"}
+              {auth.account
+                ? ` · FOR @${auth.account.vanity.toUpperCase()}`
+                : " · ACCOUNT NOT KNOWN: SAVED BY HAND, NOT BY THE EXTENSION'S SYNC"}
+            </dd>
+          </div>
+        )}
       </dl>
+
+      {/* The one control for the session (sections report, batch 5): Setup
+          showed it with Delete, Brand Studio with Save, each from its own
+          key. Both are here now, answered from /api/auth/status. */}
+      {(auth?.client_session || auth?.stored) && !confirming && (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          disabled={busy}
+          className="mb-3 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+        >
+          Delete
+        </button>
+      )}
+      {(auth?.client_session || auth?.stored) && confirming && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void onDelete()}
+            disabled={busy}
+            className="rounded-md border border-signal-orange px-2.5 py-1 text-[11px] text-signal-orange-text transition-colors hover:bg-soft disabled:opacity-40"
+          >
+            Yes, delete the session
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            disabled={busy}
+            className="rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+          >
+            Keep it
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-col gap-2">
         <input

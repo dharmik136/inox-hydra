@@ -104,7 +104,9 @@ def test_cli_reference_describes_the_narrow_reset():
     article = _read(os.path.join(HELP, "command-line-tool-reference.md"))
     for stale in ("every row of the settings table", "Clears the settings table", "It clears more"):
         assert stale not in article, f"the article still says {stale!r}"
-    for kept in ("Brand Studio profile", "queue"):
+    # "your Brand byline and watermark" since Brand Studio split in two (cycle
+    # 4, track 4, phase b).
+    for kept in ("your Brand byline and watermark", "queue"):
         assert kept in article
     assert "AI provider" in article and "LinkedIn session" in article
     assert "ai_api_key" in RESET_SETTING_KEYS and "li_at" in RESET_SETTING_KEYS

@@ -1822,7 +1822,6 @@ def get_auth_status():
         cursor.execute("SELECT value FROM settings WHERE key = 'session_status'")
         row = cursor.fetchone()
         status = row["value"] if row else "disconnected"
-        conn.close()
         # is_connected requires both halves, not just the stored string.
         #
         # It used to read the settings row alone, so a fresh install with no
@@ -1837,10 +1836,26 @@ def get_auth_status():
         # things and a caller may need to tell "the app believes it connected
         # once" apart from "usable tokens are on disk right now".
         held = linkedin_client.is_authenticated()
+        # Since when, and whose: the one answer Setup and Brand Studio used
+        # to give from two keys (sections report, batch 5). The account is
+        # known only for a session the extension's Sync captured.
+        saved = conn.execute("SELECT value FROM settings WHERE key = 'last_token_update'").fetchone()
+        account = conn.execute("SELECT value FROM settings WHERE key = 'linkedin_session_account'").fetchone()
+        # Anything on disk, usable or not: what Setup called stored. A stored
+        # session the client cannot use is still a credential to delete.
+        stored = conn.execute("SELECT 1 FROM settings WHERE key = 'li_at' AND COALESCE(value, '') != ''").fetchone()
+        try:
+            account_value = json.loads(account["value"]) if account and account["value"] else None
+        except (TypeError, ValueError):
+            account_value = None
         return {
             "status": status,
             "is_connected": status in ["connected", "ready"] and held,
             "client_session": held,
+            "stored": bool(stored),
+            "saved_at": saved["value"] if stored and saved else None,
+            "account": ({"vanity": account_value.get("vanity")}
+                        if held and isinstance(account_value, dict) and account_value.get("vanity") else None),
             # Said once, where sessions are managed, when a session an earlier
             # version kept in a profile beyond the first was removed (D9).
             "session_removed": linkedin_client_module.session_removed_notice(),
@@ -1974,6 +1989,15 @@ except (ImportError, ValueError):
     from routers import events as events_router_module
 
 app.include_router(events_router_module.router)
+
+# Brand and Settings, split from Brand Studio (cycle 4, track 4, phase b): the
+# profile as last read, and the overview Settings opens on.
+try:
+    from .routers import brand_settings as brand_settings_router_module
+except (ImportError, ValueError):
+    from routers import brand_settings as brand_settings_router_module
+
+app.include_router(brand_settings_router_module.router)
 
 # From your record (cycle 4, track 7): the daily section's routes.
 try:
@@ -3020,6 +3044,7 @@ def list_support_backups():
             continue
         # One damaged file (a malformed manifest, a cut-short ZIP) must not
         # take the whole list down with it: it is listed as unreadable.
+        info: Dict[str, Any] = {}
         try:
             info = support_tools.inspect_backup(full)
             kind = info.get("kind") if info.get("has_database") else "other"
@@ -3028,6 +3053,11 @@ def list_support_backups():
         entries.append({"name": name, "bytes": os.path.getsize(full),
                         "modified": datetime.fromtimestamp(os.path.getmtime(full)).isoformat(),
                         "kind": kind, "restorable": kind in ("backup", "database"),
+                        # Whether its integrity check passed when it was made,
+                        # and the schema it holds (sections report, batch 5):
+                        # the inspector read both and the list dropped them.
+                        "verified": support_tools.verified_of(info.get("manifest")),
+                        "schema_version": info.get("schema_version"),
                         "_mtime": os.path.getmtime(full)})
     order = {"backup": 0, "database": 1}
     entries.sort(key=lambda entry: (order.get(entry["kind"], 2), -entry["_mtime"]))

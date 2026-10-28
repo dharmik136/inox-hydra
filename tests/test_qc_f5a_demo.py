@@ -13,6 +13,11 @@ people or the drafts.
 Now every start without the flag removes what the seeder can be shown to have
 written, and nothing else: a lead captured, a draft written or a seeded draft
 the creator rewrote during a demo stays.
+
+Since cycle 4 (track 4, phase b) demo mode no longer seeds the Launch Kit or
+the two September posts, and seeds the sample creator's own queue and drafts
+instead. Installs an earlier version seeded still hold them, so the fixture
+adds them as 2.9.0 left them, and every rule below is still checked on them.
 """
 
 import os
@@ -34,7 +39,24 @@ def demo_home(monkeypatch):
 
     database.init_db()
     database.seed_initial_data()
+    _as_an_earlier_version_seeded(database)
     yield database
+
+
+def _as_an_earlier_version_seeded(database):
+    """What 2.9.0 and earlier seeded in demo mode, which the cleanup must still remove safely."""
+    conn = database.get_db()
+    try:
+        for seeder in database._DEMO_DRAFT_SEEDERS:
+            seeder(conn)
+        for row in database.demo_post_rows():
+            if row[0] in database.RETIRED_DEMO_POST_IDS:
+                conn.execute(
+                    "INSERT OR REPLACE INTO posts (id, content, media_urls, status, scheduled_for, published_at, "
+                    "impressions, reactions, comments, shares, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _count(database, sql, args=()):
@@ -61,6 +83,8 @@ def test_the_premise_demo_mode_writes_all_of_it(demo_home):
     assert _count(demo_home, f"SELECT COUNT(*) FROM leads WHERE id IN ({marks})", ids) == 4
     assert _count(demo_home, "SELECT COUNT(*) FROM drafts") >= 16
     assert _count(demo_home, "SELECT COUNT(*) FROM analytics_daily WHERE source = 'seed'") == 90
+    assert _count(demo_home, "SELECT COUNT(*) FROM posts WHERE id LIKE 'demo-%'") == (
+        len(demo_home.DEMO_QUEUE_DRAFTS) + len(demo_home.DEMO_QUEUE_POSTS)), "the demo's queue and drafts"
 
 
 def test_turning_demo_mode_off_removes_every_invented_row(demo_home, monkeypatch):
@@ -74,6 +98,7 @@ def test_turning_demo_mode_off_removes_every_invented_row(demo_home, monkeypatch
         "the author's drafts": _count(demo_home, "SELECT COUNT(*) FROM drafts"),
         "their post rows": _count(demo_home, "SELECT COUNT(*) FROM posts WHERE id LIKE 'post-day%'"),
         "sample posts": _count(demo_home, f"SELECT COUNT(*) FROM posts WHERE id IN ({post_marks})", demo_home.DEMO_POST_IDS),
+        "the demo's queue and drafts": _count(demo_home, "SELECT COUNT(*) FROM posts WHERE id LIKE 'demo-%'"),
         "seeded analytics": _count(demo_home, "SELECT COUNT(*) FROM analytics_daily WHERE source = 'seed'"),
         "seeded audience": _count(demo_home, "SELECT COUNT(*) FROM audience_demographics WHERE source = 'seed'"),
     }

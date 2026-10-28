@@ -52,7 +52,8 @@ export function RepliesSurface({
   onOpenLead,
   onOpenSetup,
 }: {
-  onOpenLead?: (leadId: string) => void;
+  /** Opens the person in Leads, with the post their comment is on. */
+  onOpenLead?: (leadId: string, fromPost?: string) => void;
   onOpenSetup?: () => void;
 } = {}) {
   const [days, setDays] = useState<number>(14);
@@ -338,7 +339,7 @@ export function RepliesSurface({
                         {onOpenLead ? (
                           <button
                             type="button"
-                            onClick={() => onOpenLead(comment.lead_id)}
+                            onClick={() => onOpenLead(comment.lead_id, comment.post_urn)}
                             className="shrink-0 text-left text-[13px] font-medium text-ink-primary underline decoration-edge-strong underline-offset-2 hover:text-signal-orange-text"
                           >
                             {comment.name}

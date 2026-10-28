@@ -397,7 +397,7 @@ export function TodaySurface({
       {backups.data?.stale && (
         <p role="status" className="studio-meta shrink-0 rounded-md border border-signal-orange px-3 py-1.5 leading-snug text-signal-orange-text">
           NO BACKUP FOR {Math.round(backups.data.age_hours ?? 0)} HOURS. THE DAILY BACKUP IS ON BUT HAS
-          NOT RUN; THE NEWEST COPY YOU COULD RESTORE FROM IS THAT OLD. SEE STORAGE AND PRIVACY IN BRAND STUDIO.
+          NOT RUN; THE NEWEST COPY YOU COULD RESTORE FROM IS THAT OLD. SEE STORAGE AND PRIVACY IN SETTINGS.
         </p>
       )}
 
@@ -823,7 +823,8 @@ function WhatWorked({ read, grow }: { read: Read<RetrievalEvidenceBrief>; grow?:
       <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">
         {count(item.reactions)} reactions
         {measured(item.comments) ? ` · ${count(item.comments)} comments` : ""}
-        {` · ${count(item.qualified_leads)} qualified leads`}
+        {/* No "qualified leads": who is qualified rests on the ICP tier, a
+            guess, and decision 7 retired that framing (sections report). */}
       </p>
     </li>
   );

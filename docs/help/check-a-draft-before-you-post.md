@@ -25,7 +25,7 @@ The Preview uses no desktop cut-off figure, so Desktop shows the whole post rath
 
 The Preview's character count ignores the marks that **Underline** and **Strikethrough** add, so formatted text counts the way a reader sees it.
 
-The card shows the **Name** and **Headline** saved in **Brand Studio** under **Identity**, or the **Company** when the Headline is blank. Until you save a Name it shows grey bars instead of a name.
+The card shows the **Name** and **Headline** saved in **Brand** under **Identity**, or the **Company** when the Headline is blank. Until you save a Name it shows grey bars instead of a name.
 
 ## Audit
 
@@ -79,4 +79,4 @@ Preview updates as you type. While the Audit tab is open, the audit and the gate
 | AUDIT UNAVAILABLE | The audit request failed, usually because the studio server has stopped. See [The studio will not open or shows an error](the-studio-will-not-open.md). |
 | AUDITING that never changes | The server has not answered yet. If it stays, treat it like AUDIT UNAVAILABLE. |
 | No Checks section | That check failed on its own. The Distribution audit is unaffected. |
-| A preview card with no name | No Name is saved. Add one in **Brand Studio**, press **Save**, then go back to **Composer**. The inspector reads the name again when it reopens there. |
+| A preview card with no name | No Name is saved. Add one in **Brand**, under **Identity**, press **Save**, then go back to **Composer**. The inspector reads the name again when it reopens there. |

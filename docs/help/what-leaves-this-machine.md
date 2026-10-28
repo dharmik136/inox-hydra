@@ -7,7 +7,7 @@ See exactly which actions send data off your computer, where it goes, and the sw
 Your drafts, posts, leads, analytics, settings and media are one SQLite database file and one media folder on this computer. The server listens on `127.0.0.1` only, so other computers on your network cannot reach it. The interface's fonts are bundled with the studio, so opening it makes no request to Google Fonts.
 
 > [!IMPORTANT]
-> Brand Studio's **Local security** tab lists the three actions that send your work: **Send to LinkedIn** sends your post text and session cookies to LinkedIn, **Re-Hook** or **Command** with a provider configured sends your text to that provider, and **Generate** sends a prompt built from your image description to an image service. The **LOCAL** shield at the foot of the rail says the same in its tooltip. **From your record**'s one idea a day, once you connect a provider, is a fourth, counted under `model` like the other two writing actions. The table below is the full picture.
+> **Local security** in **Settings** lists the three actions that send your work: **Send to LinkedIn** sends your post text and session cookies to LinkedIn, **Re-Hook** or **Command** with a provider configured sends your text to that provider, and **Generate** sends a prompt built from your image description to an image service. The **LOCAL** shield at the foot of the rail says the same in its tooltip. **From your record**'s one idea a day, once you connect a provider, is a fourth, counted under `model` like the other two writing actions. The table below is the full picture.
 
 ## Everything that can leave
 
@@ -18,7 +18,7 @@ Your drafts, posts, leads, analytics, settings and media are one SQLite database
 | `linkedin` | **Send to LinkedIn**, and session or profile checks against LinkedIn | Your post text, its scheduled time and your LinkedIn session cookies | LinkedIn, at its own private scheduling API | No, and the first send from a studio also asks you to acknowledge the account risk once (see [Publish, queue or send a post to LinkedIn](publish-queue-or-send-to-linkedin.md)) | `INOX_ALLOW_LINKEDIN_EGRESS` |
 | `library` | Pressing **Fetch the Inox library** on **From your record**'s **What the studio knows** page | A request for the signed library file: its address, a User-Agent naming the channel, and the tag of the copy you already hold. Nothing of yours: no post, ask, mark, name or setting | GitHub | Yes, but only when you press Fetch | `INOX_ALLOW_LIBRARY_EGRESS` |
 | `updates` | `python -m studio.cli update`, after you opt in with `update enable`. No button in the interface triggers it | A request for a version file | GitHub | Yes, but opt-in first | `INOX_ALLOW_UPDATE_EGRESS` |
-| `ingress` | Only if you set up a bot under **Your phone, through Telegram** in Brand Studio's **Local security** tab, or, for maintainers in dev mode, if `TELEGRAM_BOT_TOKEN` or `PRUDENT_TELEGRAM_BOT_TOKEN` is set when the studio starts | A request for your bot's messages; nothing of yours | Telegram | Yes, but inert without a bot | `INOX_ALLOW_INGRESS_EGRESS` |
+| `ingress` | Only if you set up a bot under **Your phone, through Telegram** under **Local security** in **Settings**, or, for maintainers in dev mode, if `TELEGRAM_BOT_TOKEN` or `PRUDENT_TELEGRAM_BOT_TOKEN` is set when the studio starts | A request for your bot's messages; nothing of yours | Telegram | Yes, but inert without a bot | `INOX_ALLOW_INGRESS_EGRESS` |
 
 The update check runs in the command's own process, not in the server, so the ledger below does not count it, and a flag counts for it only if it is set in the terminal where you run the command.
 
@@ -26,7 +26,7 @@ Every other publish control, and the whole Queue, only writes a status on this m
 
 ## Read the ledger
 
-1. Open **Settings** from the rail, which opens **Brand Studio**.
+1. Open **Settings** from the rail.
 2. Choose the **Local security** tab.
 3. Scroll to **What has left this machine**.
 

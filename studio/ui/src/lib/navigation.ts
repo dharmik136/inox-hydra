@@ -111,9 +111,9 @@ export const STUDIO_SECTIONS: StudioSection[] = [
   { id: "audience", group: "learn", screenKey: "audience", label: "Audience", blurb: "Who keeps coming back, who has gone quiet, and who is a connection", icon: UsersRound },
   { id: "patterns", group: "learn", screenKey: "patterns", label: "Patterns", blurb: "What your own posts suggest, and how steadily you post", icon: Shapes },
   { id: "analytics", group: "learn", screenKey: "analytics", label: "Analytics", blurb: "Time series, observations and comparisons", icon: BarChart3 },
-  // Brand and Settings both open Brand Studio until the two are split
+  // Brand (about you) and Settings (about this machine), split from Brand Studio
   // (track 4, phase b): Brand for who you are, Settings for the rest.
-  { id: "brand", group: "learn", screenKey: "brand", label: "Brand", blurb: "Your identity and watermark, in Brand Studio", icon: Palette },
+  { id: "brand", group: "learn", screenKey: "brand", label: "Brand", blurb: "Your profile as LinkedIn last showed it, your byline and watermark", icon: Palette },
   // Bridge: what the bridge read, and whether it is reading.
   { id: "activity", group: "bridge", screenKey: "activity", label: "Activity", blurb: "What the bridge has read from your LinkedIn, as it arrives", icon: Activity },
   // Where a creator looks when the rest looks wrong: whether each reader
@@ -127,7 +127,7 @@ export const STUDIO_SECTIONS: StudioSection[] = [
   // and Command is a block in the Composer's Prompt panel.
   { id: "setup", group: "studio", screenKey: "setup", label: "Setup", blurb: "Connect the browser and teach the studio who you are", icon: UserCheck },
   { id: "docs", group: "studio", screenKey: "docs", label: "Docs", blurb: "Offline playbook and strategy search", icon: BookOpen },
-  { id: "settings", group: "studio", screenKey: "settings", label: "Settings", blurb: "Grounding, local security, storage and your licence, in Brand Studio", icon: Settings2 },
+  { id: "settings", group: "studio", screenKey: "settings", label: "Settings", blurb: "Backups, what leaves this machine, storage and your licence", icon: Settings2 },
   // Last, and only present when the maintainer surface is on. A consumer
   // build answers 404 for everything behind it.
   { id: "devtools", screenKey: "devtools", label: "Devtools", blurb: "Internal sheet and screen registry", icon: Wrench },
