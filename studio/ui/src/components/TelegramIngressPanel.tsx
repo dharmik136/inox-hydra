@@ -31,7 +31,9 @@ import { cn } from "@/lib/utils";
  *
  * The bot answers (2.11.0): each message gets a short fixed sentence back,
  * which says what became of it and carries none of the creator's words or
- * figures. On by default; its switch is here.
+ * figures. On by default; its switch is here. Phase 2: some messages carry
+ * buttons, pressed on the phone (Undo, Remind me in an hour, Done), which the
+ * descriptions below name.
  */
 export function TelegramIngressPanel() {
   const [state, setState] = useState<IngressSettings | null>(null);
@@ -157,7 +159,7 @@ export function TelegramIngressPanel() {
               <p className="studio-meta text-ink-muted">WHAT THE BOT SAYS BACK</p>
               <OptionRow
                 label="The bot confirms each message"
-                detail="A short fixed sentence back, such as Saved as a draft in your studio, or Today will ask you to open this post's analytics. Never your words, never your figures."
+                detail="A short fixed sentence back, such as Saved as a draft in your studio, or Today will ask you to open this post's analytics. Never your words, never your figures. Under a saved draft, Undo removes it while you have not changed it here."
                 checked={state.options.replies}
                 disabled={busy}
                 onChange={(on) => void setOption({ replies: on }, on ? "The bot confirms each message." : "The bot no longer confirms messages.")}
@@ -172,7 +174,7 @@ export function TelegramIngressPanel() {
               <p className="studio-meta mt-1 text-ink-muted">WHAT THE BOT TELLS YOU, EACH ONLY IF TICKED</p>
               <OptionRow
                 label="Tell me when a queued post is due"
-                detail="One message when a post in your queue is due: how many, never its words."
+                detail="One message when a post in your queue is due: how many, never its words. Under it, Remind me in an hour, and Done, which only clears the reminder: nothing is marked as posted."
                 checked={state.options.notify_due}
                 disabled={busy}
                 onChange={(on) => void setOption({ notify_due: on }, on ? "The bot tells you when a queued post is due." : "No message when a post is due.")}

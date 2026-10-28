@@ -11,6 +11,13 @@ What the bot sends is fixed: each answer is one of SENTENCES, and none
 carries the creator's data. The one value any of them holds is the
 recipient's own chat id, in the sentence that tells a chat how to pair.
 
+Some messages carry buttons (phase 2): Undo under a saved draft, Remind me
+in an hour and Done under a due post. A button's data is an opaque id and
+one letter, never words from a post or a draft; what it does is kept here,
+in the bot's profile (BUTTONS_KEY), and a press acts on the studio's own
+records only, once, for the paired chat only. Nothing a button does
+reaches LinkedIn.
+
 Every request goes to the Bot API at API_BASE, through egress.py under the
 category the ingress already uses, so the Local security tab counts it and
 INOX_NO_EGRESS refuses it. The suite points API_BASE at a fake Bot API on
@@ -32,9 +39,10 @@ Strict Invariants:
 import json
 import logging
 import re
+import secrets
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -58,6 +66,17 @@ NOTIFY_DUE_KEY = "telegram_notify_due"   # tell me when a queued post is due: of
 NOTIFY_24H_KEY = "telegram_notify_24h"   # my latest post's figures at about 24 hours: off unless "on"
 TOLD_KEY = "telegram_told"               # what the notifications have told, so nothing is told twice
 TOLD_KEPT = 200
+BUTTONS_KEY = "telegram_buttons"         # what each message's buttons do, and whether they were used
+BUTTONS_KEPT = 100                       # the newest messages' buttons; an older one is old
+REMIND_KEY = "telegram_remind"           # due posts the creator asked to be reminded of, and when
+REMIND_KEPT = 20
+# Remind me in an hour.
+REMIND_AFTER_SECONDS = 3600.0
+
+# The buttons, by the one letter a button's data ends with, and which a
+# message of each kind carries.
+BUTTON_LABELS = {"u": "Undo", "r": "Remind me in an hour", "d": "Done"}
+BUTTON_ROWS = {"undo": (("u",),), "due": (("r",), ("d",))}
 
 # The worker looks for something to tell between polls, at most this often.
 NOTIFY_EVERY_SECONDS = 60.0
@@ -94,6 +113,18 @@ SENTENCES = {
     "test": "This is a test message from your Inox Hydra studio. If you can read it, the bot can reach you.",
     "due_one": "A post in your queue is due now. Open your studio to post it.",
     "due_many": "{count} posts in your queue are due now. Open your studio to post them.",
+    "due_again_one": "Reminder: a post in your queue is still due. Open your studio to post it.",
+    "due_again_many": "Reminder: {count} posts in your queue are still due. Open your studio to post them.",
+    # What a press of a button did, as the phone's notice says it and as the
+    # message then says it under its first words.
+    "undone": "Undone: the draft is removed from your studio.",
+    "undo_changed": "Not undone: the draft has changed in your studio since, so it was kept.",
+    "undo_gone": "Nothing to undo: the draft is no longer in your studio.",
+    "remind_set": "I will remind you in an hour if it is still due.",
+    "done": "Reminder cleared. Nothing was marked as posted: it stays due in your studio until you post it.",
+    "button_used": "That button was already used, so nothing more was done.",
+    "button_old": "That button is old, so nothing was done.",
+    "press_failed": "Your studio could not do that. Open the studio to see why.",
 }
 
 # Where a figure was read, as /today says it.
@@ -120,6 +151,8 @@ HELP = "\n".join((
     "- /status: whether your studio and its bridge are running",
     "- /today: your latest post's figures, replies waiting and your next scheduled post, only if you allow "
     "figures in your studio",
+    "",
+    "Press Undo under Saved as a draft to remove that draft, while you have not changed it in your studio.",
     "",
     "To pair a chat: in your studio, open Settings, then Local security, and press This is me beside it.",
     "",
@@ -209,22 +242,28 @@ def plain_words(status: int, description: str = "", retry_after: Optional[float]
     return f"Telegram refused the request (status {status})."
 
 
-def send_message(token: str, chat_id: Any, text: str, timeout: float = SEND_TIMEOUT) -> Dict[str, Any]:
+# Two refusals that say the work is already done, not that something went
+# wrong: an edit to what the message already says, and the answer to a press
+# Telegram stopped waiting for (the edit after it says what became of it).
+_ALREADY = (("edit", "message is not modified"), ("answerCallbackQuery", "query is too old"))
+
+
+def call(token: str, method: str, params: Dict[str, Any], timeout: float = SEND_TIMEOUT) -> Dict[str, Any]:
     """
-    One message to one chat. Returns {ok, kind, said, retry_after}: kind is
-    sent, rate_limited, network (worth trying again), refused (not worth it)
+    One Bot API request: sendMessage, answerCallbackQuery or an edit. Returns
+    {ok, kind, said, retry_after}: kind is sent, already (nothing left to
+    do), rate_limited, network (worth trying again), refused (not worth it)
     or refused_here (this computer's egress switch).
     """
-    url = method_url(token, "sendMessage")
+    url = method_url(token, method)
     try:
-        _egress.require(ledger_url("sendMessage"), "ingress")
+        _egress.require(ledger_url(method), "ingress")
     except _egress.EgressRefused:
         return {"ok": False, "kind": "refused_here", "said": EGRESS_OFF, "retry_after": None}
     try:
-        res = requests.post(url, json={"chat_id": str(chat_id), "text": text, "disable_web_page_preview": True},
-                            timeout=timeout)
+        res = requests.post(url, json=params, timeout=timeout)
     except Exception as error:
-        logger.warning("A message to Telegram did not go: %s", type(error).__name__)
+        logger.warning("A request to Telegram (%s) did not go: %s", method, type(error).__name__)
         return {"ok": False, "kind": "network", "said": UNREACHABLE, "retry_after": None}
     try:
         body = res.json()
@@ -233,6 +272,9 @@ def send_message(token: str, chat_id: Any, text: str, timeout: float = SEND_TIME
     body = body if isinstance(body, dict) else {}
     if res.status_code == 200 and body.get("ok"):
         return {"ok": True, "kind": "sent", "said": None, "retry_after": None}
+    description = str(body.get("description") or "")
+    if res.status_code == 400 and any(method.startswith(m) and w in description.lower() for m, w in _ALREADY):
+        return {"ok": True, "kind": "already", "said": None, "retry_after": None}
     if res.status_code == 429:
         try:
             retry = float((body.get("parameters") or {}).get("retry_after"))
@@ -241,14 +283,27 @@ def send_message(token: str, chat_id: Any, text: str, timeout: float = SEND_TIME
         retry = retry if retry and retry > 0 else 5.0
         return {"ok": False, "kind": "rate_limited", "said": plain_words(429, retry_after=retry), "retry_after": retry}
     kind = "network" if res.status_code >= 500 else "refused"
-    logger.warning("Telegram refused a message: status %s", res.status_code)
-    return {"ok": False, "kind": kind, "said": plain_words(res.status_code, str(body.get("description") or "")),
-            "retry_after": None}
+    logger.warning("Telegram refused a request (%s): status %s", method, res.status_code)
+    return {"ok": False, "kind": kind, "said": plain_words(res.status_code, description), "retry_after": None}
+
+
+def send_message(token: str, chat_id: Any, text: str, timeout: float = SEND_TIMEOUT,
+                 keyboard: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """One message to one chat, with its buttons when it has any. Returns what call() returns."""
+    return call(token, "sendMessage", message_params(chat_id, text, keyboard), timeout=timeout)
+
+
+def message_params(chat_id: Any, text: str, keyboard: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    params: Dict[str, Any] = {"chat_id": str(chat_id), "text": text, "disable_web_page_preview": True}
+    if keyboard:
+        params["reply_markup"] = keyboard
+    return params
 
 
 class Outbox:
     """
-    The bot's messages waiting to go, oldest first, in memory only. One
+    The bot's requests waiting to go, oldest first, in memory only: its
+    messages, and the answer and the edit a button press is given. One
     flush at a time: the worker flushes after each poll, and a press in the
     panel (This is me) may flush at once.
     """
@@ -262,9 +317,14 @@ class Outbox:
         self.last_error_at: Optional[str] = None
         self.sent = 0
 
-    def put(self, chat_id: Any, text: str) -> None:
+    def put(self, chat_id: Any, text: str, keyboard: Optional[Dict[str, Any]] = None) -> None:
+        """A message to a chat, with its buttons when it has any."""
+        self.put_call("sendMessage", message_params(chat_id, text, keyboard))
+
+    def put_call(self, method: str, params: Dict[str, Any]) -> None:
+        """Any Bot API request: the answer to a press, an edit."""
         with self._lock:
-            self._items.append({"chat_id": str(chat_id), "text": text, "attempts": 0, "not_before": 0.0})
+            self._items.append({"method": method, "params": dict(params), "attempts": 0, "not_before": 0.0})
             # A bot that cannot reach Telegram for a day keeps the newest few.
             del self._items[:-OUTBOX_KEPT]
 
@@ -290,11 +350,11 @@ class Outbox:
                     item = self._items[0]
                     if item["not_before"] > now:
                         return
-                result = send_message(token, item["chat_id"], item["text"])
+                result = call(token, item["method"], item["params"])
                 with self._lock:
                     if result["ok"]:
                         self._items.pop(0)
-                        self.sent += 1
+                        self.sent += 1 if result["kind"] == "sent" else 0
                         self.last_error = None
                         continue
                     self.last_error = result["said"]
@@ -461,6 +521,16 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
     return options()
 
 
+def draft_of(record: Optional[Dict[str, Any]]) -> Optional[int]:
+    """The id of the draft a message was saved as, which its answer's Undo removes; None for anything else."""
+    if not record or record.get("kind") or "raw_content" not in record:
+        return None
+    try:
+        return int(record["id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def answer_for(record: Optional[Dict[str, Any]]) -> Optional[str]:
     """The sentence that confirms what became of an accepted message, from what was stored."""
     if not record:
@@ -500,33 +570,41 @@ def _mark_told(conn, told: List[str]) -> None:
             (TOLD_KEY, json.dumps(told[-TOLD_KEPT:])))
 
 
-def notifications() -> List[str]:
+def notifications() -> List[Dict[str, Any]]:
     """
     What there is to tell the paired chat, in the open profile, each thing
     once: a queued post that is due, as a count; the latest post's reading
-    at about 24 hours, with that reading's own figures. Marks what it
-    returns as told. Counts and the creator's own figures only.
+    at about 24 hours, with that reading's own figures; and a due post the
+    creator asked to be reminded of (Remind me in an hour), again, while it
+    is still due. Marks what it returns as told. Counts and the creator's
+    own figures only. Each is {text, due}: due names the due posts a
+    message's Remind me in an hour and Done are about, or is None.
     """
     due_on, day_on = notify_due_on(), notify_24h_on()
-    if not (due_on or day_on):
-        return []
-    try:
-        from . import post_identity
-    except ImportError:
-        import post_identity
     conn = get_db()
     try:
+        if not due_on:
+            # Unticked, no reminder comes either.
+            conn.execute("DELETE FROM settings WHERE key = ?", (REMIND_KEY,))
+            conn.commit()
+        if not (due_on or day_on):
+            return []
+        try:
+            from . import post_identity
+        except ImportError:
+            import post_identity
         told = _told(conn)
-        said: List[str] = []
+        said: List[Dict[str, Any]] = []
         newly: List[str] = []
         if due_on:
-            fresh = [f"due:{r['id']}:{r['scheduled_for']}" for r in conn.execute(
+            due_now = [f"due:{r['id']}:{r['scheduled_for']}" for r in conn.execute(
                 "SELECT id, scheduled_for FROM posts WHERE status = 'due' ORDER BY scheduled_for")]
-            fresh = [key for key in fresh if key not in told]
+            fresh = [key for key in due_now if key not in told]
             if fresh:
-                said.append(SENTENCES["due_one"] if len(fresh) == 1
-                            else SENTENCES["due_many"].format(count=len(fresh)))
+                said.append({"text": SENTENCES["due_one"] if len(fresh) == 1
+                             else SENTENCES["due_many"].format(count=len(fresh)), "due": fresh})
                 newly += fresh
+            said += _reminders_due(conn, set(due_now))
         if day_on:
             latest = conn.execute(
                 "SELECT activity_urn, published_at FROM own_posts WHERE published_at IS NOT NULL "
@@ -545,10 +623,157 @@ def notifications() -> List[str]:
                 counts = [f"{reading[f]:,} {w}" for f, w in FIGURE_WORDS if reading and reading[f] is not None]
                 if counts:
                     where = SOURCE_WORDS.get(reading["source"] or "") or "by your studio"
-                    said.append(f"Your latest post at about 24 hours: {', '.join(counts)}, read {where}.")
+                    said.append({"text": f"Your latest post at about 24 hours: {', '.join(counts)}, read {where}.",
+                                 "due": None})
                     newly.append(key)
         if newly:
             _mark_told(conn, told + newly)
         return said
     finally:
         conn.close()
+
+
+def _reminders_due(conn, due_now) -> List[Dict[str, Any]]:
+    """
+    The reminders asked for with Remind me in an hour whose hour is up: each
+    told again for the posts in it that are still due, and forgotten either
+    way. A post posted, moved or deleted in the meantime is not told again.
+    """
+    reminders = _read_json(conn, REMIND_KEY, [])
+    now = datetime.now(timezone.utc)
+    waiting, said = [], []
+    for reminder in reminders:
+        if not isinstance(reminder, dict):
+            continue
+        at = _instant(reminder.get("at"))
+        if at is not None and at > now:
+            waiting.append(reminder)
+            continue
+        still = [key for key in (reminder.get("due") or []) if key in due_now]
+        if still:
+            said.append({"text": SENTENCES["due_again_one"] if len(still) == 1
+                         else SENTENCES["due_again_many"].format(count=len(still)), "due": still})
+    if len(waiting) != len(reminders):
+        _write_json(conn, REMIND_KEY, waiting)
+    return said
+
+
+# ---------------------------------------------------------------------------
+# Buttons: Undo under a saved draft, Remind me in an hour and Done under a
+# due post. Each acts on the studio's own records, once, for the paired chat
+# ---------------------------------------------------------------------------
+
+_BUTTONS_LOCK = threading.Lock()
+
+
+def _read_json(conn, key: str, default: Any) -> Any:
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    try:
+        value = json.loads(row["value"]) if row and row["value"] else default
+    except (TypeError, ValueError):
+        value = default
+    return value if isinstance(value, type(default)) else default
+
+
+def _write_json(conn, key: str, value: Any) -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+            (key, json.dumps(value)))
+
+
+def issue_buttons(chat_id: Any, kind: str, said: str, **target: Any) -> Dict[str, Any]:
+    """
+    Keeps what the buttons on one message do, in the open profile, and
+    returns the message's inline keyboard. kind is "undo" (target: draft, a
+    draft id) or "due" (target: due, the due posts' keys). Each button's data
+    is the message's opaque id and the button's letter, and nothing else.
+    """
+    token = secrets.token_urlsafe(9)
+    record = {"id": token, "kind": kind, "chat": str(chat_id), "at": _now(), "said": said, "used": None}
+    record.update(target)
+    with _BUTTONS_LOCK:
+        conn = get_db()
+        try:
+            records = [r for r in _read_json(conn, BUTTONS_KEY, []) if isinstance(r, dict)]
+            records.append(record)
+            _write_json(conn, BUTTONS_KEY, records[-max(1, int(BUTTONS_KEPT)):])
+        finally:
+            conn.close()
+    return {"inline_keyboard": [[{"text": BUTTON_LABELS[letter], "callback_data": f"{token}.{letter}"}
+                                 for letter in row] for row in BUTTON_ROWS[kind]]}
+
+
+def press(data: Any, chat_id: Any) -> Dict[str, Any]:
+    """
+    A press of one of the bot's buttons, from the paired chat, in the open
+    profile. Returns {key, answer, edit}: the notice the phone shows, and the
+    message's text to put in its place, its buttons gone, or None to take
+    only the buttons away (an old button, one already used). Acts once.
+    """
+    token, _dot, letter = str(data or "").partition(".")
+    with _BUTTONS_LOCK:
+        conn = get_db()
+        try:
+            records = [r for r in _read_json(conn, BUTTONS_KEY, []) if isinstance(r, dict)]
+            record = next((r for r in records if token and r.get("id") == token), None)
+            if (record is None or record.get("chat") != str(chat_id)
+                    or not any(letter in row for row in BUTTON_ROWS.get(record.get("kind"), ()))):
+                return {"key": "button_old", "answer": SENTENCES["button_old"], "edit": None}
+            if record.get("used"):
+                return {"key": "button_used", "answer": SENTENCES["button_used"], "edit": None}
+            if letter == "u":
+                key = _undo(conn, record.get("draft"))
+            elif letter == "r":
+                key = _remind(conn, record.get("due") or [])
+            else:
+                # Done: the reminder is cleared, and that is all. The post
+                # stays due; nothing is marked as posted, and nothing is
+                # asked of LinkedIn.
+                key = "done"
+            record["used"] = _now()
+            _write_json(conn, BUTTONS_KEY, records)
+        finally:
+            conn.close()
+    said = str(record.get("said") or "")
+    edit = f"{said}\n\n{SENTENCES[key]}" if said else SENTENCES[key]
+    return {"key": key, "answer": SENTENCES[key], "edit": edit}
+
+
+def _undo(conn, draft_id: Any) -> str:
+    """
+    Removes a draft the phone saved, only while it is untouched in the
+    studio: still a draft, its text, tags and media as the bot saved them,
+    never queued, published or bound to a post on LinkedIn. One conditional
+    delete, so an edit made a moment earlier keeps the draft.
+    """
+    try:
+        draft_id = int(draft_id)
+    except (TypeError, ValueError):
+        return "undo_gone"
+    post_id = f"post-draft-{draft_id}"
+    draft = conn.execute("SELECT raw_content, tags, status FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+    held = conn.execute("SELECT 1 FROM posts WHERE id = ? AND draft_id = ?", (post_id, draft_id)).fetchone()
+    if draft is None or held is None:
+        return "undo_gone"
+    if draft["status"] != "DRAFT":
+        return "undo_changed"
+    with conn:
+        removed = conn.execute(
+            "DELETE FROM posts WHERE id = ? AND draft_id = ? AND status = 'draft' AND content = ? "
+            "AND scheduled_for IS NULL AND published_at IS NULL AND activity_urn IS NULL "
+            "AND COALESCE(media_urls, '') IN ('', '[]') AND COALESCE(tags, '') = ?",
+            (post_id, draft_id, draft["raw_content"], draft["tags"] or "")).rowcount
+        if removed:
+            conn.execute("DELETE FROM drafts WHERE id = ?", (draft_id,))
+    return "undone" if removed else "undo_changed"
+
+
+def _remind(conn, due: List[str]) -> str:
+    """Remind me in an hour: the due posts are told again then, if they are still due."""
+    reminders = [r for r in _read_json(conn, REMIND_KEY, []) if isinstance(r, dict)]
+    at = datetime.now(timezone.utc) + timedelta(seconds=float(REMIND_AFTER_SECONDS))
+    reminders.append({"due": [str(key) for key in due], "at": at.isoformat()})
+    _write_json(conn, REMIND_KEY, reminders[-REMIND_KEPT:])
+    return "remind_set"

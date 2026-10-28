@@ -319,7 +319,9 @@ def test_a_new_bot_is_polled_from_its_own_beginning(monkeypatch):
     assert daemon.last_update_id == 900000000
     daemon.configure(BOT_B, CHAT, origin="settings", profile_id="default")
     daemon.poll_once()
-    assert calls[-1] == ("222222:" + "B" * 35, {"offset": 1, "timeout": 30}), (
+    # The poll also names the kinds of update it asks for (the bot's buttons, 2.11.0 phase 2).
+    token, params = calls[-1]
+    assert (token, params["offset"], params["timeout"]) == ("222222:" + "B" * 35, 1, 30), (
         "the new bot was asked from the old bot's offset, which confirms its pending messages unread")
 
 

@@ -22,6 +22,7 @@ Before you start: the studio is running on this computer, and you have your bot'
 2. Send `Idea: testing the bot`. The bot answers "Saved as a draft in your studio." In the studio, press Ctrl+K and search for `testing the bot`: the draft is there.
 3. Send `/status`. The bot answers "Your studio is running." and whether the bridge in your browser is connected.
 4. In the LinkedIn app, open one of your own posts, use **Copy link**, and send the link to the bot. The bot answers "Today will ask you to open this link at your computer.", and **Today** shows "You sent a post from your phone". Press **Not now** there if you do not want to open it.
+5. Send `Idea: undo me`, then press **Undo** under the answer. The message changes to end "Undone: the draft is removed from your studio.", its button goes, and Ctrl+K no longer finds `undo me`.
 
 ## 4. The panel's own check (thirty seconds)
 
@@ -32,6 +33,15 @@ Before you start: the studio is running on this computer, and you have your bot'
 1. Send `/today`. The bot answers that your figures stay in your studio: they are off until you allow them.
 2. To see them on the phone, tick **The bot may answer with your figures** and send `/today` again: your latest post's figures with where and when each was read, how many replies are waiting, and when your next post is scheduled. Untick it again if you do not want your figures to sit on Telegram's servers.
 
+## Later: the buttons under a due post (optional)
+
+These need a post to come due, so they take as long as you schedule it ahead.
+
+1. Tick **Tell me when a queued post is due** in the panel, and schedule a post in the **Queue** for a few minutes from now.
+2. When it comes due, the bot says "A post in your queue is due now. Open your studio to post it.", with **Remind me in an hour** and **Done** under it.
+3. Press **Remind me in an hour**: the message changes to end "I will remind you in an hour if it is still due." An hour later, if you have not posted it, the bot says "Reminder: a post in your queue is still due. Open your studio to post it."
+4. Press **Done** under the reminder: the message ends "Reminder cleared. Nothing was marked as posted: it stays due in your studio until you post it." In the studio the post is still due: Done changed nothing there.
+
 ## When a step does not match
 
 | You see | Look at |
@@ -41,5 +51,7 @@ Before you start: the studio is running on this computer, and you have your bot'
 | The panel lists your chat, but the phone got no answer | **Last message the bot could not send**: the bot may be blocked in your chat. Unblock it in Telegram and send it a message |
 | The bot answers, but no draft appears | Reload the studio page. The draft is saved in the profile the bot was set up in, which the panel names when another profile is open |
 | **Send a test message** says Telegram took it, and the phone shows nothing | That you are looking at the chat with your own bot, and that Telegram's notifications are on for it |
+| A button keeps spinning, and the message never changes | That **Asking Telegram for messages** reads YES. A press reaches the studio the way a message does; at night the studio asks Telegram less often, so an answer can take up to two minutes |
+| **Undo** says the draft has changed | The draft was edited, queued or published in the studio after it arrived, so it was kept. Delete it in the studio if you do not want it |
 
 If a step still does not match, note the panel's two problem lines; they carry no message text and no token, so they can be shared as they are.

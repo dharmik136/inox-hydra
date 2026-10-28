@@ -6,7 +6,7 @@ Make a Telegram bot of your own, set it up under Local security, and the message
 
 - It is optional and off until you set it up. The studio asks Telegram for your bot's messages while it is running, and opens no port. Each request is counted under the `ingress` row of **What has left this machine** under **Local security** in **Settings**.
 - The phone sends a link, never a figure. Nothing you send is written as a reading: a post link becomes a request to read that post here, where the extension reads the real page.
-- The bot answers each message with one short fixed sentence, so you can tell it arrived. See [What the bot says back](#what-the-bot-says-back).
+- The bot answers each message with one short fixed sentence, so you can tell it arrived. See [What the bot says back](#what-the-bot-says-back). Some of its messages carry buttons, such as **Undo** under a saved draft. See [Buttons you can press](#buttons-you-can-press).
 - Your message text passes through Telegram's servers. See [What leaves this machine, and when](what-leaves-this-machine.md).
 - The bot belongs to the creator profile you set it up in, and its messages are saved there whichever profile is open. One bot is asked at a time: the one saved most recently, or when the studio starts, the first profile that has one. A profile whose bot is not the one being asked says so in its panel.
 
@@ -63,7 +63,7 @@ Send a command as a message on its own, as Telegram's menu does. Letter case doe
 
 | You send | What happens |
 | --- | --- |
-| `/start` or `/help` | The bot says what it does, how to pair a chat and what it never sends |
+| `/start` or `/help` | The bot says what it does, what **Undo** does, how to pair a chat and what it never sends |
 | `/idea your idea` | Your idea is saved as a draft tagged `idea`, as `Idea: your idea` is. A link inside it stays part of the idea |
 | `/ask what to remember` | It is remembered as an ask in **From your record**, with the source Telegram, and listed under **What the studio knows** there, where you can change or remove it. It takes effect on tomorrow's cards. Nothing is saved as a draft |
 | `/status` | Whether your studio is running, and whether the bridge in your browser is connected. No figures |
@@ -86,10 +86,36 @@ Two, each with its own switch in the panel, both off until you tick them:
 
 | Switch | What the bot sends |
 | --- | --- |
-| **Tell me when a queued post is due** | "A post in your queue is due now. Open your studio to post it." When several are due at once, how many. Never the post's words |
+| **Tell me when a queued post is due** | "A post in your queue is due now. Open your studio to post it." When several are due at once, how many. Never the post's words. With **Remind me in an hour** and **Done** under it |
 | **Send my latest post's figures at about 24 hours** | Once, when the studio has read your latest post at about a day old (between 20 and 30 hours) while it is under two days old: "Your latest post at about 24 hours: 880 impressions, 31 reactions, 4 comments, read on its analytics page." |
 
 Each is sent once to your paired chat: the studio keeps what it has told, so a restart does not send it again. The studio looks for something to tell about once a minute while it is asking Telegram for messages. The figures then sit on Telegram's servers, as everything in the chat does; never a person's name or a comment.
+
+## Buttons you can press
+
+Two kinds of message carry buttons, which you press in Telegram:
+
+| Under | Button | What it does |
+| --- | --- | --- |
+| "Saved as a draft in your studio." | **Undo** | Removes that draft from your studio, while it is untouched there: still a draft, with the words, tags and media the bot saved, never queued or published. A draft you changed is kept |
+| "A post in your queue is due now." | **Remind me in an hour** | The bot tells you again in an hour, if the post is still due then, with the same two buttons |
+| The same | **Done** | Clears the reminder, and that is all: nothing is marked as posted, and nothing is done on LinkedIn. The post stays due in your studio until you post it |
+
+After a press your phone shows a short notice, the message says under its first words what became of it, and its buttons go:
+
+| What happened | The bot says |
+| --- | --- |
+| **Undo** removed the draft | Undone: the draft is removed from your studio. |
+| **Undo** found the draft changed in your studio | Not undone: the draft has changed in your studio since, so it was kept. |
+| **Undo** found the draft already deleted in your studio | Nothing to undo: the draft is no longer in your studio. |
+| **Remind me in an hour** | I will remind you in an hour if it is still due. |
+| An hour later, still due | Reminder: a post in your queue is still due. Open your studio to post it. |
+| **Done** | Reminder cleared. Nothing was marked as posted: it stays due in your studio until you post it. |
+| A button pressed a second time | That button was already used, so nothing more was done. |
+| A button the studio no longer knows, such as one from long ago, or from before you deleted everything | That button is old, so nothing was done. |
+| A press your studio could not carry out, after three tries | Your studio could not do that. Open the studio to see why. |
+
+Each button works once, and only in your paired chat: a press from any other chat is refused as a message from it would be, and listed under **CHATS THE BOT REFUSED** as "a button press". A button carries an id that names nothing, never your words or a draft's. What each button does is kept in your studio for the newest 100 messages that carry buttons, and deleted with everything else when you delete everything. A press is answered even when **The bot confirms each message** is off, because you pressed it. Untick **Tell me when a queued post is due** and no reminder comes either.
 
 ## What the bot says back
 
@@ -97,7 +123,7 @@ Each message gets one short sentence back, the same words every time. None carri
 
 | What became of your message | The bot says |
 | --- | --- |
-| Saved as a draft | Saved as a draft in your studio. |
+| Saved as a draft | Saved as a draft in your studio. (With **Undo** under it.) |
 | A link to one of your posts | Today will ask you to open this post's analytics at your computer. |
 | A short `lnkd.in` link | Today will ask you to open this link at your computer. |
 | A link to a post that is not yours | That is not one of your posts, so your studio will not read it. |

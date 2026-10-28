@@ -12,8 +12,23 @@ What it does, as the Bot API does:
 
   getUpdates   long polling: waits up to the request's timeout (capped by
                `max_wait`) for an update; an offset confirms every update
-               below it, which is then never sent again
-  sendMessage  records the chat and the text and answers with a message
+               below it, which is then never sent again. allowed_updates is
+               remembered, as Telegram remembers it, and only those kinds
+               of update are delivered
+  sendMessage  records the chat, the text and any inline keyboard, and
+               answers with a message
+  answerCallbackQuery
+               answers a button press once, with an optional notice; a
+               press answered twice, or never pressed, is refused as
+               Telegram refuses it
+  editMessageText, editMessageReplyMarkup
+               change a message the bot sent, as the phone then shows it;
+               an edit that changes nothing is refused ("message is not
+               modified"), as Telegram refuses it
+
+A press of an inline button is a callback_query update, pushed with
+`press` (any data, from any chat) or `press_button` (a button the phone
+shows now, by its label).
 
 And the failures a real bot meets, planned per method with `plan`:
 
@@ -37,7 +52,7 @@ from urllib.parse import parse_qs, urlsplit
 
 
 class FakeTelegram:
-    def __init__(self, token: str, max_wait: float = 0.3):
+    def __init__(self, token: str, max_wait: float = 0.3, remembered_updates: Optional[List[str]] = None):
         self.token = token
         self.max_wait = max_wait
         self._updates: List[Dict[str, Any]] = []
@@ -45,6 +60,16 @@ class FakeTelegram:
         self.sent: List[Dict[str, Any]] = []
         self.calls: List[Dict[str, Any]] = []
         self.blocked_chats = set()
+        # The kinds of update a bot asked for last, which Telegram keeps until
+        # it is asked again: None is every kind, as for a bot never asked.
+        self.allowed_updates: Optional[List[str]] = remembered_updates
+        # Each message the bot sent, as the phone shows it now: its chat, its
+        # text and its inline keyboard, changed by an edit.
+        self.messages: Dict[int, Dict[str, Any]] = {}
+        # Each button press pushed, by its query id: whether it was answered.
+        self._queries: Dict[str, Dict[str, Any]] = {}
+        self.answered: List[Dict[str, Any]] = []
+        self.edits: List[Dict[str, Any]] = []
         self._plans: Dict[str, List[tuple]] = {}
         self._cond = threading.Condition()
         self._server: Optional[ThreadingHTTPServer] = None
@@ -96,6 +121,55 @@ class FakeTelegram:
             self._updates.append({"update_id": update_id, "message": body})
             self._cond.notify_all()
         return update_id
+
+    def press(self, chat_id: Any, data: str, message_id: Optional[int] = None, from_id: Any = None) -> int:
+        """
+        A press of an inline button: a callback_query update with the
+        button's data, from a chat (and a person, the chat's own by default),
+        on a message the bot sent (the newest to that chat by default).
+        """
+        with self._cond:
+            if message_id is None:
+                mine = [m for m, held in self.messages.items() if held["chat_id"] == str(chat_id)]
+                message_id = mine[-1] if mine else 1
+            held = self.messages.get(message_id) or {"text": ""}
+            update_id = self._next_update
+            self._next_update += 1
+            query_id = f"q{update_id}"
+            self._queries[query_id] = {"answered": False}
+            self._updates.append({"update_id": update_id, "callback_query": {
+                "id": query_id,
+                "from": {"id": int(from_id if from_id is not None else chat_id), "is_bot": False,
+                         "first_name": "Someone"},
+                "message": {"message_id": message_id, "chat": {"id": int(chat_id), "type": "private"},
+                            "text": held.get("text") or ""},
+                "chat_instance": "fake-instance",
+                "data": data,
+            }})
+            self._cond.notify_all()
+        return update_id
+
+    def buttons(self, message_id: int) -> List[Dict[str, Any]]:
+        """The buttons a message shows now, each {text, callback_data}, in order."""
+        with self._cond:
+            markup = (self.messages.get(message_id) or {}).get("reply_markup") or {}
+        return [button for row in (markup.get("inline_keyboard") or []) for button in row]
+
+    def press_button(self, label: str, chat_id: Any, message_id: Optional[int] = None) -> int:
+        """Presses the button labelled `label` on the newest message to the chat that shows one now."""
+        with self._cond:
+            ids = [message_id] if message_id is not None else sorted(
+                (m for m, held in self.messages.items() if held["chat_id"] == str(chat_id)), reverse=True)
+        for found in ids:
+            for button in self.buttons(found):
+                if button.get("text") == label:
+                    return self.press(chat_id, button["callback_data"], message_id=found)
+        raise AssertionError(f"no message to chat {chat_id} shows a button labelled {label!r}")
+
+    def message(self, message_id: int) -> Dict[str, Any]:
+        """A message as the phone shows it now."""
+        with self._cond:
+            return dict(self.messages.get(message_id) or {})
 
     def plan(self, method: str, *failures: tuple) -> None:
         """The next calls of `method` fail as planned, in order; then it answers normally."""
@@ -181,19 +255,78 @@ class FakeTelegram:
             return self._get_updates(handler, params)
         if method == "sendMessage":
             return self._send_message(handler, params)
+        if method == "answerCallbackQuery":
+            return self._answer_callback_query(handler, params)
+        if method in ("editMessageText", "editMessageReplyMarkup"):
+            return self._edit(handler, method, params)
         return self._answer(handler, 404, {"ok": False, "error_code": 404, "description": "Not Found"})
 
     def _get_updates(self, handler, params: Dict[str, Any]) -> None:
         offset = int(params.get("offset") or 0)
         wait = min(float(params.get("timeout") or 0), self.max_wait)
         deadline = time.monotonic() + wait
+        asked = params.get("allowed_updates")
         with self._cond:
+            if asked is not None:
+                # Kept until the bot asks again; an empty list is every kind.
+                kinds = json.loads(asked) if isinstance(asked, str) else list(asked)
+                self.allowed_updates = list(kinds) or None
             # Every update below the offset is confirmed, and gone for good.
             self._updates = [u for u in self._updates if u["update_id"] >= offset]
+            # An update of a kind the bot did not ask for is never delivered.
+            if self.allowed_updates is not None:
+                self._updates = [u for u in self._updates
+                                 if any(kind in u for kind in self.allowed_updates)]
             while not self._updates and time.monotonic() < deadline:
                 self._cond.wait(min(deadline - time.monotonic(), 0.05))
             result = list(self._updates)
         return self._answer(handler, 200, {"ok": True, "result": result})
+
+    def _answer_callback_query(self, handler, params: Dict[str, Any]) -> None:
+        query_id = str(params.get("callback_query_id") or "")
+        with self._cond:
+            query = self._queries.get(query_id)
+            if query is None or query["answered"]:
+                return self._answer(handler, 400, {
+                    "ok": False, "error_code": 400,
+                    "description": "Bad Request: query is too old and response timeout expired or query ID is invalid"})
+            query["answered"] = True
+            self.answered.append({"callback_query_id": query_id, "text": params.get("text"),
+                                  "params": dict(params)})
+            self._cond.notify_all()
+        return self._answer(handler, 200, {"ok": True, "result": True})
+
+    def _edit(self, handler, method: str, params: Dict[str, Any]) -> None:
+        chat = str(params.get("chat_id") or "")
+        if chat in self.blocked_chats:
+            return self._answer(handler, 403, {"ok": False, "error_code": 403,
+                                               "description": "Forbidden: bot was blocked by the user"})
+        try:
+            message_id = int(params.get("message_id") or 0)
+        except (TypeError, ValueError):
+            message_id = 0
+        with self._cond:
+            held = self.messages.get(message_id)
+            if held is None or held["chat_id"] != chat:
+                return self._answer(handler, 400, {"ok": False, "error_code": 400,
+                                                   "description": "Bad Request: message to edit not found"})
+            text = params.get("text") if method == "editMessageText" else held["text"]
+            # No reply_markup in an edit takes the buttons away.
+            markup = params.get("reply_markup") or None
+            if isinstance(markup, str):
+                markup = json.loads(markup) or None
+            if text == held["text"] and markup == held.get("reply_markup"):
+                return self._answer(handler, 400, {
+                    "ok": False, "error_code": 400,
+                    "description": ("Bad Request: message is not modified: specified new message content and "
+                                    "reply markup are exactly the same as a current content and reply markup of "
+                                    "the message")})
+            held["text"], held["reply_markup"] = text, markup
+            self.edits.append({"method": method, "message_id": message_id, "chat_id": chat, "text": text,
+                               "reply_markup": markup})
+            self._cond.notify_all()
+            shown = {"message_id": message_id, "chat": {"id": int(chat)}, "text": text}
+        return self._answer(handler, 200, {"ok": True, "result": shown})
 
     def _send_message(self, handler, params: Dict[str, Any]) -> None:
         chat = str(params.get("chat_id") or "")
@@ -203,9 +336,14 @@ class FakeTelegram:
         if not chat.lstrip("-").isdigit():
             return self._answer(handler, 400, {"ok": False, "error_code": 400,
                                                "description": "Bad Request: chat not found"})
+        markup = params.get("reply_markup") or None
+        if isinstance(markup, str):
+            markup = json.loads(markup) or None
         with self._cond:
-            self.sent.append({"chat_id": chat, "text": params.get("text"), "params": dict(params)})
-            message_id = len(self.sent)
+            message_id = len(self.sent) + 1
+            self.sent.append({"chat_id": chat, "text": params.get("text"), "params": dict(params),
+                              "message_id": message_id, "reply_markup": markup})
+            self.messages[message_id] = {"chat_id": chat, "text": params.get("text"), "reply_markup": markup}
             self._cond.notify_all()
         return self._answer(handler, 200, {"ok": True, "result": {"message_id": message_id,
                                                                   "chat": {"id": int(chat)},

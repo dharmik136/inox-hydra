@@ -64,3 +64,12 @@ def test_it_takes_about_five_minutes():
     worth = {"one minute": 1.0, "two minutes": 2.0, "thirty seconds": 0.5}
     total = sum(next(v for k, v in worth.items() if k in step) for step in steps)
     assert total == 5.0, total
+
+
+def test_the_buttons_it_promises_are_the_ones_the_bot_shows():
+    """Phase 2: Undo in step 3, and the due post's two buttons in the later, optional check."""
+    article = _article()
+    for label in telegram_bot.BUTTON_LABELS.values():
+        assert f"**{label}**" in article, label
+    for key in ("undone", "due_one", "remind_set", "due_again_one", "done"):
+        assert telegram_bot.SENTENCES[key] in article, key

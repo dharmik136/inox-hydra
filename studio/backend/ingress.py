@@ -94,6 +94,13 @@ SHORT_LINK_HOST = "lnkd.in"
 
 MAX_UPDATE_ATTEMPTS = 3
 
+# What the studio asks Telegram for: the messages sent to the bot, and the
+# presses of its buttons. Telegram keeps the kinds a bot last asked for, so
+# a bot another program once set to messages alone would never hear a press
+# unless the poll names both; and nothing else (an edited message, a channel
+# post) is delivered to be confirmed unread.
+ALLOWED_UPDATES = ("message", "callback_query")
+
 logger = logging.getLogger("studio.ingress")
 
 # Fold limits per Day 01 spec
@@ -384,6 +391,8 @@ class TelegramIngressDaemon:
             text = message.get("text")
             if isinstance(text, str) and text.strip():
                 first = " ".join(text.split())[:REFUSED_START_CHARS]
+            elif message.get("callback_query"):
+                first = "a button press"
             else:
                 first = "a voice note" if "voice" in message else "a message with no text"
             held = {"chat_id": chat_id, "count": 0, "first_at": now, "first": first}
@@ -400,10 +409,12 @@ class TelegramIngressDaemon:
             return paths.using_profile(self.profile_id)
         return nullcontext()
 
-    def _reply(self, chat_id: str, text: Optional[str], always: bool = False) -> None:
+    def _reply(self, chat_id: str, text: Optional[str], always: bool = False,
+               draft_id: Optional[int] = None) -> None:
         """
         Queues one of the bot's fixed sentences for a chat: a confirmation when
-        the bot confirms messages, and an answer to a question (always) in any case.
+        the bot confirms messages, and an answer to a question (always) in any
+        case. A confirmation of a saved draft carries Undo, which removes it.
         """
         if not text or not chat_id or not self.bot_token:
             return
@@ -414,10 +425,24 @@ class TelegramIngressDaemon:
                         return
             except Exception:
                 return
-        self.outbox.put(chat_id, text)
+        self.outbox.put(chat_id, text, self._buttons(chat_id, text, "undo", draft=draft_id)
+                        if draft_id is not None else None)
 
-    def _answer_refusal(self, chat_id: str, key: str) -> None:
-        """A refused chat is told why, at most once in a while, so a stranger cannot make the bot talk on."""
+    def _buttons(self, chat_id: str, text: str, kind: str, **target: Any) -> Optional[Dict[str, Any]]:
+        """A message's buttons, kept in the bot's profile; None if they cannot be kept (the message goes anyway)."""
+        try:
+            with self._bots_profile():
+                return telegram_bot.issue_buttons(chat_id, kind, text, **target)
+        except Exception as error:
+            logger.warning("A message goes without its buttons: %s", type(error).__name__)
+            return None
+
+    def _answer_refusal(self, chat_id: str, key: str, callback_id: Optional[str] = None) -> None:
+        """
+        A refused chat is told why, at most once in a while, so a stranger
+        cannot make the bot talk on: in a message, or for a button press in
+        the notice the phone shows, never a message of its own.
+        """
         now = time.monotonic()
         last = self._answered_refusals.get(chat_id)
         if last is not None and now - last < telegram_bot.REFUSAL_REPLY_EVERY_SECONDS:
@@ -426,7 +451,17 @@ class TelegramIngressDaemon:
         # Bounded like the refused chats themselves.
         while len(self._answered_refusals) > 4 * REFUSED_CHATS_KEPT:
             self._answered_refusals.pop(next(iter(self._answered_refusals)))
-        self._reply(chat_id, telegram_bot.SENTENCES[key].format(chat_id=chat_id))
+        said = telegram_bot.SENTENCES[key].format(chat_id=chat_id)
+        if not callback_id:
+            self._reply(chat_id, said)
+            return
+        try:
+            with self._bots_profile():
+                if not telegram_bot.replies_on():
+                    return
+        except Exception:
+            return
+        self.outbox.put_call("answerCallbackQuery", {"callback_query_id": callback_id, "text": said})
 
     def check_notifications(self) -> None:
         """
@@ -439,14 +474,17 @@ class TelegramIngressDaemon:
         if time.monotonic() - self._last_notify_check < telegram_bot.NOTIFY_EVERY_SECONDS:
             return
         self._last_notify_check = time.monotonic()
+        chat = self.authorized_chat_id
         try:
             with self._bots_profile():
                 said = telegram_bot.notifications()
         except Exception as error:
             logger.warning("The bot's notifications could not be read: %s", type(error).__name__)
             return
-        for text in said:
-            self.outbox.put(self.authorized_chat_id, text)
+        for item in said:
+            # A due post's message carries Remind me in an hour and Done.
+            keyboard = self._buttons(chat, item["text"], "due", due=item["due"]) if item.get("due") else None
+            self.outbox.put(chat, item["text"], keyboard)
         if said:
             self.flush_replies()
 
@@ -484,6 +522,11 @@ class TelegramIngressDaemon:
     ) -> Optional[Dict[str, Any]]:
         """Process a single Telegram update dictionary."""
         if not isinstance(update, dict):
+            return None
+
+        # A press of one of the bot's buttons (phase 2).
+        if from_telegram and isinstance(update.get("callback_query"), dict):
+            self._press(update["callback_query"])
             return None
 
         message = update.get("message", {})
@@ -574,8 +617,45 @@ class TelegramIngressDaemon:
             if from_telegram and stored is not None:
                 _note_heard()
         if from_telegram:
-            self._reply(chat_id, answer, always=question)
+            self._reply(chat_id, answer, always=question, draft_id=telegram_bot.draft_of(stored))
         return stored
+
+    def _press(self, callback: Dict[str, Any]) -> None:
+        """
+        A press of one of the bot's buttons. Refused like a stranger's message
+        unless it comes from the paired chat, by its own person; otherwise
+        telegram_bot.press does what the button says, on the studio's own
+        records and only once, and the press is answered (the notice the
+        phone shows) and its message edited to say so, its buttons gone. A
+        press is answered whatever the confirmations switch says: it is the
+        creator's own act. Logged by its chat, never its data.
+        """
+        query_id = str(callback.get("id") or "")
+        held = callback.get("message") if isinstance(callback.get("message"), dict) else {}
+        chat_id = str((held.get("chat") or {}).get("id", ""))
+        who = str((callback.get("from") or {}).get("id", "") or chat_id)
+        paired = str(self.authorized_chat_id or "")
+        if not paired or chat_id != paired or who != paired:
+            # The person who pressed, or the chat it came from when that is not the paired one.
+            stranger = who if who != paired else chat_id
+            self._remember_refusal(stranger, {"callback_query": True})
+            self._answer_refusal(stranger, "other_chat" if paired else "not_paired", callback_id=query_id)
+            logger.warning("Refused a button press from chat_id: %s", stranger)
+            return
+        if self.profile_id and self.profile_id not in paths.profile_ids():
+            return
+        with self._bots_profile():
+            done = telegram_bot.press(callback.get("data"), chat_id)
+        if query_id:
+            self.outbox.put_call("answerCallbackQuery", {"callback_query_id": query_id, "text": done["answer"]})
+        message_id = held.get("message_id")
+        if isinstance(message_id, int):
+            if done["edit"]:
+                # No reply_markup: the edit takes the message's buttons away.
+                self.outbox.put_call("editMessageText", {"chat_id": chat_id, "message_id": message_id,
+                                                         "text": done["edit"]})
+            else:
+                self.outbox.put_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message_id})
 
     def _command(self, command, update: Dict[str, Any]):
         """One of the bot's commands: (what was stored or done, the answer, whether it was a question)."""
@@ -725,6 +805,7 @@ class TelegramIngressDaemon:
         params = {
             "offset": self.last_update_id + 1,
             "timeout": 30,
+            "allowed_updates": json.dumps(list(ALLOWED_UPDATES)),
         }
 
         self.total_polls += 1
@@ -795,6 +876,13 @@ class TelegramIngressDaemon:
                             sender = str(((update.get("message") or {}).get("chat") or {}).get("id", ""))
                             if sender and sender == str(self.authorized_chat_id):
                                 self._reply(sender, telegram_bot.SENTENCES["not_saved"])
+                            # A press from the paired chat is answered, so its button stops spinning.
+                            pressed = update.get("callback_query")
+                            if (isinstance(pressed, dict) and pressed.get("id") and self.authorized_chat_id
+                                    and str((pressed.get("from") or {}).get("id", "")) == str(self.authorized_chat_id)):
+                                self.outbox.put_call("answerCallbackQuery", {
+                                    "callback_query_id": str(pressed["id"]),
+                                    "text": telegram_bot.SENTENCES["press_failed"]})
 
                         if isinstance(update_id, int) and update_id > self.last_update_id:
                             self.last_update_id = update_id
