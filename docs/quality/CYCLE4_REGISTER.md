@@ -59,6 +59,18 @@ capability first and merged on a release branch. Ten tabs on one post went
 from 620 requests to 3. Records: `docs/quality/cycle4/t1-phase2.md`,
 `t4-phase-b.md`, `t7-phase2.md`.
 
+## In 2.10.2
+
+Network reading retired, on the owner's decision of 2026-10-28: a sanitised
+Resource Timing list from their own feed tab showed LinkedIn's 2026 web app
+makes no /voyager/api/ calls, so the interceptor, its schema registry and the
+webRequest observer had nothing to read. With it, the Telegram bot's token,
+which the egress ledger had shown on Local security since the ingress went
+through the chokepoint, is masked there, and an error answer from Telegram is
+backed off from instead of being asked again every two seconds; both carried
+back in their smallest form from the bot's own work for 2.11.0. Record:
+`docs/quality/cycle4/retire-network-reading.md`.
+
 ## In 2.10.1
 
 The first tests on the owner's live LinkedIn pages found three readers that

@@ -33,10 +33,15 @@ the webRequest observer had nothing to read and could not be re-keyed.
 
 ## Left as it is
 
-- The version: the manifest and the policy's header still name 2.10.1, for the release commit to move to 2.10.2.
-- The Storage panel's label "Network readings log" (`StoragePrivacyWorkspace.tsx`): the store now holds a copy of each analytics reading the extension sends, and older network reading notes; the help and the policy say so.
 - `schema_drift_events` was pruned to 30 days only when a drift event was written; nothing writes now, so the rows it holds stay until the database is cleared. They name a schema, its fields and a path cleaned of anyone.
-- The planning register (`planning/7 Roadmap/Risk - LinkedIn terms and detection.md`) still lists the interceptor among the exposures; `ARCHITECTURE.md` notes it is retired.
+
+## Carried into 2.10.2 with it
+
+| Commit | What |
+|---|---|
+| 71b6846 | The Telegram bot's token masked in the egress ledger (the poll is counted under `/bot<token>/getUpdates`; the request still carries it), an error answer from Telegram (401, 409, 5xx, `ok: false`) backed off from as a network fault, and a failed update logged by its kind only. The smallest form of the bot's own fixes for 2.11.0 (`2dac22c`, `820ed9c`). `tests/test_qc4_t6_token_and_backoff.py`, 7 tests, all failing on the code before it |
+| 84286e6 | The Storage panel's "Network readings log" is the extension readings log, in the panel, its help and the policy; the planning risk register no longer lists the interceptor as an exposure, the interceptor's note is marked retired and the gap about its discarded data closed |
+| (release) | The version on every surface, the changelog, the policy's version line and its page, the cycle 4 register |
 
 ## Suite, as CI runs it
 
