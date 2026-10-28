@@ -37,6 +37,8 @@ class DeskLandingPayload(BaseModel):
 class IngressOptionsPayload(BaseModel):
     replies: Optional[bool] = Field(None, description="The bot confirms each message with a short fixed sentence")
     figures: Optional[bool] = Field(None, description="The bot may answer /today with your own figures")
+    notify_due: Optional[bool] = Field(None, description="Tell the paired chat when a queued post is due")
+    notify_24h: Optional[bool] = Field(None, description="Send the latest post's figures at about 24 hours")
 
 
 class IngressSettingsPayload(BaseModel):
@@ -67,7 +69,8 @@ def post_ingress_settings(payload: IngressSettingsPayload):
 @router.post("/api/v1/ingress/options", tags=["Phone"])
 def post_ingress_options(payload: IngressOptionsPayload):
     """The bot's switches for this profile. A switch not sent is left as it is."""
-    telegram_bot.save_options(replies=payload.replies, figures=payload.figures)
+    telegram_bot.save_options(replies=payload.replies, figures=payload.figures, notify_due=payload.notify_due,
+                              notify_24h=payload.notify_24h)
     return ingress.describe_settings()
 
 

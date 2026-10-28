@@ -3877,6 +3877,10 @@ export interface IngressOptions {
   replies: boolean;
   /** The bot may answer /today with your own figures. Off unless turned on. */
   figures: boolean;
+  /** Tell the paired chat when a queued post is due: a count. Off unless turned on. */
+  notify_due: boolean;
+  /** Send the latest post's figures at about 24 hours, once. Off unless turned on. */
+  notify_24h: boolean;
 }
 
 export interface IngressSettings {

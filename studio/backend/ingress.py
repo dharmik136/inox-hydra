@@ -302,6 +302,7 @@ class TelegramIngressDaemon:
         # each refused chat was last answered.
         self.outbox = telegram_bot.Outbox()
         self._answered_refusals: Dict[str, float] = {}
+        self._last_notify_check = 0.0
 
     def configure(self, bot_token: str, authorized_chat_id: str, origin: Optional[str],
                   profile_id: Optional[str] = None) -> None:
@@ -423,6 +424,28 @@ class TelegramIngressDaemon:
         while len(self._answered_refusals) > 4 * REFUSED_CHATS_KEPT:
             self._answered_refusals.pop(next(iter(self._answered_refusals)))
         self._reply(chat_id, telegram_bot.SENTENCES[key].format(chat_id=chat_id))
+
+    def check_notifications(self) -> None:
+        """
+        Between polls: what the creator asked to be told (telegram_bot's
+        notifications, each opt-in), to the paired chat of a bot set up in a
+        profile. Never raises: a notification is never worth a lost poll.
+        """
+        if not (self.bot_token and self.authorized_chat_id and self.configured_from == "settings"):
+            return
+        if time.monotonic() - self._last_notify_check < telegram_bot.NOTIFY_EVERY_SECONDS:
+            return
+        self._last_notify_check = time.monotonic()
+        try:
+            with self._bots_profile():
+                said = telegram_bot.notifications()
+        except Exception as error:
+            logger.warning("The bot's notifications could not be read: %s", type(error).__name__)
+            return
+        for text in said:
+            self.outbox.put(self.authorized_chat_id, text)
+        if said:
+            self.flush_replies()
 
     def flush_replies(self) -> None:
         """Sends the bot's waiting replies. Never raises: a reply is never worth a lost poll."""
@@ -847,6 +870,7 @@ class TelegramIngressDaemon:
                 except Exception as e:
                     has_err = True
                     logger.error("Worker loop error: %s", self._redact(str(e)))
+                self.check_notifications()
 
                 delay = self.calculate_next_poll_interval(has_error=has_err)
                 if stop.wait(delay):

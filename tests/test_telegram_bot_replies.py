@@ -136,9 +136,11 @@ def test_the_confirmations_are_on_by_default(bot):
 
 
 def test_every_sentence_is_fixed_and_short():
+    """The only values any sentence holds: the recipient's own chat id, and a count (how many posts are due)."""
     for key, sentence in SAID.items():
         assert len(sentence) <= 200, key
-        assert "{" not in sentence.replace("{chat_id}", ""), f"{key} carries a value other than the chat's own id"
+        assert "{" not in sentence.replace("{chat_id}", "").replace("{count}", ""), (
+            f"{key} carries a value other than the chat's own id or a count")
 
 
 def test_a_reply_telegram_rate_limits_is_sent_after_the_wait(bot):

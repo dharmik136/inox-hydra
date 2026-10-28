@@ -29,6 +29,7 @@ Strict Invariants:
 - No message text in a log line: the logs say what kind of thing happened.
 """
 
+import json
 import logging
 import re
 import threading
@@ -53,6 +54,17 @@ API_BASE = "https://api.telegram.org"
 # Settings, each in the profile the bot belongs to.
 REPLIES_KEY = "telegram_replies"   # the bot confirms each message: on unless "off"
 FIGURES_KEY = "telegram_figures"   # the bot may answer with your figures: off unless "on"
+NOTIFY_DUE_KEY = "telegram_notify_due"   # tell me when a queued post is due: off unless "on"
+NOTIFY_24H_KEY = "telegram_notify_24h"   # my latest post's figures at about 24 hours: off unless "on"
+TOLD_KEY = "telegram_told"               # what the notifications have told, so nothing is told twice
+TOLD_KEPT = 200
+
+# The worker looks for something to tell between polls, at most this often.
+NOTIFY_EVERY_SECONDS = 60.0
+# A reading this old counts as "about 24 hours", and is told only while the
+# post is still under two days old.
+DAY_READING_HOURS = (20.0, 30.0)
+DAY_READING_TOLD_UNTIL_HOURS = 48.0
 
 # Every sentence the bot answers a message with. Fixed: none carries the
 # creator's data. {chat_id} is the recipient's own chat id.
@@ -79,6 +91,8 @@ SENTENCES = {
                     "with your figures under Local security."),
     "no_post": "No post of yours is in your studio yet.",
     "nothing_scheduled": "No post is scheduled.",
+    "due_one": "A post in your queue is due now. Open your studio to post it.",
+    "due_many": "{count} posts in your queue are due now. Open your studio to post them.",
 }
 
 # Where a figure was read, as /today says it.
@@ -410,18 +424,28 @@ def figures_on() -> bool:
     return (_setting(FIGURES_KEY) or "off") == "on"
 
 
+def notify_due_on() -> bool:
+    return (_setting(NOTIFY_DUE_KEY) or "off") == "on"
+
+
+def notify_24h_on() -> bool:
+    return (_setting(NOTIFY_24H_KEY) or "off") == "on"
+
+
 def options() -> Dict[str, Any]:
     """The bot's switches, as the panel shows them."""
-    return {"replies": replies_on(), "figures": figures_on()}
+    return {"replies": replies_on(), "figures": figures_on(), "notify_due": notify_due_on(),
+            "notify_24h": notify_24h_on()}
 
 
-def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None) -> Dict[str, Any]:
+def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
+                 notify_due: Optional[bool] = None, notify_24h: Optional[bool] = None) -> Dict[str, Any]:
     """Saves the switches the panel sent; a switch not sent is left as it is."""
     changes = {}
-    if replies is not None:
-        changes[REPLIES_KEY] = "on" if replies else "off"
-    if figures is not None:
-        changes[FIGURES_KEY] = "on" if figures else "off"
+    for key, value in ((REPLIES_KEY, replies), (FIGURES_KEY, figures), (NOTIFY_DUE_KEY, notify_due),
+                       (NOTIFY_24H_KEY, notify_24h)):
+        if value is not None:
+            changes[key] = "on" if value else "off"
     if changes:
         conn = get_db()
         try:
@@ -452,3 +476,78 @@ def answer_for(record: Optional[Dict[str, Any]]) -> Optional[str]:
         else:
             said.append(SENTENCES["post"])
     return " ".join(said) or None
+
+
+# ---------------------------------------------------------------------------
+# Notifications: each opt-in on its own, none by default
+# ---------------------------------------------------------------------------
+
+def _told(conn) -> List[str]:
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (TOLD_KEY,)).fetchone()
+    try:
+        told = json.loads(row["value"]) if row and row["value"] else []
+    except (TypeError, ValueError):
+        told = []
+    return [str(item) for item in told if isinstance(item, str)]
+
+
+def _mark_told(conn, told: List[str]) -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+            (TOLD_KEY, json.dumps(told[-TOLD_KEPT:])))
+
+
+def notifications() -> List[str]:
+    """
+    What there is to tell the paired chat, in the open profile, each thing
+    once: a queued post that is due, as a count; the latest post's reading
+    at about 24 hours, with that reading's own figures. Marks what it
+    returns as told. Counts and the creator's own figures only.
+    """
+    due_on, day_on = notify_due_on(), notify_24h_on()
+    if not (due_on or day_on):
+        return []
+    try:
+        from . import post_identity
+    except ImportError:
+        import post_identity
+    conn = get_db()
+    try:
+        told = _told(conn)
+        said: List[str] = []
+        newly: List[str] = []
+        if due_on:
+            fresh = [f"due:{r['id']}:{r['scheduled_for']}" for r in conn.execute(
+                "SELECT id, scheduled_for FROM posts WHERE status = 'due' ORDER BY scheduled_for")]
+            fresh = [key for key in fresh if key not in told]
+            if fresh:
+                said.append(SENTENCES["due_one"] if len(fresh) == 1
+                            else SENTENCES["due_many"].format(count=len(fresh)))
+                newly += fresh
+        if day_on:
+            latest = conn.execute(
+                "SELECT activity_urn, published_at FROM own_posts WHERE published_at IS NOT NULL "
+                "AND activity_urn NOT LIKE ? ORDER BY published_at DESC LIMIT 1",
+                (post_identity.LOCAL_URN_PREFIX + "%",)).fetchone()
+            published = _instant(latest["published_at"]) if latest else None
+            young = published is not None and (
+                datetime.now(timezone.utc) - published).total_seconds() / 3600.0 <= DAY_READING_TOLD_UNTIL_HOURS
+            key = f"24h:{latest['activity_urn']}" if latest else None
+            if young and key not in told:
+                reading = conn.execute(
+                    "SELECT source, impressions, reactions, comments, reposts FROM post_metric_observations "
+                    "WHERE activity_urn = ? AND age_hours BETWEEN ? AND ? "
+                    "ORDER BY ABS(age_hours - 24.0), observed_at DESC LIMIT 1",
+                    (latest["activity_urn"], DAY_READING_HOURS[0], DAY_READING_HOURS[1])).fetchone()
+                counts = [f"{reading[f]:,} {w}" for f, w in FIGURE_WORDS if reading and reading[f] is not None]
+                if counts:
+                    where = SOURCE_WORDS.get(reading["source"] or "") or "by your studio"
+                    said.append(f"Your latest post at about 24 hours: {', '.join(counts)}, read {where}.")
+                    newly.append(key)
+        if newly:
+            _mark_told(conn, told + newly)
+        return said
+    finally:
+        conn.close()

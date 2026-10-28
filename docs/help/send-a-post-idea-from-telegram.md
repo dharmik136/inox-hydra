@@ -80,6 +80,17 @@ Send a command as a message on its own, as Telegram's menu does. Letter case doe
 
 Each figure says where it was read and how long ago; a figure nobody read is left out, never shown as 0. Replies are a count. It never carries a person's name, a comment, or the words of your posts. Once sent, those figures sit on Telegram's servers, as everything in the chat does. Untick the switch and `/today` says your figures stay in the studio.
 
+## Notifications, each only if you tick it
+
+Two, each with its own switch in the panel, both off until you tick them:
+
+| Switch | What the bot sends |
+| --- | --- |
+| **Tell me when a queued post is due** | "A post in your queue is due now. Open your studio to post it." When several are due at once, how many. Never the post's words |
+| **Send my latest post's figures at about 24 hours** | Once, when the studio has read your latest post at about a day old (between 20 and 30 hours) while it is under two days old: "Your latest post at about 24 hours: 880 impressions, 31 reactions, 4 comments, read on its analytics page." |
+
+Each is sent once to your paired chat: the studio keeps what it has told, so a restart does not send it again. The studio looks for something to tell about once a minute while it is asking Telegram for messages. The figures then sit on Telegram's servers, as everything in the chat does; never a person's name or a comment.
+
 ## What the bot says back
 
 Each message gets one short sentence back, the same words every time. None carries your words, your figures or anything about anyone else:

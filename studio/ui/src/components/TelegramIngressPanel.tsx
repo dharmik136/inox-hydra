@@ -155,6 +155,21 @@ export function TelegramIngressPanel() {
                 disabled={busy}
                 onChange={(on) => void setOption({ figures: on }, on ? "The bot may answer /today with your figures." : "Your figures stay in the studio.")}
               />
+              <p className="studio-meta mt-1 text-ink-muted">WHAT THE BOT TELLS YOU, EACH ONLY IF TICKED</p>
+              <OptionRow
+                label="Tell me when a queued post is due"
+                detail="One message when a post in your queue is due: how many, never its words."
+                checked={state.options.notify_due}
+                disabled={busy}
+                onChange={(on) => void setOption({ notify_due: on }, on ? "The bot tells you when a queued post is due." : "No message when a post is due.")}
+              />
+              <OptionRow
+                label="Send my latest post's figures at about 24 hours"
+                detail="Once, when the studio has read your latest post at about a day old: its impressions, reactions and comments, which then sit on Telegram's servers."
+                checked={state.options.notify_24h}
+                disabled={busy}
+                onChange={(on) => void setOption({ notify_24h: on }, on ? "The bot sends your latest post's figures at about 24 hours." : "No message at 24 hours.")}
+              />
             </div>
           )}
           {state.running && state.configured_from === "settings" && (
