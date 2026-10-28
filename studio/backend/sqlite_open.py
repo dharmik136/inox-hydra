@@ -67,6 +67,29 @@ def files_held():
         _STATE.holders.remove(threading.get_ident())
 
 
+# SQLite's file header: the first 16 bytes, and user_version, the schema
+# version the migrations stamp, as four big-endian bytes at offset 60.
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+
+
+def initialised(path: str) -> bool:
+    """
+    Whether a database file is there and its schema written, read from its
+    header with plain file reads, never through SQLite. A file init_db is still
+    creating, switching to WAL or migrating has a user_version of 0 until its
+    migrations are written back into it. Background work leaves such a file
+    alone: on Windows another connection on it while that runs is refused
+    with "database is locked" (2.9.0's change watcher, 2.10.1's queue pass),
+    and a second init_db on it is a race, not an upgrade.
+    """
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(100)
+    except OSError:
+        return False
+    return len(header) == 100 and header[:16] == _SQLITE_MAGIC and int.from_bytes(header[60:64], "big") > 0
+
+
 def secure(conn: sqlite3.Connection) -> sqlite3.Connection:
     """Turns secure_delete on for a connection made elsewhere, and returns it."""
     conn.execute("PRAGMA secure_delete = ON")
