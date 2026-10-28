@@ -403,10 +403,11 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Cycle 4, track 4, phase b (for 2.10.0), each path counted as it lands:
 # Outbound's one account, /api/v1/insights/outbound/author, which the screen
 # opens: 216 paths, 168 reached, 48 unreachable. The Queue's month,
-# /api/queue/calendar, which its Calendar view reads: 217, 169, 48.
+# /api/queue/calendar, which its Calendar view reads: 217, 169, 48. What the
+# model is told, /api/v1/composer/told, which the Prompt tab reads: 218, 170, 48.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 217
-REACHED_BY_INTERFACE = 169
+TOTAL_API_PATHS = 218
+REACHED_BY_INTERFACE = 170
 UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

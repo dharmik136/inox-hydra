@@ -472,6 +472,31 @@ export interface AiStatus {
   capabilities: string[];
 }
 
+/** What a Composer writing request carries beyond your words (GET /api/v1/composer/told). */
+export interface ModelTold {
+  provider: { configured: boolean; provider: string | null; model: string | null };
+  voice: {
+    sent: boolean;
+    /** Lines about you, from your confirmed profile. */
+    who: string[];
+    /** "Measured across N of their posts:" and the habits, once habits_need posts are held. */
+    habits: string[];
+    posts_measured: number;
+    habits_need: number;
+    /** The opening lines of your best posts, as they are appended. */
+    openers: string[];
+    openers_rule: string;
+    sent_with: string[];
+  };
+  scar_tissue: { phrases: string[]; checked_on: string[]; named_in_command: string[] };
+  grounding: { sources: number; sources_on: number; sent_with: string[] };
+  images: { model_writes: string | null; studio_adds: string[]; refused_when: string };
+}
+
+export async function fetchModelTold(): Promise<ModelTold> {
+  return call<ModelTold>("/api/v1/composer/told");
+}
+
 export async function fetchAiStatus(): Promise<AiStatus> {
   return call<AiStatus>("/api/ai/status");
 }

@@ -24,7 +24,10 @@ try:
         AIProviderConfig,
     )
     from ..agno_agentos import orchestrator
-    from ..repurposer import get_ai_status, command_ai_engine
+    from ..agno_agentos.scar_tissue import BANNED_TROPES
+    from ..repurposer import get_ai_status, command_ai_engine, COMMAND_CLICHES
+    from .. import voice_pack
+    from ..mcp_client import servers as mcp_servers
 except ImportError:
     from agno_agentos.model_gateway import (
         get_current_ai_config,
@@ -34,9 +37,52 @@ except ImportError:
         AIProviderConfig,
     )
     from agno_agentos import orchestrator
-    from repurposer import get_ai_status, command_ai_engine
+    from agno_agentos.scar_tissue import BANNED_TROPES
+    from repurposer import get_ai_status, command_ai_engine, COMMAND_CLICHES
+    import voice_pack
+    from mcp_client import servers as mcp_servers
 
 router = APIRouter()
+
+
+@router.get("/api/v1/composer/told", tags=["AI"])
+def get_what_the_model_is_told() -> Dict[str, Any]:
+    """
+    What a writing request from the Composer carries beyond the words you
+    give it, each part read from the code that builds the request (sections
+    report, batch 8): the voice pack as appended, the phrases the studio will
+    not let a model write and where that is checked, whether any request
+    carries your grounding sources, and how an image prompt is made.
+    """
+    config = get_current_ai_config()
+    sources = mcp_servers.list_servers()
+    return {
+        "status": "success",
+        "provider": {"configured": bool(config.is_configured), "provider": config.provider if config.is_configured else None,
+                     "model": config.model if config.is_configured else None},
+        "voice": voice_pack.told(),
+        "scar_tissue": {
+            "phrases": list(BANNED_TROPES),
+            # A model's image description is refused when it holds one, and
+            # the studio writes the scene itself instead (briefing.validate_response).
+            "checked_on": ["image prompts"],
+            # Command's instruction names these; Re-Hook's names none; neither
+            # answer is checked against the list.
+            "named_in_command": list(COMMAND_CLICHES),
+        },
+        "grounding": {
+            "sources": len(sources),
+            "sources_on": sum(1 for source in sources if source.get("enabled")),
+            # Only the studio's copilot gathers grounding material, and no
+            # screen calls it: Re-Hook, Command and image prompts carry none.
+            "sent_with": [],
+        },
+        "images": {
+            "model_writes": "the scene description" if config.is_configured else None,
+            "studio_adds": ["style", "palette", "lighting", "composition", "the space a quote needs"],
+            "refused_when": "the description holds one of the phrases above, explains itself, or is too short or long",
+        },
+    }
 
 
 class CopilotRequest(BaseModel):

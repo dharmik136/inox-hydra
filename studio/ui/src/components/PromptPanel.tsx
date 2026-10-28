@@ -5,9 +5,11 @@ import {
   configureAi,
   fetchAiProviders,
   fetchAiStatus,
+  fetchModelTold,
   runAiCommand,
   type AiProviderOption,
   type AiStatus,
+  type ModelTold,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ImageProviderSettings } from "./ImageProviderSettings";
@@ -57,6 +59,91 @@ const SENT_BY_FEATURE: { feature: string; what: string }[] = [
  * that says what goes with it, it is the same engine answering about the text
  * on screen.
  */
+/**
+ * What a Composer writing request carries beyond your words, each part read
+ * from the code that builds the request (sections report, batch 8): the
+ * voice pack as it is appended, the phrases the studio will not let a model
+ * write and where that is checked, your grounding sources, and how an image
+ * prompt is made. The list of features above says what each sends; this is
+ * the words.
+ */
+function WhatTheModelIsTold() {
+  const [told, setTold] = useState<ModelTold | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    fetchModelTold()
+      .then((answer) => live && setTold(answer))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (failed) return <p className="text-[12px] text-ink-muted">What the model is told could not be read.</p>;
+  if (!told) return null;
+  const { voice } = told;
+  return (
+    <section>
+      <p className="studio-label mb-2">What the model is told</p>
+      <p className="text-[12px] leading-snug text-ink-secondary">
+        With every {voice.sent_with.join(" and ")} request
+        {told.provider.configured ? "" : ", once a provider is connected"}, about you:
+      </p>
+      {voice.who.length > 0 && (
+        <ul className="mt-1 flex flex-col gap-0.5 text-[12px] leading-snug text-ink-secondary">
+          {voice.who.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      )}
+      {voice.habits.length > 0 ? (
+        <ul className="mt-1 flex flex-col gap-0.5 text-[12px] leading-snug text-ink-secondary">
+          {voice.habits.map((line) => (
+            <li key={line}>{line.replace(/^- /, "")}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-[12px] leading-snug text-ink-muted">
+          No habits yet: they are measured once {voice.habits_need} of your posts are held, and {voice.posts_measured} are.
+        </p>
+      )}
+      {voice.openers.length > 0 && (
+        <>
+          <p className="mt-2 text-[12px] leading-snug text-ink-secondary">
+            Your openers, as examples of your voice: {voice.openers_rule}.
+          </p>
+          <ul className="mt-1 flex flex-col gap-0.5 text-[12px] leading-snug text-ink-primary">
+            {voice.openers.map((line) => (
+              <li key={line}>{line.replace(/^- /, "")}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {!voice.sent && <p className="mt-1 text-[12px] text-ink-muted">Nothing from your profile or posts is held yet, so nothing goes.</p>}
+
+      <p className="mt-3 text-[12px] leading-snug text-ink-secondary">
+        Phrases the studio will not let a model write: {told.scar_tissue.phrases.join(", ")}. An image description a
+        model writes is refused when it holds one, and the studio writes the scene itself instead. Command&apos;s
+        instruction names {told.scar_tissue.named_in_command.length} of them; Re-Hook&apos;s names none; neither answer is
+        checked against the list.
+      </p>
+      <p className="mt-2 text-[12px] leading-snug text-ink-secondary">
+        Grounding: {told.grounding.sources_on} of your {told.grounding.sources} sources switched on.{" "}
+        {told.grounding.sent_with.length
+          ? `They go with ${told.grounding.sent_with.join(" and ")}.`
+          : "No Composer request carries them: only the studio's copilot reads them, and no screen calls it."}
+      </p>
+      <p className="mt-2 text-[12px] leading-snug text-ink-secondary">
+        Images: {told.images.model_writes ? `your model writes ${told.images.model_writes}, ` : "the studio writes the whole prompt, as no model is connected; "}
+        and the studio adds {told.images.studio_adds.join(", ")} after it, so a model cannot drop them. A description is
+        refused when {told.images.refused_when}.
+      </p>
+    </section>
+  );
+}
+
 export function PromptPanel({ draft = "" }: { draft?: string } = {}) {
   const [status, setStatus] = useState<StatusWithFailure | null>(null);
   const [failed, setFailed] = useState(false);
@@ -181,6 +268,8 @@ export function PromptPanel({ draft = "" }: { draft?: string } = {}) {
             : "Nothing from your profile or posts goes with them yet."}
         </p>
       </section>
+
+      <WhatTheModelIsTold />
 
       <section>
         <p className="studio-label mb-2">Available here</p>
