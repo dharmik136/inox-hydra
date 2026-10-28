@@ -68,7 +68,7 @@ VISIBLE_DAYS = 14
 
 # The slot the model stage or the library fills, and the kinds that follow the date.
 OPEN_SLOT = 5
-DATED_KINDS = ("on_this_day", "opener", "monday")
+DATED_KINDS = ("on_this_day", "opener", "article", "monday")
 
 
 def _now() -> datetime:

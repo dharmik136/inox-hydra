@@ -443,3 +443,20 @@ def test_today_draws_one_block_that_links_into_the_section():
     assert 'href="#/record"' in block and "fetchRecordLines" in block
     assert "!lines.built" in block, "the block is drawn before today's batch exists"
     assert '["ideas"]' in block, "the block does not read again when the day's cards are built"
+
+
+def test_the_dates_slot_takes_turns_so_a_daily_poster_still_sees_openers_and_articles(conn):
+    """
+    It was the post of the date whenever there was one, so a creator who has
+    posted most days for years never saw an opener or an article there. The
+    post of the date now comes up twice as often as each of the other two.
+    """
+    import record_cards
+
+    add_posts(conn, POSTS + [("Pricing a retainer is pricing your attention, not your hours.", "2024-10-28T09:00:00+00:00")])
+    add_record(conn, "article", url="https://www.linkedin.com/pulse/hiring-without-a-recruiter-example/",
+               title="Hiring without a recruiter, a year on", when="2025-11-10T08:00:00+00:00")
+    kinds = [slot(record_cards.compute_local(conn, DAY, seed), 2)["kind"] for seed in SEEDS]
+    counts = {kind: kinds.count(kind) for kind in set(kinds)}
+    assert set(counts) == {"on_this_day", "opener", "article"}, counts
+    assert counts["on_this_day"] > counts["opener"] and counts["on_this_day"] > counts["article"], counts

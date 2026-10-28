@@ -88,11 +88,13 @@ ENGAGED_RECENT_DAYS = 90
 # against the others; a kind with nothing free to show today is left out of
 # the draw. Engaged with: a comment carries what they think, so it comes up
 # twice as often as a poll they voted in, an account they follow, or a post
-# they reacted to, saved or reposted (a link). Working for you, on a day no
-# post of the date is there: one of their own first lines, or as often one of
-# their own articles.
+# they reacted to, saved or reposted (a link). Working for you, the date's
+# slot: their post of this date in an earlier year twice as often as one of
+# their own first lines or one of their own articles. It was the post of the
+# date whenever there was one, so a creator who has posted most days for
+# years never saw an opener or an article there.
 ENGAGED_KIND_WEIGHTS = (("comment", 2.0), ("vote", 1.0), ("follow", 1.0), ("link", 1.0))
-WORKING_KIND_WEIGHTS = (("opener", 1.0), ("article", 1.0))
+WORKING_KIND_WEIGHTS = (("on_this_day", 2.0), ("opener", 1.0), ("article", 1.0))
 # Said on a drawn card's rule, so the creator can read why it is not on the
 # topic they half expected.
 TOPIC_DIVERSITY = ("drawn on a topic no earlier card of the day shows, when one is free; a repeat only when every "
@@ -1202,12 +1204,14 @@ def compute_local(conn, day: date, seed: int, avoid: Optional[Set[str]] = None) 
 
     cards: List[Dict[str, Any]] = []
     cards.append(noted(what_worked(conn, posts, history, day)))
-    second = noted(on_this_day(conn, posts, day, history))
-    if second is None:
-        second = noted(_choose_kind(
-            [("opener", resurfaced_opener(conn, posts, topics_of, history, day, seed, seen_topics)),
-             ("article", your_article(conn, _vocabulary, topic_counts, history, day, seed, seen_topics))],
-            WORKING_KIND_WEIGHTS, seed + 7, seen_topics))
+    on_date = on_this_day(conn, posts, day, history)
+    if on_date is not None:
+        on_date["payload"]["topic"] = topics_of.get(on_date["provenance"]["source_rows"][0]["id"])
+    second = noted(_choose_kind(
+        [("on_this_day", on_date),
+         ("opener", resurfaced_opener(conn, posts, topics_of, history, day, seed, seen_topics)),
+         ("article", your_article(conn, _vocabulary, topic_counts, history, day, seed, seen_topics))],
+        WORKING_KIND_WEIGHTS, seed + 7, seen_topics))
     if second is None and posts:
         second = _abstained(2, "working_for_you", "opener", "No opener of yours, nor an article of yours on one of "
                             "your topics, is free to resurface today: every one is held back after a showing, or was "
