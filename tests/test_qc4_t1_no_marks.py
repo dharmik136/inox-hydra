@@ -9,9 +9,9 @@ data-inox-card-urns, for every user and with network reading off, and the
 interceptor marked the root element data-inox-voyager. The decision kept
 only data-urn on a feed card and the import banner with its Stop button.
 
-So the stamper's run and the interceptor's answer travel as window messages,
-on the channel the interceptor's captures already use, and the interceptor
-is asked only while network reading is on. Every notice the bridge drew into
+So the stamper's run travels as a window message. (The interceptor's answer
+did too, until network reading was retired in 2.10.2 and the interceptor
+with it.) Every notice the bridge drew into
 the page goes to the side panel, by way of the worker, which shows "!" on
 the badge until the panel opens; a warning while a history import runs is a
 sentence in the import's own banner, not a new element; the composer's
@@ -198,13 +198,13 @@ def page_marks(name, source):
 
 
 def _page_scripts():
-    """The scripts that run in LinkedIn's page: the manifest's, and the one the worker registers."""
+    """The scripts that run in LinkedIn's page: the manifest's, and any the worker registers or injects."""
     with open(os.path.join(EXT, "manifest.json"), encoding="utf-8") as handle:
         manifest = json.load(handle)
     names = [name for entry in manifest["content_scripts"] for name in entry["js"]]
     with open(os.path.join(EXT, "background.js"), encoding="utf-8") as handle:
         worker = handle.read()
-    for registered in re.findall(r"\bjs:\s*\[([^\]]*)\]", worker):
+    for registered in re.findall(r"\b(?:js|files):\s*\[([^\]]*)\]", worker):
         names += re.findall(r'"([\w.]+\.js)"', registered)
     return sorted(set(names))
 
@@ -216,7 +216,7 @@ def _source(name):
 
 def test_the_guard_reads_every_script_that_runs_in_linkedins_page():
     names = _page_scripts()
-    for name in ("card_urns.js", "content.js", "own_pages.js", "voyager_interceptor.js"):
+    for name in ("card_urns.js", "content.js", "own_pages.js", "own_insights.js"):
         assert name in names, f"{name} is not read"
     # It sees what it allows, so a blind reading cannot pass it.
     code = code_only(_source("own_pages.js"))
@@ -264,7 +264,7 @@ LISTEN = """() => { window.__posted = [];
 def test_the_card_stamper_reports_by_message_and_leaves_no_mark(pages):
     from qc_f3_pages import page_html
     feed = page_html("<main><div class='feed-shared-update-v2'>One</div><div class='feed-shared-update-v2'>Two</div></main>")
-    page = pages.open("/feed/", feed, scripts=("card_urns.js", "voyager_schema.js", "content.js"), before=LISTEN)
+    page = pages.open("/feed/", feed, scripts=("card_urns.js", "content.js"), before=LISTEN)
     page.clock.run_for(2000)
     page.wait_for_timeout(50)
     reports = [b for b in pages.sent(page, "/api/v1/bridge/capture") if b.get("extractor") == "card_urns"]
@@ -272,30 +272,6 @@ def test_the_card_stamper_reports_by_message_and_leaves_no_mark(pages):
     assert page.evaluate(ROOT_MARKS) == [], "the stamper marked LinkedIn's document"
     sources = {m["source"] for m in page.evaluate("() => window.__posted")}
     assert sources == {"inox-card-urns"}, sources
-
-
-def test_with_network_reading_off_the_bridge_asks_the_page_nothing(pages):
-    from qc_f3_pages import page_html
-    page = pages.open("/feed/", page_html("<main></main>"),
-                      scripts=("voyager_interceptor.js", "voyager_schema.js", "content.js", "own_pages.js"),
-                      storage={"networkReading": False}, before=LISTEN)
-    page.clock.run_for(3000)
-    page.wait_for_timeout(50)
-    assert page.evaluate("() => window.__posted") == [], "the bridge posted into a page whose switch is off"
-    assert page.evaluate(ROOT_MARKS) == []
-
-
-def test_with_network_reading_on_the_interceptor_answers_and_marks_nothing(pages):
-    from qc_f3_pages import page_html
-    page = pages.open("/feed/", page_html("<main></main>"),
-                      scripts=("voyager_interceptor.js", "voyager_schema.js", "content.js", "own_pages.js"),
-                      storage={"networkReading": True})
-    page.clock.run_for(100)
-    page.wait_for_timeout(50)
-    # The page tells the worker (PAGE_STATE), which beats for the browser.
-    beats = [m for m in pages.sent(page) if m.get("action") == "PAGE_STATE" and m.get("network_reading")]
-    assert beats and beats[-1]["network_reading"]["injected"] is True
-    assert page.evaluate(ROOT_MARKS) == [], "the interceptor marked LinkedIn's document"
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +314,7 @@ def test_a_warning_while_an_import_runs_is_a_sentence_in_its_banner(pages):
         ? { status: 'error', kept: true, waiting: 3, error: 'kept' } : base(m));
     }"""
     page = pages.open("/in/test-creator/recent-activity/all/", posts,
-                      scripts=("voyager_schema.js", "content.js", "own_pages.js"), before=kept)
+                      scripts=("content.js", "own_pages.js"), before=kept)
     drawn = page.evaluate(ELEMENTS)
     page.clock.run_for(7000)
     banner = page.evaluate("() => { const b = document.getElementById('studio-import-banner'); return b ? b.innerText : null; }")

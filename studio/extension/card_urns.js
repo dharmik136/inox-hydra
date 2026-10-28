@@ -10,8 +10,8 @@
  * It reads the page and adds one attribute to a feed card. It does not wrap
  * fetch or read network responses, and the only thing it posts is its own
  * count and timing, to the extension's isolated world on this page. It used
- * to live inside voyager_interceptor.js, so switching network reading off
- * (the default) also left feed engagers without a post.
+ * to live inside voyager_interceptor.js, network reading's script, which was
+ * off by default and was retired in 2.10.2; this one never was optional.
  */
 (() => {
     'use strict';
@@ -47,8 +47,8 @@
     }
 
     // This runs in the page's own world, where the extension's worker is out
-    // of reach, so it posts its run on the window channel the interceptor
-    // uses: how many feed cards are on screen, how many carry a post id, and
+    // of reach, so it posts its run on the window channel: how many feed
+    // cards are on screen, how many carry a post id, and
     // its own timing (each run is timed with performance.now(); runs over
     // 50 ms are counted), once after the first tick and then at most once a
     // minute while there is something on screen. content.js forwards it to

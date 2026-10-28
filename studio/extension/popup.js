@@ -1,40 +1,11 @@
 const STUDIO_URL = "http://127.0.0.1:8000";
 
-const NETWORK_READING_NOTE_OFF =
-  "Off. The bridge reads only what is on the LinkedIn pages you open. " +
-  "Switched on, it also copies the figures LinkedIn's own app has already downloaded " +
-  "for those pages, which are exact rather than rounded, and notes which of LinkedIn's data " +
-  "requests they made. It does this by wrapping the page's fetch function, which LinkedIn " +
-  "may treat as automation. It never sends a request of its own.";
-const NETWORK_READING_NOTE_ON =
-  "On. The bridge copies the figures LinkedIn's own app has already downloaded, by wrapping " +
-  "the page's fetch function, which LinkedIn may treat as automation. It applies to LinkedIn " +
-  "pages you open or reload from now; switching it off stops the copying at once, and a tab " +
-  "already open keeps the wrapper until you reload it.";
-
-function paintNetworkReading(enabled) {
-  const box = document.getElementById("network-reading");
-  const note = document.getElementById("network-reading-note");
-  if (box) box.checked = enabled;
-  if (note) note.innerText = enabled ? NETWORK_READING_NOTE_ON : NETWORK_READING_NOTE_OFF;
-}
-
 document.addEventListener("DOMContentLoaded", async () => {
   checkServerAndSession();
   // The last capture and the last drift noticed, from the worker's storage.
   try {
     followStorage("popup-last-capture", "popup-drift-notice");
   } catch (err) {}
-
-  // Off unless set. background.js registers or removes the interceptor when
-  // this value changes, and refuses its captures while it is off.
-  chrome.storage.local.get("networkReading", (items) => {
-    paintNetworkReading(!chrome.runtime.lastError && !!items && items.networkReading === true);
-  });
-  document.getElementById("network-reading").addEventListener("change", (event) => {
-    const enabled = !!event.target.checked;
-    chrome.storage.local.set({ networkReading: enabled }, () => paintNetworkReading(enabled));
-  });
 
   document.getElementById("btn-open-studio").addEventListener("click", () => {
     chrome.tabs.create({ url: STUDIO_URL });
@@ -178,7 +149,6 @@ const CAPTURE_WORDS = {
   "/api/v1/self/outbound/ingest": "your comments and reactions",
   "/api/v1/identity/observe": "your profile",
   "/api/v1/posts/bind-urn": "a post linked to your draft",
-  "/api/v1/bridge/voyager-ingest": "a network reading",
   "/api/analytics/ingest": "creator analytics",
   "/api/analytics/page-figures": "figures from your own analytics pages"
 };

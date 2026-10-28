@@ -102,7 +102,7 @@ When the required steps are ticked (the bridge, your profile, and your history r
 
 The extension reads LinkedIn's pages, and LinkedIn changes how they are built without notice. When a part of the capture stops matching, it finds nothing and says nothing, which looks exactly like nobody engaging. Whether each of the eight parts is still working is shown on **Health**, with each reader's runs in the last 7 days, what it read and what it could not read; Setup points there under its five steps. See [Check the bridge is reading](check-the-bridge-is-reading.md).
 
-Network reading is off unless you turn it on in the extension's popup. Step 1 says which of three states it is in: "Network reading is off.", "Network reading is on and seeing N LinkedIn data calls, K matched." or "Network reading is on and matching nothing", with the count of data calls the LinkedIn tab that last reported saw. An extension that has not reported the state yet says nothing there, rather than "off". The same sentence is on **Health**, above its readers, and in the extension's side panel, under **Health**.
+Network reading, the switch in the extension's popup that read LinkedIn's network responses, was retired in 2.10.2. Where it had ever run, step 1 says "Network reading was retired in 2.10.2: LinkedIn's site no longer sends the data it read.", and so does **Health**, above its readers. Where it never ran, nothing is said.
 
 The extension reports at most once a minute per part per browser, however many tabs show the page. The studio keeps a week of those reports, and a row per reader per day for longer. They say how much was found and kept, never what it was.
 

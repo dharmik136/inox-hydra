@@ -9,6 +9,8 @@ When the browser starts, and every five minutes after that, the extension reads 
 
 When it is installed or updated, it starts its readers in the LinkedIn tabs already open, as a reload of each tab would. A tab it cannot reach is counted, and Health then says "N LinkedIn tabs still carry an older copy of the bridge's readers, which the update could not replace: reload them." Reload those tabs; the extension itself is fine.
 
+Updating to 2.10.2 also retires network reading. The update removes the script an earlier version had registered in the browser to read LinkedIn's network responses, and the stored switch, with no reload needed. A LinkedIn tab that was open with the switch on keeps the old wrapper, which sends nothing anywhere, until you reload or close that tab.
+
 Two limits:
 
 - It compares version numbers. A change to its files that keeps the same version, such as a source checkout between two releases, still needs **Reload** on the extensions page.

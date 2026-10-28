@@ -38,6 +38,8 @@ function boot(sourcePath, options) {
   });
   const alarms = {};
   const executed = [];
+  const registered = (options.registered || []).map((id) => ({ id }));
+  const unregistered = [];
   const tabs = (options.tabs || []).map((tab) => Object.assign({}, tab));
   const diskManifest = { version: options.diskVersion || options.version || "9.9.9" };
   let reloads = 0;
@@ -52,8 +54,20 @@ function boot(sourcePath, options) {
     storage: { local: area(storage, "local"), session: options.noSession ? undefined : area(session, "session"),
       onChanged: event("changed") },
     scripting: {
-      getRegisteredContentScripts: async () => (storage.networkReading ? [{ id: "inox-network-reading" }] : []),
-      registerContentScripts: async () => {}, unregisterContentScripts: async () => {},
+      // Scripts registered with the browser, which persist across sessions:
+      // `registered` lists what an earlier version left registered.
+      getRegisteredContentScripts: async (filter) => registered
+        .filter((script) => !filter || !filter.ids || filter.ids.includes(script.id))
+        .map((script) => Object.assign({}, script)),
+      registerContentScripts: async (scripts) => { for (const script of scripts) registered.push(Object.assign({}, script)); },
+      unregisterContentScripts: async (filter) => {
+        const ids = filter && filter.ids ? filter.ids : registered.map((script) => script.id);
+        unregistered.push(...ids);
+        for (const id of ids) {
+          const at = registered.findIndex((script) => script.id === id);
+          if (at >= 0) registered.splice(at, 1);
+        }
+      },
       executeScript: async (details) => {
         executed.push(JSON.parse(JSON.stringify(details)));
         if (details.func) return [{ result: options.probe === undefined ? null : options.probe }];
@@ -134,6 +148,7 @@ function boot(sourcePath, options) {
   const fire = (bucket, ...args) => { for (const fn of listeners[bucket]) fn(...args); };
   return {
     chrome, storage, session, listeners, badge, sent, recipes, alarms, executed, tabs, diskManifest,
+    registered, unregistered,
     tick, relay, fromTab, fire, senderFor,
     get reloads() { return reloads; },
     get maxInFlight() { return maxInFlight; },

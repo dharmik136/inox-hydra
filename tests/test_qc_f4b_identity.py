@@ -221,19 +221,22 @@ def test_capture_health_shows_what_the_help_describes():
     assert labels == _help_parts()
 
 
-def test_a_network_reading_part_appears_once_it_has_run():
+def test_a_network_reading_part_appears_no_more_even_once_it_has_run():
+    """
+    A network reading part was listed once it had run, under the name its
+    help gave it. Network reading was retired in 2.10.2: a run on record, or
+    a reading an older extension still sends, lists nothing new.
+    """
     conn = get_db()
     with conn:
         conn.execute("DELETE FROM captures")
+        conn.execute("INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept) "
+                     "VALUES ('2026-10-20T10:00:00+00:00', 'voyager_feed_updates', 'voyager_api', 3, 1)")
     conn.close()
     client.post("/api/v1/bridge/voyager-ingest", json={"schema_name": "feed_updates", "data": []})
     try:
-        labels = _health_labels()
-        added = [label for label in labels if label not in _help_parts()]
-        assert len(added) == 1 and "network reading" in added[0].lower()
-        assert "voyager" not in added[0].lower()
-        with open(HEALTH_HELP, encoding="utf-8") as handle:
-            assert added[0] in handle.read(), "the help does not name the part the screen shows"
+        assert _health_labels() == _help_parts(), "the screen lists a part its help does not describe"
+        assert not any("network reading" in label.lower() for label in _health_labels())
     finally:
         conn = get_db()
         with conn:

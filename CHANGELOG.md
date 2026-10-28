@@ -5,6 +5,49 @@ asks for an entry per release (`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`
 section 5.5); this file starts with the work since v2.5.2, which was never
 released. Version numbers follow `studio/__version__.py`.
 
+## 2.10.2
+
+Network reading is retired, and the Telegram bot's token no longer shows on
+Local security.
+
+### Before you use 2.10.2
+
+- **No database upgrade.** The schema stays at 37, and what network reading
+  captured before stays in your database.
+- **No hand reload.** An extension loaded from the studio's folder reloads
+  itself when the studio is updated, and asks for one permission fewer
+  (`webRequest`). A LinkedIn tab that was open with network reading on keeps an
+  inert copy of it until you reload that tab.
+- **If you shared a screenshot of Local security** after setting up the
+  Telegram bot, revoke the bot's token with @BotFather (/revoke) and save the
+  new one in the Telegram panel.
+
+### Removed
+
+- **Network reading.** LinkedIn's 2026 site no longer makes the requests it
+  read: its data now arrives in an internal streaming format. The popup's
+  switch, the coverage meter and the side panel's network reading lines are
+  gone, and nothing in the extension wraps LinkedIn's own requests any more.
+  The page readers, rebuilt in 2.10.1, and LinkedIn's analytics export cover
+  what it was meant to add. Where it had run, Health and Setup say once that it
+  was retired.
+
+### Fixed
+
+- **The Telegram bot's token is no longer shown** on Local security after the
+  first poll. The poll is counted under Telegram's address with the token
+  masked. It was held in memory only, never written to disk or to a
+  diagnostics bundle.
+- **A Telegram error answer is waited out.** A token Telegram does not know, a
+  second program asking for the same bot, or Telegram's own trouble used to
+  make the studio ask again every two seconds; it now waits longer after each
+  failure, up to a minute.
+- A message from your phone that could not be saved is logged by its kind of
+  failure only, never by words that could quote it.
+- The Storage and privacy panel calls the separate readings file the
+  **extension readings log**: it now holds a copy of each analytics reading the
+  extension sends.
+
 ## 2.10.1
 
 From the first tests on your own live LinkedIn pages and a real analytics

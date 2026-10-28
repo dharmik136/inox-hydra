@@ -106,13 +106,15 @@ def test_a_hidden_tab_reads_nothing_and_reads_once_on_return(pages):
 
 
 def test_a_page_tells_the_worker_its_state_and_sends_the_studio_no_heartbeat(pages):
-    page = pages.open("/feed/", page_html("<main></main>"), scripts=("voyager_schema.js", "content.js", "own_pages.js"),
+    page = pages.open("/feed/", page_html("<main></main>"), scripts=("content.js", "own_pages.js"),
                       storage={"networkReading": True})
     page.clock.run_for(70000)
     states = [m for m in pages.sent(page) if m.get("action") == "PAGE_STATE"]
     assert states, "the page never told the worker its state"
     assert states[-1]["page_kind"] == "feed" and states[-1]["visible"] is True
-    assert states[-1]["network_reading"]["switch"] is True
+    # Network reading was retired in 2.10.2: a switch an earlier version left
+    # stored is not reported.
+    assert not [m for m in states if "network_reading" in m or "voyager_calls" in m]
     assert pages.sent(page, "/api/v1/bridge/heartbeat") == [], "a tab sent the studio a heartbeat of its own"
 
 
@@ -190,7 +192,7 @@ def test_two_visible_tabs_on_one_activity_page_scroll_once(pages, real_studio):
     tabs = []
     for tab_id in (1, 2):
         tabs.append(pages.open(f"/in/{ME}/recent-activity/all/", POSTS,
-                               scripts=("voyager_schema.js", "content.js", "own_pages.js"), me=ME,
+                               scripts=("content.js", "own_pages.js"), me=ME,
                                before=THROUGH_A_REAL_STUDIO, expose={"realStudio": _worker_for(real_studio, tab_id)}))
     for _ in range(4):
         for tab in tabs:
@@ -212,7 +214,7 @@ def _advance(tab, ms, step=1000):
 def _import_tab(pages, real_studio, before=None):
     script = THROUGH_A_REAL_STUDIO if before is None else (
         "() => { (" + THROUGH_A_REAL_STUDIO + ")(); (" + before + ")(); }")
-    tab = pages.open(f"/in/{ME}/recent-activity/all/", POSTS, scripts=("voyager_schema.js", "content.js", "own_pages.js"),
+    tab = pages.open(f"/in/{ME}/recent-activity/all/", POSTS, scripts=("content.js", "own_pages.js"),
                      me=ME, before=script, expose={"realStudio": _worker_for(real_studio, 1)})
     _advance(tab, 6000)
     return tab

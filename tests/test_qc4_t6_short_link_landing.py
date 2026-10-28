@@ -70,7 +70,7 @@ def _open_unclocked(pages, path, before):
     page = context.new_page()
     page.goto("https://www.linkedin.com" + path, wait_until="load")
     page.evaluate(before)
-    for name in ("voyager_schema.js", "content.js"):
+    for name in ("content.js",):
         page.add_script_tag(path=os.path.join(EXT, name))
     return page
 

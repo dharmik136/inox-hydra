@@ -14,7 +14,7 @@ from the owner's outline with an invented count.
 import pytest
 
 ME = "ada-example"
-SCRIPTS = ("voyager_schema.js", "content.js", "own_pages.js", "own_insights.js")
+SCRIPTS = ("content.js", "own_pages.js", "own_insights.js")
 SIGNED_IN = {"signedInVanity": ME}
 
 

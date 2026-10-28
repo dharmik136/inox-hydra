@@ -14,9 +14,10 @@ Cycle 4, track 1, items 7 and 5 (the extension side).
           the poll is a 5 s net behind feature detection.
   item 5  content.js read the network-reading switch asynchronously and
           dropped every interceptor message that arrived before the read
-          resolved. They are queued and handled once it has. The interceptor
-          marks the document, so the isolated world can say whether the page
-          carries it.
+          resolved; they were queued and handled once it had. Network
+          reading was retired in 2.10.2 with the interceptor, so the gate is
+          gone: a message in the interceptor's shape is now nothing to the
+          page scripts, whatever the stored switch says.
 
 These run the shipped scripts in headless Chromium (see qc_f3_pages.py).
 """
@@ -100,7 +101,7 @@ def test_without_the_navigation_api_the_poll_still_sees_the_route(pages):
 
 
 # ---------------------------------------------------------------------------
-# Item 5: the gate and the marker
+# Item 5: the gate, gone with network reading
 # ---------------------------------------------------------------------------
 
 CAPTURE = {
@@ -112,74 +113,15 @@ CAPTURE = {
 }
 
 
-# The fake storage is made to hold its answer until the test releases it, as
-# a real page where LinkedIn's first responses arrive before chrome.storage
-# has answered.
-HOLD_STORAGE = """() => {
-  const real = chrome.storage.local.get;
-  window.__release = [];
-  chrome.storage.local.get = (keys, cb) => real(keys, (out) => { window.__release.push(() => cb(out)); });
-}"""
-
-
-def test_a_capture_that_arrives_before_the_switch_is_read_is_kept(pages):
-    page = pages.open("/feed/", page_html("<main></main>"), storage={"networkReading": True}, before=HOLD_STORAGE)
-    page.evaluate("(m) => window.postMessage(m, window.location.origin)", CAPTURE)
-    page.wait_for_timeout(50)
-    assert not pages.sent(page, "/api/v1/bridge/voyager-ingest"), "sent before the switch was known"
-    page.evaluate("() => window.__release.splice(0).forEach((f) => f())")
-    page.wait_for_timeout(50)
-    sent = pages.sent(page, "/api/v1/bridge/voyager-ingest")
-    assert len(sent) == 1 and sent[0]["schema_name"] == "feed_updates"
-
-
-def test_a_capture_that_arrives_before_a_switch_that_is_off_is_dropped(pages):
-    page = pages.open("/feed/", page_html("<main></main>"), storage={"networkReading": False}, before=HOLD_STORAGE)
-    page.evaluate("(m) => window.postMessage(m, window.location.origin)", CAPTURE)
-    page.evaluate("() => window.__release.splice(0).forEach((f) => f())")
-    page.wait_for_timeout(50)
-    assert not pages.sent(page, "/api/v1/bridge/voyager-ingest")
-
-
-def test_the_interceptor_answers_the_isolated_world_and_marks_nothing(pages):
-    """
-    The isolated world asks whether the page carries the interceptor; it used
-    to read an attribute the interceptor wrote on LinkedIn's root element
-    (the review's S7).
-    """
-    page = pages.open("/feed/", page_html("<main></main>"), scripts=("voyager_interceptor.js",),
-                      before="() => { window.__heard = []; window.addEventListener('message', (e) => window.__heard.push(e.data)); }")
-    page.evaluate("() => window.postMessage({ type: 'INOX_VOYAGER_PING', source: 'inox-bridge' }, window.location.origin)")
-    page.wait_for_timeout(50)
-    heard = page.evaluate("() => window.__heard")
-    assert {"type": "INOX_VOYAGER_PRESENT", "source": "inox-voyager-interceptor"} in heard
-    assert page.evaluate("() => document.documentElement.getAttributeNames()") == []
-
-
-def test_a_response_about_other_members_never_leaves_the_page(pages):
-    """
-    Profiles, reactions on posts and comments are about other members. The
-    page counts the call and sends nothing of the response, neither its data
-    nor its drift.
-    """
+def test_a_message_in_the_retired_interceptors_shape_sends_nothing(pages):
+    """Any script on LinkedIn's page can post this; with the switch left stored on, it still goes nowhere."""
     page = pages.open("/feed/", page_html("<main></main>"), storage={"networkReading": True})
     page.clock.run_for(100)
-    others = (
-        ("https://www.linkedin.com/voyager/api/socialActions/urn:li:activity:7385000000000000001/likes",
-         {"elements": [{"actor": {"urn": "urn:li:fsd_profile:ACoAAexample", "name": "Some One"},
-                        "reactionType": "LIKE"}]}),
-        ("https://www.linkedin.com/voyager/api/feed/comments",
-         {"elements": [{"commenter": {"name": "Some One", "publicIdentifier": "someone-else"}}]}),
-        ("https://www.linkedin.com/voyager/api/identity/profiles",
-         {"elements": [{"publicIdentifier": "someone-else", "firstName": "Some", "lastName": "One"}]}),
-    )
-    for url, body in others:
-        message = {**CAPTURE, "payload": {**CAPTURE["payload"], "url": url, "body": body}}
-        page.evaluate("(m) => window.postMessage(m, window.location.origin)", message)
-    page.wait_for_timeout(100)
-    assert not pages.sent(page, "/api/v1/bridge/voyager-ingest"), "a response about other members was sent"
-    assert not pages.sent(page, "/api/v1/bridge/schema-drift")
-    # The feed itself still goes, for the studio to keep the creator's own posts from.
     page.evaluate("(m) => window.postMessage(m, window.location.origin)", CAPTURE)
+    page.evaluate("(m) => window.postMessage(m, window.location.origin)",
+                  {"type": "INOX_VOYAGER_PRESENT", "source": "inox-voyager-interceptor"})
     page.wait_for_timeout(100)
-    assert len(pages.sent(page, "/api/v1/bridge/voyager-ingest")) == 1
+    paths = [m.get("path") for m in pages.sent(page) if m.get("action") == "STUDIO_API"]
+    assert not [p for p in paths if p in ("/api/v1/bridge/voyager-ingest", "/api/v1/bridge/schema-drift")], paths
+    states = [m for m in pages.sent(page) if m.get("action") == "PAGE_STATE"]
+    assert not [m for m in states if "network_reading" in m or "voyager_calls" in m], states

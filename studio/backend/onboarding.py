@@ -34,6 +34,7 @@ import bisect
 import hashlib
 import json
 import re
+import sqlite3
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -230,63 +231,51 @@ def published_at_from_urn(activity_urn: str) -> Optional[str]:
 # The bridge
 # ---------------------------------------------------------------------------
 
-# What a heartbeat may say about network reading, and the shape each value
-# must have. Anything else is dropped rather than stored: a heartbeat is the
-# extension's claim about itself, and a claim in the wrong shape is not one.
-_NETWORK_READING_FIELDS = {
-    "switch": bool, "registered": bool, "injected": bool,
-    "voyager_calls_seen": int, "matched": int, "captured": int, "last_capture_at": str,
-}
-# Entries the coverage meter may carry: "<path> <query name>" keys, each a
-# count. A key is kept only if its path is already the words of LinkedIn's
-# API (clean_voyager_path changes nothing in it) and its query name is one of
-# LinkedIn's shape or "other". The page cleans with the same list; a key that
-# was not cleaned, or was cleaned by an older rule, is refused, so no member
-# or post is ever kept here.
-_VOYAGER_CALL_KEY = re.compile(r"^/voyager/api(/[A-Za-z0-9_]{1,80}){0,8}( [A-Za-z0-9]{1,90})?$")
-_VOYAGER_CALLS_LIMIT = 100
+# Network reading, retired in 2.10.2
+# -----------------------------------
+# The extension read LinkedIn's /voyager/api/ responses while the creator had
+# network reading switched on: an interceptor that wrapped the page's fetch,
+# a schema registry it matched responses against, and an observer of the
+# page's data requests. LinkedIn's 2026 web app makes no such calls (a
+# Resource Timing list from the owner's own feed tab, 28 October 2026): its
+# data arrives through React Server Component actions in an internal
+# streaming format, which nothing here can read or re-key. So the reader is
+# gone from the extension, and the studio writes nothing for it any more:
+# not the readings, not the drift events, not the heartbeat's state. The
+# tables keep what they hold, forward only. An extension not yet reloaded
+# still calls the two routes; each answers this, plainly, so it does not
+# retry in a loop.
+NETWORK_READING_RETIRED = "Network reading was retired in 2.10.2: LinkedIn's site no longer sends the data it read."
 
 
-def _voyager_call_key_ok(key: str) -> bool:
-    if not _VOYAGER_CALL_KEY.match(key):
-        return False
-    path, _, name = key.partition(" ")
-    if clean_voyager_path(path) != path:
-        return False
-    return not name or name == "other" or bool(VOYAGER_QUERY_NAME.match(name))
+def network_reading_retired_answer() -> Dict[str, Any]:
+    """What a retired network reading call is answered: stored nothing, and why."""
+    return {"status": "retired", "outcome": "nothing_new", "reason": "network_reading_retired",
+            "message": NETWORK_READING_RETIRED}
 
 
-def _clean_network_reading(raw: Any) -> Optional[Dict[str, Any]]:
-    """The state as the extension sent it, kept only where its shape is right."""
-    if not isinstance(raw, dict) or not isinstance(raw.get("switch"), bool):
-        return None
-    clean: Dict[str, Any] = {}
-    for field, kind in _NETWORK_READING_FIELDS.items():
-        value = raw.get(field)
-        if kind is int and isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-            clean[field] = value
-        elif kind is bool and isinstance(value, bool):
-            clean[field] = value
-        elif kind is str and isinstance(value, str) and value.strip():
-            clean[field] = value.strip()[:40]
-        else:
-            clean[field] = None
-    return clean
-
-
-def _clean_voyager_calls(raw: Any) -> Optional[Dict[str, int]]:
-    if not isinstance(raw, dict):
-        return None
-    clean = {}
-    for key, value in raw.items():
-        if not isinstance(key, str) or not _voyager_call_key_ok(key):
-            continue
-        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-            continue
-        clean[key] = value
-        if len(clean) >= _VOYAGER_CALLS_LIMIT:
-            break
-    return clean
+def network_reading_retired(conn=None) -> Optional[str]:
+    """
+    The sentence, where it is useful: only in a studio network reading once
+    ran in, or was switched on for, so a creator who never turned it on is
+    not told about a switch they never saw.
+    """
+    own = conn is None
+    conn = conn or get_db()
+    try:
+        ran = (conn.execute("SELECT 1 FROM captures WHERE extractor LIKE 'voyager_%' LIMIT 1").fetchone()
+               or conn.execute("SELECT 1 FROM capture_days WHERE extractor LIKE 'voyager_%' LIMIT 1").fetchone()
+               or conn.execute("SELECT 1 FROM schema_drift_events LIMIT 1").fetchone()
+               or conn.execute("SELECT 1 FROM post_metric_observations WHERE source = 'voyager_network' "
+                               "LIMIT 1").fetchone()
+               or conn.execute("SELECT 1 FROM bridge_heartbeats WHERE network_reading LIKE '%\"switch\": true%' "
+                               "LIMIT 1").fetchone())
+    except sqlite3.Error:
+        ran = None
+    finally:
+        if own:
+            conn.close()
+    return NETWORK_READING_RETIRED if ran else None
 
 
 # ---------------------------------------------------------------------------
@@ -367,7 +356,6 @@ def _utc_moment(raw: Any) -> Optional[str]:
 
 
 def record_heartbeat(extension_version: Any = None, page_kind: Any = None,
-                     network_reading: Any = None, voyager_calls: Any = None,
                      browser_instance_id: Any = None, browser: Any = None, signed_in_vanity: Any = None,
                      contract_version: Any = None, open_pages: Any = None, held: Any = None,
                      tabs_needing_reload: Any = None, self_reload: Any = None,
@@ -377,19 +365,17 @@ def record_heartbeat(extension_version: Any = None, page_kind: Any = None,
     One heartbeat. From a worker that names its browser, one row per browser
     per minute, the newest beat replacing the minute's earlier one: ten tabs,
     or a worker beating on every change, still write one row a minute. From
-    an extension older than the stamp, one row per beat, as before.
+    an extension older than the stamp, one row per beat, as before. An older
+    extension's network reading state is not kept: network reading was
+    retired in 2.10.2.
     """
     now = datetime.now(timezone.utc)
-    reading = _clean_network_reading(network_reading)
-    calls = _clean_voyager_calls(voyager_calls) if reading else None
     stamp = clean_stamp({"browser_instance_id": browser_instance_id, "browser": browser,
                          "signed_in_vanity": signed_in_vanity})
     values = {
         "seen_at": now.isoformat(),
         "extension_version": _text(extension_version, 40),
         "page_kind": _text(page_kind, 40),
-        "network_reading": json.dumps(reading) if reading else None,
-        "voyager_calls": json.dumps(calls) if calls is not None else None,
         "browser_instance_id": stamp.get("browser_instance_id"),
         "minute": now.isoformat()[:16] if stamp.get("browser_instance_id") else None,
         "browser": stamp.get("browser"),
@@ -422,81 +408,6 @@ def record_heartbeat(extension_version: Any = None, page_kind: Any = None,
     return {"status": "success", "seen_at": now.isoformat()}
 
 
-# The three honest states of network reading, and the one sentence each
-# screen prints. One definition: Setup, the side panel and the health route
-# all read this, so "off" and "broken" cannot drift back into one word.
-NETWORK_READING_STATES = ("off", "seeing", "matching_nothing")
-
-
-def network_reading_sentence(reading: Dict[str, Any]) -> str:
-    if not reading.get("switch"):
-        return "Network reading is off."
-    seen = reading.get("voyager_calls_seen")
-    matched = reading.get("matched") or 0
-    if seen is None:
-        base = "Network reading is on; no LinkedIn page has reported its data calls yet."
-    elif matched > 0:
-        base = f"Network reading is on and seeing {seen} LinkedIn data calls, {matched} matched."
-    else:
-        base = (f"Network reading is on and matching nothing: the LinkedIn tab that last reported saw {seen} "
-                "LinkedIn data calls, and none matched the bridge's patterns.")
-    notes = []
-    if reading.get("registered") is False:
-        notes.append("The browser has not registered the reader: turn the switch off and on in the extension's popup.")
-    if reading.get("injected") is False:
-        notes.append("The LinkedIn tab that last reported does not carry the reader, which a tab opened "
-                     "before the switch was turned on does not: reload that tab.")
-    return " ".join([base] + notes)
-
-
-def _network_reading_report(conn) -> Optional[Dict[str, Any]]:
-    """
-    What the bridge last said about network reading, or None when no
-    heartbeat has said anything (an extension older than this field).
-
-    The switch comes from the newest heartbeat that carried it, from either
-    side. The registration is the worker's to know and the page's counts are
-    the page's, so each is taken from the newest heartbeat of its own kind:
-    a worker heartbeat that arrived later must not blank the page's counts,
-    and a page heartbeat must not blank the worker's registration.
-    """
-    newest = conn.execute(
-        "SELECT seen_at, page_kind, network_reading FROM bridge_heartbeats "
-        "WHERE network_reading IS NOT NULL ORDER BY seen_at DESC LIMIT 1").fetchone()
-    if not newest:
-        return None
-    reading = json.loads(newest["network_reading"])
-    page = conn.execute(
-        "SELECT seen_at, page_kind, network_reading, voyager_calls FROM bridge_heartbeats "
-        "WHERE network_reading IS NOT NULL AND page_kind IS NOT 'service_worker' "
-        "ORDER BY seen_at DESC LIMIT 1").fetchone()
-    worker = conn.execute(
-        "SELECT network_reading FROM bridge_heartbeats "
-        "WHERE network_reading IS NOT NULL AND page_kind = 'service_worker' "
-        "ORDER BY seen_at DESC LIMIT 1").fetchone()
-    calls = None
-    if page:
-        page_reading = json.loads(page["network_reading"])
-        for field in ("injected", "voyager_calls_seen", "matched", "captured", "last_capture_at"):
-            if reading.get(field) is None:
-                reading[field] = page_reading.get(field)
-        calls = json.loads(page["voyager_calls"]) if page["voyager_calls"] else None
-    if worker and reading.get("registered") is None:
-        reading["registered"] = json.loads(worker["network_reading"]).get("registered")
-    if not reading.get("switch"):
-        state = "off"
-    elif reading.get("voyager_calls_seen") is None or (reading.get("matched") or 0) > 0:
-        state = "seeing"
-    else:
-        state = "matching_nothing"
-    reading["state"] = state
-    reading["sentence"] = network_reading_sentence(reading)
-    reading["reported_at"] = newest["seen_at"]
-    reading["reported_by"] = newest["page_kind"]
-    reading["voyager_calls"] = calls
-    return reading
-
-
 def bridge_status() -> Dict[str, Any]:
     conn = get_db()
     try:
@@ -504,13 +415,12 @@ def bridge_status() -> Dict[str, Any]:
             "SELECT seen_at, extension_version, page_kind FROM bridge_heartbeats "
             "ORDER BY seen_at DESC LIMIT 1"
         ).fetchone()
-        reading = _network_reading_report(conn) if row else None
     finally:
         conn.close()
 
     if not row:
         return {"connected": False, "last_seen_at": None, "seconds_ago": None,
-                "extension_version": None, "page_kind": None, "network_reading": None, "bridges": []}
+                "extension_version": None, "page_kind": None, "bridges": []}
 
     seen = datetime.fromisoformat(row["seen_at"])
     ago = max(0, int((datetime.now(timezone.utc) - seen).total_seconds()))
@@ -520,7 +430,6 @@ def bridge_status() -> Dict[str, Any]:
         "seconds_ago": ago,
         "extension_version": row["extension_version"],
         "page_kind": row["page_kind"],
-        "network_reading": reading,
         "bridges": bridges(),
     }
 
@@ -584,32 +493,16 @@ EXTRACTORS = {
     "activity_reactions": "Your reactions",
     "analytics": "Creator analytics",
     "post_analytics": "Your posts' analytics pages",
-    # One per schema content.js forwards (FORWARDED_SCHEMAS), under the name
-    # it sends (voyager_<schema>). The registry's other three schemas
-    # (profiles, reactions on posts, comments) carry other members and never
-    # leave the page; see VOYAGER_KEPT.
-    "voyager_feed_updates": "Network reading: your posts' figures",
-    "voyager_creator_analytics": "Network reading: creator analytics",
+    # The two network readers (voyager_feed_updates, voyager_creator_analytics)
+    # were retired in 2.10.2 with network reading; their old runs stay in the
+    # capture log and are no longer listed.
 }
 
-# Network reading is off unless the creator switches it on in the extension's
-# popup, so these parts never run for most people. Setup lists them while the
-# switch is on, or once they have run: listed with the switch off, they read
-# NOT SEEN YET for everyone, and the help's advice for that, open the matching
-# page, does nothing for them. With the switch on, a reader that has matched
-# nothing is exactly the one the creator is asking about.
-OPT_IN_EXTRACTORS = ("voyager_feed_updates", "voyager_creator_analytics")
-
-# What network reading keeps, per schema, and nothing else. Own data only:
-#   feed_updates        readings of the creator's own posts; every other post
-#                       in LinkedIn's feed response is dropped before anything
-#                       is written, and the run counts how many, as a number
-#   creator_analytics   the creator's follower count, for the confirmed account
-# The registry's identity_profiles, social_actions and feed_comments carry
-# other members' names, headlines, reactions and comments. They are read in
-# the page and never sent, and the studio refuses them: the one thing the
-# product keeps about another member, an engager on the creator's own post,
-# comes from the DOM engagers reader, by design.
+# What network reading kept, per schema, while it ran: readings of the
+# creator's own posts, and their follower count. Kept here because cycle 4's
+# migration (_migrate_reader_timing_and_network_reading) runs
+# forget_other_members_readings, which removes anything else it once kept,
+# and needs the list and clean_voyager_path below to do it.
 VOYAGER_KEPT = {
     "feed_updates": "readings of your own posts",
     "creator_analytics": "your follower count",
@@ -619,8 +512,8 @@ VOYAGER_KEPT = {
 # these words, compared without regard to case and written as listed; every
 # other segment, whoever or whatever it names, becomes "_id_", and so does the
 # segment after a collection that takes one. An unknown word costs a less
-# specific path, never a person. content.js holds the same list
-# (VOYAGER_PATH_WORDS); tests/test_qc4_t1_voyager_paths.py holds the two equal.
+# specific path, never a person. Used now only by the migration's clean-up of
+# the drift events network reading wrote.
 VOYAGER_PATH_WORDS = (
     "voyager", "api", "graphql", "me", "identity", "dash", "profiles", "miniProfiles", "profileView",
     "profileContactInfo", "publicContactInfo", "networkinfo", "memberBadges", "memberIdentity",
@@ -718,7 +611,6 @@ DELETE FROM captures
                                        AND {GOOD_RUN})
    )
 """
-DRIFT_RETENTION = timedelta(days=30)
 
 
 def record_capture(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -796,18 +688,6 @@ def _write_capture(conn, extractor: str, payload: Dict[str, Any],
     return drift, now
 
 
-def listed_health(health: List[Dict[str, Any]], reading: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    The readers a screen lists: every one, except an opt-in network reader
-    that has never run while the switch is not known to be on. One rule for
-    Setup and the side panel, which listed all five as NOT SEEN YET with the
-    switch off.
-    """
-    switch_on = bool(reading) and reading.get("switch") is True
-    return [h for h in health
-            if h["extractor"] not in OPT_IN_EXTRACTORS or h["state"] != "never_run" or switch_on]
-
-
 def capture_health() -> List[Dict[str, Any]]:
     """
     Per extractor: when it last read something, and whether its latest run
@@ -866,165 +746,6 @@ def capture_health() -> List[Dict[str, Any]]:
     return health
 
 
-def record_schema_drift(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Records one schema drift event from the extension's Voyager interceptor."""
-    if not isinstance(payload, dict):
-        raise RefusedCapture("payload must be an object")
-    schema_name = _text(payload.get("schema_name"), 80)
-    schema_version = _text(payload.get("schema_version"), 40)
-    if not schema_name or not schema_version:
-        raise RefusedCapture("schema_name and schema_version required")
-    if schema_name not in VOYAGER_KEPT:
-        # A schema whose responses carry other members is not read here at all.
-        raise RefusedCapture("unknown extractor")
-    drift_fields = payload.get("drift_fields") or []
-    top_keys = payload.get("response_top_keys") or []
-    now = datetime.now(timezone.utc)
-    conn = get_db()
-    try:
-        with conn:
-            conn.execute(
-                """
-                INSERT INTO schema_drift_events
-                    (observed_at, schema_name, schema_version, drift_fields, confidence,
-                     success, source_url, response_top_keys, extension_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    now.isoformat(),
-                    schema_name,
-                    schema_version,
-                    json.dumps(drift_fields) if drift_fields else None,
-                    float(payload.get("confidence", 0.0)),
-                    1 if payload.get("success") else 0,
-                    # The address as the words of LinkedIn's API, nothing that
-                    # names a member or a post (clean_voyager_path).
-                    clean_voyager_path(payload.get("source_url")) if payload.get("source_url") else None,
-                    json.dumps(top_keys) if top_keys else None,
-                    _text(payload.get("extension_version"), 40),
-                )
-            )
-            conn.execute(
-                "DELETE FROM schema_drift_events WHERE observed_at < ?",
-                ((now - DRIFT_RETENTION).isoformat(),)
-            )
-    finally:
-        conn.close()
-    return {"status": "success"}
-
-
-def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Ingests structured data captured directly from LinkedIn Voyager network responses.
-    Updates post metric observations, creator analytics, and records capture health.
-    """
-    if not isinstance(payload, dict):
-        raise RefusedCapture("payload must be an object")
-    schema_name = payload.get("schema_name")
-    data = payload.get("data")
-    if not schema_name or data is None:
-        raise RefusedCapture("schema_name and data are required")
-    extractor = f"voyager_{schema_name}"
-    if extractor not in EXTRACTORS or schema_name not in VOYAGER_KEPT:
-        # Only the schemas that keep the creator's own data are read here.
-        # The ones that carry other members never leave the page.
-        raise RefusedCapture("unknown extractor")
-
-    items_seen = len(data) if isinstance(data, list) else (1 if isinstance(data, dict) else 0)
-    items_kept = 0
-    # Entries that are not the creator's own, dropped before anything is
-    # written and counted, never named.
-    items_dropped = 0
-    now = datetime.now(timezone.utc)
-    refusal: Optional[RefusedCapture] = None
-
-    conn = get_db()
-    try:
-        with conn:
-            if schema_name == "feed_updates" and isinstance(data, list):
-                for item in data:
-                    urn = item.get("urn") if isinstance(item, dict) else None
-                    # LinkedIn's feed response holds everyone's posts. Only a
-                    # post that is the creator's own is read at all: one of
-                    # their publications, or a post the studio carries, in any
-                    # of LinkedIn's three spellings. Every other entry is
-                    # dropped here, before any write, and only counted. It
-                    # used to be kept as a reading, which put other members'
-                    # posts and their figures in the creator's database.
-                    if (not isinstance(urn, str) or not _ACTIVITY_URN.match(urn)
-                            or not _creators_post(conn, urn)):
-                        items_dropped += 1
-                        continue
-                    metrics = {
-                        "impressions": item.get("impressions"),
-                        "reactions": item.get("likes"),
-                        "comments": item.get("comments"),
-                    }
-                    if _record_observation(conn, urn, "voyager_network", metrics):
-                        items_kept += 1
-                        if metrics.get("impressions") is not None:
-                            conn.execute(
-                                "UPDATE own_posts SET impressions = ?, last_seen_at = ? WHERE activity_urn = ?",
-                                (metrics["impressions"], now.isoformat(), urn)
-                            )
-            elif schema_name == "creator_analytics" and isinstance(data, list) and data:
-                # Only the follower count is kept. It is a reading of one moment,
-                # so it is today's figure whatever range the page was showing.
-                # impressionAggregate is a total over a window the response does
-                # not name, and storing it as today's impressions is the defect
-                # migration 5 exists to stop. It stays in the capture log only.
-                #
-                # The response does not say whose analytics these are, so the
-                # bridge names the account signed in to LinkedIn, and a reading
-                # from any other account (or none) is refused. It was filed
-                # under whichever profile was open in the studio.
-                # A refusal here is still a run of this reader. It used to
-                # raise before the row below was written, so a reader that
-                # ran and was refused every time read as one that never ran.
-                try:
-                    _require_me(conn, payload.get("vanity"))
-                except RefusedCapture as error:
-                    refusal = error
-                entry = data[0] if data and not refusal else {}
-                followers = _count(entry.get("followers"))
-                if followers is not None:
-                    today = now.strftime("%Y-%m-%d")
-                    conn.execute(
-                        """
-                        INSERT INTO analytics_daily (
-                            date, followers, precision, period_label, source,
-                            impressions, unique_members_reached, reactions, comments, shares, engagement_rate
-                        )
-                        -- The figures this reading did not carry are NULL, not
-                        -- the schema's DEFAULT 0, which would read as measured.
-                        VALUES (?, ?, 'exact', '1d', 'observed', NULL, NULL, NULL, NULL, NULL, NULL)
-                        ON CONFLICT(date) DO UPDATE SET
-                            followers = excluded.followers
-                        """,
-                        (today, followers)
-                    )
-                    items_kept += 1
-
-            # The run itself, refused or not, for the health screen. Its drift
-            # is the page's, named as the DOM readers name theirs: a field the
-            # reader cannot do without, missing from a response that plainly
-            # matched its endpoint. It was never written, so Setup could not
-            # say a network reader had stopped reading.
-            _write_capture(conn, extractor, {
-                "page_kind": "voyager_api", "items_seen": items_seen, "items_kept": items_kept,
-                "items_dropped": items_dropped if schema_name == "feed_updates" else None,
-                "drift": payload.get("drift") if isinstance(payload.get("drift"), list) else None,
-                "extension_version": payload.get("extension_version"),
-            }, refused="identity" if refusal else None)
-    finally:
-        conn.close()
-    changes.publish("account" if schema_name == "creator_analytics" else "readings")
-
-    if refusal:
-        raise refusal
-    return {"status": "success", "items_seen": items_seen, "items_kept": items_kept, "items_dropped": items_dropped}
-
-
 def _creators_post(conn, urn: str) -> bool:
     """
     Whether a post is one of the creator's own: a publication of theirs or a
@@ -1070,50 +791,12 @@ def forget_other_members_readings(conn) -> Dict[str, int]:
 
 
 def extension_health() -> Dict[str, Any]:
-    """Aggregated health report of the Chrome extension, Voyager capture, and drift."""
-    conn = get_db()
-    try:
-        drift_rows = conn.execute(
-            """
-            SELECT schema_name, schema_version, drift_fields, confidence, success, observed_at
-            FROM schema_drift_events
-            ORDER BY observed_at DESC LIMIT 20
-            """
-        ).fetchall()
-        recent_drift = [
-            {
-                "schema_name": r["schema_name"],
-                "schema_version": r["schema_version"],
-                "drift_fields": json.loads(r["drift_fields"]) if r["drift_fields"] else [],
-                "confidence": r["confidence"],
-                "success": bool(r["success"]),
-                "observed_at": r["observed_at"]
-            }
-            for r in drift_rows
-        ]
-        voyager_captures = conn.execute(
-            """
-            SELECT COUNT(*) FROM captures
-            WHERE extractor LIKE 'voyager_%' AND refused IS NULL AND observed_at > ?
-            """,
-            ((datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(),)
-        ).fetchone()[0]
-    finally:
-        conn.close()
-
-    bridge = bridge_status()
-    return {
-        "bridge": bridge,
-        "extractors": listed_health(capture_health(), bridge.get("network_reading")),
-        # The three honest states, from the heartbeat, with the page's count
-        # of LinkedIn's data calls by path and query name. None when no
-        # heartbeat has carried it.
-        "network_reading": bridge.get("network_reading"),
-        "voyager_active": voyager_captures > 0,
-        "voyager_24h_captures": voyager_captures,
-        "recent_drift": recent_drift,
-        "schema_version": "2026.10.1"
-    }
+    """
+    The bridge and its readers. What network reading added here (whether it
+    was active, its captures in the last day, its drift events and its schema
+    version) went with it in 2.10.2.
+    """
+    return {"bridge": bridge_status(), "extractors": capture_health()}
 
 
 # ---------------------------------------------------------------------------
@@ -2627,7 +2310,9 @@ def onboarding_state() -> Dict[str, Any]:
     chain = get_active_sync_chain()
     return {
         "archive": archive,
-        "health": listed_health(capture_health(), bridge.get("network_reading")),
+        "health": capture_health(),
+        # Said once, only where network reading ran (network_reading_retired).
+        "network_reading_retired": network_reading_retired(),
         "session": session,
         "status": "success",
         "bridge": bridge,

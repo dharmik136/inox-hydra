@@ -29,7 +29,7 @@ import app as app_module
 from qc_f3_pages import EXT, Pages, page_html
 
 client = TestClient(app_module.app)
-SCRIPTS = ("voyager_schema.js", "content.js", "own_pages.js")
+SCRIPTS = ("content.js", "own_pages.js")
 REMEMBERED = "() => window.__storage.signedInVanity || null"
 
 

@@ -177,8 +177,12 @@ def test_every_outbound_call_site_is_behind_the_gate():
 
 def test_the_extension_does_not_trigger_a_fetch_from_an_observation():
     """
-    The listener observes that a request completed. Observing must not cause a
-    new request, or the observer is a participant.
+    The webRequest listener observed that a request completed, and observing
+    must not cause a new request, or the observer is a participant. Since
+    2.10.2 there is no observer at all: it went with network reading, and
+    the extension no longer asks for webRequest. The session sync, which made
+    the backend issue its own request to LinkedIn, runs only from the popup's
+    button.
     """
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     path = os.path.join(repo_root, "studio", "extension", "background.js")
@@ -187,14 +191,14 @@ def test_the_extension_does_not_trigger_a_fetch_from_an_observation():
 
     import re
 
-    listener_start = source.index("chrome.webRequest.onCompleted.addListener")
-    listener_body = source[listener_start:source.index("chrome.runtime.onMessage", listener_start)]
     # Comments explain why the call was removed and must not count as the call.
-    listener_body = re.sub(r"/\*.*?\*/", "", listener_body, flags=re.S)
-    listener_body = re.sub(r"//[^\n]*", "", listener_body)
+    code = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
+    code = re.sub(r"(^|\s)//[^\n]*", r"\1", code)
 
-    assert "syncActiveSessionToStudio()" not in listener_body, (
-        "The webRequest listener calls syncActiveSessionToStudio(), which makes "
-        "the backend issue its own authenticated request to LinkedIn. Observing "
-        "a page load must not cause a fetch."
-    )
+    assert "chrome.webRequest" not in code, "the extension observes LinkedIn's requests again"
+    calls = [m.start() for m in re.finditer(r"(?<!function )syncActiveSessionToStudio\(\)", code)]
+    assert len(calls) == 1, f"the session sync is called from {len(calls)} places"
+    branch = code[code.index('message.action === "SYNC_NOW"'):]
+    assert code.index('message.action === "SYNC_NOW"') < calls[0] < code.index('message.action === "SYNC_NOW"') + \
+        branch.index("return true;", branch.index("syncActiveSessionToStudio")) + 1, (
+        "the session sync runs from somewhere other than the popup's button")

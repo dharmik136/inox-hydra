@@ -120,7 +120,7 @@ class Pages:
         )
         self.blocked = []
 
-    def open(self, path, html, scripts=("voyager_schema.js", "content.js"), me="test-creator",
+    def open(self, path, html, scripts=("content.js",), me="test-creator",
              storage=None, before=None, session=None, expose=None):
         """
         Serves `html` at https://www.linkedin.com<path>, installs the fake

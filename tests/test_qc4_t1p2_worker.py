@@ -239,7 +239,7 @@ def test_on_update_the_readers_go_into_the_linkedin_tabs_already_open():
     """)
     files = [(e["target"]["tabId"], e.get("world", "ISOLATED"), tuple(e["files"])) for e in out["executed"] if e.get("files")]
     assert (5, "MAIN", ("card_urns.js",)) in files
-    assert (5, "ISOLATED", ("voyager_schema.js", "content.js", "own_pages.js", "own_insights.js")) in files
+    assert (5, "ISOLATED", ("content.js", "own_pages.js", "own_insights.js")) in files
     assert not [f for f in files if f[0] == 6], "the readers were sent into a discarded tab"
     assert out["current"] == [], "a tab already carrying this version was given the readers again"
 

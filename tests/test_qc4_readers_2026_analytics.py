@@ -28,7 +28,7 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(REPO_ROOT, "studio", "backend"))
 
 ME = "ada-example"
-SCRIPTS = ("voyager_schema.js", "content.js", "own_pages.js", "own_insights.js")
+SCRIPTS = ("content.js", "own_pages.js", "own_insights.js")
 SIGNED_IN = {"signedInVanity": ME}
 
 

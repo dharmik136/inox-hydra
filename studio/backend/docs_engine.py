@@ -738,6 +738,8 @@ HELP_SECTIONS = [
             # 2.10.1, track 6: the real analytics export, and the phone
             # against the real Telegram.
             "quality/cycle4/export-2026.md",
+            # 2.10.2: network reading retired, LinkedIn's 2026 site having left it nothing to read.
+            "quality/cycle4/retire-network-reading.md",
             # The Telegram bot, phases 1 and 2 (2.11.0).
             "quality/cycle4/telegram-bot.md",
             # Cycle 4, track 6: the phone pairing design (item 27) and the

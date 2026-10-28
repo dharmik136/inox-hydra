@@ -625,6 +625,15 @@ def get_post_leads_attribution(post_id: str = Path(..., max_length=200),
 
 @router.post("/api/analytics/ingest", tags=["Analytics"])
 def ingest_live_analytics(payload: dict):
+    # What network reading's request observer sent, from an extension not yet
+    # reloaded since network reading was retired in 2.10.2: the address of a
+    # LinkedIn data request it noted. Answered, and not written.
+    if payload.get("source") == "chrome_mv3_observer":
+        try:
+            from .. import onboarding
+        except (ImportError, ValueError):
+            import onboarding
+        return onboarding.network_reading_retired_answer()
     # Analytics belong to one LinkedIn account. A reading was filed under
     # whichever creator profile was open, whoever was signed in to LinkedIn,
     # so an agency user's own figures landed in a client's profile as measured

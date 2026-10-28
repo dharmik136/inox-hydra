@@ -113,8 +113,8 @@ def test_every_reader_is_listed_with_its_runs_in_the_window(client):
     body = client.get("/api/v1/bridge/readers").json()
     readers = {r["extractor"]: r for r in body["readers"]}
     import onboarding
-    expected = set(onboarding.EXTRACTORS) - set(onboarding.OPT_IN_EXTRACTORS)
-    assert set(readers) == expected, "every page reader is listed, and no network reader that never ran"
+    # Every page reader; network reading's two went with it in 2.10.2.
+    assert set(readers) == set(onboarding.EXTRACTORS), "every page reader is listed"
 
     engagers = readers["engagers"]
     assert engagers["runs"] == 2
@@ -183,9 +183,10 @@ def test_the_run_rows_are_bounded(client):
 def test_health_and_the_onboarding_state_list_the_same_readers(client):
     """
     One list of readers. Today's freshness line and the rail's bridge state
-    read the onboarding state; the Health screen reads its own route. A
-    network-reading part is listed by both only once it has run (cycle 2,
-    SETUP-17), so neither can show a reader the other hides.
+    read the onboarding state; the Health screen reads its own route, so
+    neither can show a reader the other hides. A network-reading part was
+    listed by both once it had run; network reading was retired in 2.10.2,
+    and a reading an older extension still sends lists nothing.
     """
     def both():
         health = [r["label"] for r in client.get("/api/v1/bridge/readers").json()["readers"]]
@@ -199,7 +200,7 @@ def test_health_and_the_onboarding_state_list_the_same_readers(client):
     client.post("/api/v1/bridge/voyager-ingest", json={"schema_name": "feed_updates", "data": []})
     health, state = both()
     assert health == state
-    assert sum("network reading" in label.lower() for label in health) == 1
+    assert not any("network reading" in label.lower() for label in health)
 
 
 # ---------------------------------------------------------------------------
@@ -276,15 +277,16 @@ def test_no_heartbeat_is_said_rather_than_counted_as_a_gap_of_zero(client):
 # Network reading: read the field when the heartbeat carries it, say so when not
 # ---------------------------------------------------------------------------
 
-def test_the_screen_says_when_the_switch_state_is_not_reported():
+def test_the_screen_says_nothing_of_a_switch_that_is_gone():
     """
-    Track 1 adds the switch state to the heartbeat in parallel. Until an
-    extension of that version reports, the field is absent, and the screen
-    must say that rather than guess "off".
+    The screen said when an extension had not reported the network reading
+    switch. Network reading was retired in 2.10.2: the screen reads no
+    switch state, and prints the studio's one sentence about it, only where
+    the studio says it is useful.
     """
     surface = _read(os.path.join(UI, "components", "HealthSurface.tsx"))
-    assert "not reported by this extension version" in surface
-    assert "network_reading" in surface, "the screen does not read the switch state when it is there"
+    assert "not reported by this extension version" not in surface
+    assert "network_reading_retired" in surface
 
 
 # ---------------------------------------------------------------------------
@@ -403,37 +405,24 @@ def test_a_reader_that_read_nothing_is_not_working(client):
     assert posts["state"] == "read_nothing"
 
 
-def test_network_reading_is_drawn_over_the_readers_in_its_three_states(client):
+def test_network_reading_is_said_retired_over_the_readers_only_where_it_ran(client):
+    """
+    It was drawn over the readers in three states, each with its own dot.
+    Network reading was retired in 2.10.2: the readers route says so in one
+    sentence where it once ran, nothing where it never did, and the screen
+    prints that sentence over the readers' table.
+    """
     import onboarding
-    assert client.get("/api/v1/bridge/readers").json()["network_reading"] is None, (
-        "no heartbeat has carried the state: not reported, never off")
-
-    body = _reading(client, switch=False)
-    assert body["network_reading"]["state"] == "off"
-    assert body["network_reading"]["sentence"] == "Network reading is off."
-    assert not any(r["opt_in"] for r in body["readers"]), "with the switch off, a network reader that never ran is not listed"
-
-    body = _reading(client, switch=True, seen=40, matched=12)
-    assert body["network_reading"]["state"] == "seeing"
-    assert body["network_reading"]["sentence"] == onboarding.network_reading_sentence(body["network_reading"])
-    # The one listing rule: with the switch on, both network readers are
-    # listed, by Health and by the onboarding state alike.
-    health = [r["label"] for r in body["readers"]]
-    assert health == [h["label"] for h in client.get("/api/v1/onboarding/state").json()["health"]]
-    assert sum(r["opt_in"] for r in body["readers"]) == len(onboarding.OPT_IN_EXTRACTORS)
-
-    body = _reading(client, switch=True, seen=40, matched=0)
-    assert body["network_reading"]["state"] == "matching_nothing"
-    assert body["network_reading"]["sentence"].startswith("Network reading is on and matching nothing")
-
-    # Drawn over the readers' table, in the studio's sentence, each state with its own dot.
+    assert client.get("/api/v1/bridge/readers").json()["network_reading_retired"] is None
+    _reading(client, switch=True, seen=40, matched=12)
+    body = client.get("/api/v1/bridge/readers").json()
+    assert body["network_reading_retired"] is None, "an older heartbeat's state is kept again"
+    _capture("voyager_feed_updates", _now() - timedelta(days=1), items_seen=3, items_kept=1)
+    body = client.get("/api/v1/bridge/readers").json()
+    assert body["network_reading_retired"] == onboarding.NETWORK_READING_RETIRED
+    assert not [r for r in body["readers"] if r["extractor"].startswith("voyager_")]
     over_the_table = _read(HEALTH_SURFACE).split('id="readers-heading"')[1].split("<table")[0]
-    assert "reading.sentence" in over_the_table
-    dots = {"off": "bg-edge-strong", "seeing": "bg-signal-green", "matching_nothing": "bg-signal-orange"}
-    assert set(dots) == set(onboarding.NETWORK_READING_STATES), "a network-reading state Health has no dot for"
-    for state, dot in dots.items():
-        assert re.search(rf'reading\??\.state === "{state}"\)? && "{dot}"', over_the_table), f"the {state} state has no {dot} dot"
-    assert "not reported by this extension version" in over_the_table
+    assert "retired" in over_the_table and "reading.sentence" not in over_the_table
 
 
 def test_health_reads_again_as_runs_land_and_no_more_than_every_fifteen_seconds():

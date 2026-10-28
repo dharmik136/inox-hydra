@@ -142,8 +142,11 @@ def test_a_silent_lead_is_reviewed_forgotten_and_removed_from_backups_too(page):
     page.get_by_role("button", name="Forget 1").click()
     expect(page.get_by_role("alertdialog")).to_contain_text("A backup is made first")
     page.get_by_role("button", name="Forget them").click()
-    expect(page.get_by_role("status").filter(has_text="Forgot 1.")).to_be_visible()
+    # Forgetting takes a backup first; on a loaded Windows runner that outlasted
+    # the default five seconds while nothing had refused it.
+    expect(page.get_by_role("status").filter(has_text="Forgot 1.")).to_be_visible(timeout=30000)
     expect(page.get_by_text("may still be in older backups", exact=False)).to_be_visible()
     page.get_by_role("button", name="Remove from backups too").click()
-    expect(page.get_by_role("status").filter(has_text="Removed from")).to_be_visible()
+    # Rewriting every backup is slower still than taking one.
+    expect(page.get_by_role("status").filter(has_text="Removed from")).to_be_visible(timeout=30000)
     expect(page.get_by_text("may still be in older backups", exact=False)).to_have_count(0)

@@ -41,13 +41,8 @@ const RELAYABLE_PATHS = new Set([
   // belongs to the creator the studio has confirmed.
   "/api/v1/bridge/heartbeat",
   "/api/v1/bridge/capture",
-  // Voyager API interception (voyager_schema.js + content.js). Structured JSON
-  // captured from LinkedIn's network layer, far more reliable than DOM scraping.
-  "/api/v1/bridge/voyager-ingest",
-  // Schema drift telemetry. When a Voyager response no longer matches the
-  // expected field structure, the extension reports what changed so the backend
-  // can serve an updated schema without requiring an extension update.
-  "/api/v1/bridge/schema-drift",
+  // Network reading's two paths, voyager-ingest and schema-drift, were
+  // retired in 2.10.2 with the interceptor that fed them.
   "/api/v1/identity/me",
   "/api/v1/identity/observe",
   "/api/v1/self/posts/ingest",
@@ -401,77 +396,10 @@ try {
   // No cookies API (an old browser): the studio still refuses a mismatch.
 }
 
-/**
- * Forwards sanitized passive telemetry events to the local sharded ingress endpoint.
- */
-async function forwardPassiveTelemetry(eventType, metadata) {
-  try {
-    const cleanPayload = sanitizeTelemetryPayload({
-      event_type: eventType,
-      source: "chrome_mv3_observer",
-      timestamp: new Date().toISOString(),
-      metadata: metadata || {}
-    });
-
-    await studioFetch("/api/analytics/ingest", {
-      method: "POST",
-      body: JSON.stringify(cleanPayload)
-    });
-    console.log(`[Studio Bridge] Passive telemetry dispatched for ${eventType}`);
-  } catch (err) {
-    console.debug("[Studio Bridge] Telemetry dispatch skipped (studio offline):", err.message);
-  }
-}
-
-// Notes which of LinkedIn's data requests a page made: address, status and
-// method, never contents. Watching LinkedIn's requests is network reading,
-// so it follows the same switch as the interceptor and is off by default.
-chrome.webRequest.onCompleted.addListener(
-  (details) => {
-    networkReadingEnabled().then((enabled) => {
-      if (enabled) observeLinkedInRequest(details);
-    });
-  },
-  { urls: ["https://www.linkedin.com/voyager/api/*"] }
-);
-
-function observeLinkedInRequest(details) {
-    const url = details.url;
-
-    // 1. Post impressions and feed analytics
-    if (url.includes("/voyager/api/feed/updatesV2")) {
-      console.log("[Studio Bridge] Passively intercepted Feed Updates response:", url);
-      forwardPassiveTelemetry("feed_updates_v2", {
-        url: url.split("?")[0],
-        statusCode: details.statusCode,
-        method: details.method
-      });
-    }
-
-    // 2. Profile views and viewer seniority
-    else if (url.includes("/voyager/api/identity/profiles")) {
-      console.log("[Studio Bridge] Passively intercepted Profile Telemetry response:", url);
-      forwardPassiveTelemetry("profile_views_seniority", {
-        url: url.split("?")[0],
-        statusCode: details.statusCode,
-        method: details.method
-      });
-    }
-
-    // 3. Creator Analytics and GraphQL creator telemetry
-    else if (url.includes("voyager/api/identity/dash/creatorAnalytics") || 
-        (url.includes("voyager/api/graphql") && url.includes("creator"))) {
-      // Observed, not intercepted: onCompleted carries no response body.
-      // This branch used to also call syncActiveSessionToStudio(), which made
-      // the backend issue its own authenticated request to LinkedIn. Observing
-      // that a page loaded must never cause a new request.
-      console.log("[Studio Bridge] Observed creator analytics request:", url);
-      forwardPassiveTelemetry("creator_analytics", {
-        url: url.split("?")[0],
-        statusCode: details.statusCode
-      });
-    }
-}
+// Network reading's request observer (chrome.webRequest) and the telemetry
+// it sent were retired in 2.10.2: LinkedIn's site no longer makes the
+// /voyager/api/ requests it noted. The extension no longer asks for the
+// webRequest permission.
 
 // Message broker between Side Panel, Popup, and Content Script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -545,17 +473,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // It asks this worker instead, and only for paths on the allowlist.
   if (message.action === "STUDIO_API") {
     const path = message.path || "";
-    const tabId = sender && sender.tab && typeof sender.tab.id === "number" ? sender.tab.id : null;
-    if (NETWORK_READING_PATHS.has(path)) {
-      networkReadingEnabled().then((enabled) => {
-        if (!enabled) {
-          sendResponse({ status: "error", error: "Network reading is off." });
-          return;
-        }
-        relayToStudio(message, path, sendResponse, sender);
-      });
-      return true;
-    }
     if (!RELAYABLE_PATHS.has(path)) {
       sendResponse({ status: "error", error: "path not permitted: " + path });
       return true;
@@ -564,10 +481,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // What a LinkedIn tab reports about itself: its kind of page, whether it
-  // is visible, and network reading as the page sees it. The worker keeps
-  // it for its own heartbeat, one per browser per minute; tabs no longer
-  // send the studio one each.
+  // What a LinkedIn tab reports about itself: its kind of page and whether
+  // it is visible. The worker keeps it for its own heartbeat, one per
+  // browser per minute; tabs no longer send the studio one each.
   if (message.action === "PAGE_STATE") {
     const fromLinkedIn = !!sender.tab && typeof sender.tab.id === "number" && sender.id === chrome.runtime.id &&
       typeof sender.url === "string" && /^https:\/\/([a-z0-9-]+\.)*linkedin\.com\//i.test(sender.url);
@@ -649,8 +565,8 @@ const BUSY_WAIT_CAP_MS = 2000;
 // their profile did not. Every path here carries the creator's own data and
 // is idempotent on the studio's side: an upsert keyed on the thing itself, so
 // the same payload arriving twice updates when it was last seen and never
-// counts twice. The bookkeeping paths (heartbeat, capture log, schema drift,
-// import events) are about a moment that has passed and are not kept.
+// counts twice. The bookkeeping paths (heartbeat, capture log, import
+// events) are about a moment that has passed and are not kept.
 const KEEP_WHEN_BUSY = new Set([
   "/api/v1/crm/interactions/ingest",
   "/api/v1/self/posts/ingest",
@@ -658,7 +574,6 @@ const KEEP_WHEN_BUSY = new Set([
   "/api/v1/self/outbound/ingest",
   "/api/v1/identity/observe",
   "/api/v1/posts/bind-urn",
-  "/api/v1/bridge/voyager-ingest",
   "/api/analytics/ingest",
   // The creator's own account and content figures (own_insights.js, 2.8.0):
   // their own data, kept for a busy studio like the rest. The studio keeps
@@ -683,10 +598,6 @@ function waitFor(ms) {
 // How long to wait before asking again: what the studio asked for, with
 // jitter, because a page's engagers are relayed one after another and a
 // fixed wait would send them all back at the same moment.
-//
-// Line comments rather than a block: the file's webRequest filter holds the
-// characters that open one, and more than one reader of this source pairs
-// them naively.
 function busyWaitMs(retryAfter, attempt) {
   const asked = Number(retryAfter);
   const base = Number.isFinite(asked) && asked >= 0
@@ -944,9 +855,8 @@ async function rememberRefusal(path, answer) {
 // Every LinkedIn tab sent the studio a heartbeat a minute of its own, so ten
 // tabs wrote ten rows a minute. The worker now beats for the browser, on a
 // minute's alarm and soon after something changes, and carries what the
-// tabs report to it (PAGE_STATE): the LinkedIn pages open, by kind, and
-// network reading as the newest visible page sees it; with how many
-// captures are waiting, how many are held for an account no profile holds,
+// tabs report to it (PAGE_STATE): the LinkedIn pages open, by kind; with
+// how many captures are waiting, how many are held for an account no profile holds,
 // how many tabs still carry an older copy of the readers, and whether this
 // install reloads itself when its files change. The registry of tabs lives
 // in session storage, which survives the worker being stopped and is
@@ -993,9 +903,7 @@ function notePageState(tabId, message) {
       page_kind: PAGE_KIND.test(String(message.page_kind || "")) ? message.page_kind : "page",
       visible: message.visible === true,
       at: Date.now(),
-      version: typeof message.extension_version === "string" ? message.extension_version.slice(0, 40) : null,
-      network_reading: message.network_reading && typeof message.network_reading === "object" ? message.network_reading : null,
-      voyager_calls: message.voyager_calls && typeof message.voyager_calls === "object" ? message.voyager_calls : null
+      version: typeof message.extension_version === "string" ? message.extension_version.slice(0, 40) : null
     };
     registry[tabId] = entry;
     await sessionSet({ [TAB_REGISTRY_KEY]: registry });
@@ -1006,10 +914,9 @@ function notePageState(tabId, message) {
         await sessionSet({ [NEEDS_RELOAD_KEY]: needs });
       }
     }
-    // A new tab, another kind of page, or network reading changing: the
-    // studio hears soon rather than at the next minute.
-    const changed = !before || before.page_kind !== entry.page_kind ||
-      JSON.stringify(before.network_reading) !== JSON.stringify(entry.network_reading);
+    // A new tab or another kind of page: the studio hears soon rather than
+    // at the next minute.
+    const changed = !before || before.page_kind !== entry.page_kind;
     if (changed) scheduleHeartbeat();
   });
 }
@@ -1044,37 +951,18 @@ async function sendWorkerHeartbeat() {
   const registry = (await sessionGet(TAB_REGISTRY_KEY)) || {};
   const live = new Set((await openLinkedInTabs()).map((tab) => String(tab.id)));
   const openPages = {};
-  let page = null;
   for (const [tabId, entry] of Object.entries(registry)) {
     if (!entry || !live.has(String(tabId))) continue;
     openPages[entry.page_kind] = (openPages[entry.page_kind] || 0) + 1;
-    if (entry.network_reading && (!page || (entry.visible && !page.visible) ||
-        (entry.visible === page.visible && entry.at > page.at))) {
-      page = entry;
-    }
   }
   const needs = (await sessionGet(NEEDS_RELOAD_KEY)) || {};
-  // What this worker can see of network reading: the switch and whether the
-  // browser holds the reader registered; what a page sees (whether it
-  // carries the reader, the calls it counted) from the newest visible page.
-  const reading = await workerNetworkReading();
   const filesCheck = await readLocal(FILES_CHECK_KEY);
-  if (page) {
-    for (const field of ["injected", "voyager_calls_seen", "matched", "captured"]) {
-      if (reading[field] === null || reading[field] === undefined) {
-        const value = page.network_reading[field];
-        reading[field] = value === undefined ? null : value;
-      }
-    }
-  }
   const body = {
     extension_version: chrome.runtime.getManifest().version,
     contract_version: INGEST_CONTRACT_VERSION,
     page_kind: "service_worker",
     waiting_captures: deliverable.length,
     oldest_waiting_at: deliverable.length ? deliverable[0].at : null,
-    network_reading: reading,
-    voyager_calls: page && page.voyager_calls ? page.voyager_calls : null,
     browser_instance_id: await browserInstanceId(),
     browser: browserName(),
     signed_in_vanity: await signedInAccount(),
@@ -1178,7 +1066,7 @@ async function checkOwnFiles() {
 // before are cut off from this one), and given this version's. A tab that
 // cannot be reached is remembered as needing a reload, and the heartbeat
 // says how many, which is the one case Setup should say "reload".
-const READER_FILES = ["voyager_schema.js", "content.js", "own_pages.js", "own_insights.js"];
+const READER_FILES = ["content.js", "own_pages.js", "own_insights.js"];
 
 async function injectIntoOpenTabs() {
   const version = chrome.runtime.getManifest().version;
@@ -1248,7 +1136,6 @@ async function noteReloadNeeded(shake) {
 const LAST_CAPTURE_KEY = "lastCapture";
 const BADGE_COUNTS_KEY = "badgeCounts";
 const LAST_DRIFT_KEY = "lastDrift";
-const LAST_VOYAGER_CAPTURE_KEY = "lastVoyagerCaptureAt";
 const BADGE_ORANGE = [233, 85, 44, 255];
 const BADGE_GREEN = [22, 138, 97, 255];
 const BADGE_TEXT = [10, 10, 10, 255];
@@ -1319,9 +1206,6 @@ async function noteCapture(path, answer, tabId, kept) {
       tabId
     }
   });
-  if (stored && path === "/api/v1/bridge/voyager-ingest") {
-    await storeLocal({ [LAST_VOYAGER_CAPTURE_KEY]: new Date().toISOString() });
-  }
   if (stored && tabId !== null && tabId !== undefined) {
     const counts = (await readLocal(BADGE_COUNTS_KEY)) || {};
     // A read of a post is one request now; the badge still counts each
@@ -1507,26 +1391,6 @@ async function paintBadge() {
       " on LinkedIn's " + drift.page_kind + " page. See Health in the studio.";
   }
   await actionCall("setTitle", { title });
-}
-
-async function workerNetworkReading() {
-  const enabled = await networkReadingEnabled();
-  let registered = null;
-  try {
-    const scripts = await chrome.scripting.getRegisteredContentScripts({ ids: [INTERCEPTOR_SCRIPT_ID] });
-    registered = Array.isArray(scripts) && scripts.length > 0;
-  } catch (err) {
-    registered = null;
-  }
-  return {
-    switch: enabled,
-    registered,
-    injected: null,
-    voyager_calls_seen: null,
-    matched: null,
-    captured: null,
-    last_capture_at: (await readLocal(LAST_VOYAGER_CAPTURE_KEY)) || null
-  };
 }
 
 try {
@@ -1809,79 +1673,43 @@ async function relayToStudio(message, path, sendResponse, sender) {
 }
 
 // -------------------------------------------------------------
-// Network reading: off unless the creator switches it on
+// Network reading, retired in 2.10.2
 // -------------------------------------------------------------
-// voyager_interceptor.js wraps window.fetch inside LinkedIn's own page and
-// copies the JSON of responses LinkedIn's app already fetched. It is the part
-// of the bridge most visible to LinkedIn, and the page readers and LinkedIn's
-// own data archive cover what it adds, so it runs only after the creator turns
-// it on in the popup, where what it does is written beside the switch.
+// voyager_interceptor.js wrapped window.fetch inside LinkedIn's own page to
+// copy the JSON of LinkedIn's /voyager/api/ responses, while the creator had
+// switched network reading on. LinkedIn's 2026 web app makes no such calls:
+// its data arrives through React Server Component actions in an internal
+// streaming format, so there was nothing left to read and no way to re-key
+// it, and network reading was retired with its switch, its two studio paths
+// and the webRequest permission.
 //
-// It used to be a static MAIN-world content script, injected again on every
-// tab update and on request from content.js, with no way to turn it off. It
-// is now registered while the setting is on and unregistered when it is off,
-// and the two capture paths it feeds are refused below while it is off.
-const NETWORK_READING_KEY = "networkReading";
-const INTERCEPTOR_SCRIPT_ID = "inox-network-reading";
-const NETWORK_READING_PATHS = new Set([
-  "/api/v1/bridge/voyager-ingest",
-  "/api/v1/bridge/schema-drift"
-]);
+// What an earlier version left in the browser goes on install, update and
+// start-up: the registered interceptor, because a registration persists
+// across sessions and would go on wrapping LinkedIn's fetch with a file that
+// no longer exists, and the stored switch with the time of the last network
+// capture.
+const RETIRED_INTERCEPTOR_ID = "inox-network-reading";
+const RETIRED_KEYS = ["networkReading", "lastVoyagerCaptureAt"];
 
-function networkReadingEnabled() {
-  return new Promise((resolve) => {
-    try {
-      chrome.storage.local.get(NETWORK_READING_KEY, (items) => {
-        resolve(!chrome.runtime.lastError && !!items && items[NETWORK_READING_KEY] === true);
-      });
-    } catch (err) {
-      resolve(false);
-    }
-  });
-}
-
-// One change at a time: two overlapping calls could each see the script as
-// not yet registered, or not yet removed, and leave it out of step.
-let networkReadingChange = Promise.resolve();
-
-function applyNetworkReading(enabled) {
-  networkReadingChange = networkReadingChange.then(() => applyNetworkReadingNow(enabled));
-  return networkReadingChange;
-}
-
-async function applyNetworkReadingNow(enabled) {
+async function forgetNetworkReading() {
   try {
-    const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [INTERCEPTOR_SCRIPT_ID] });
-    if (enabled && registered.length === 0) {
-      await chrome.scripting.registerContentScripts([{
-        id: INTERCEPTOR_SCRIPT_ID,
-        matches: ["https://*.linkedin.com/*"],
-        js: ["voyager_interceptor.js"],
-        runAt: "document_start",
-        world: "MAIN",
-        persistAcrossSessions: true
-      }]);
-    } else if (!enabled && registered.length > 0) {
-      await chrome.scripting.unregisterContentScripts({ ids: [INTERCEPTOR_SCRIPT_ID] });
+    const left = await chrome.scripting.getRegisteredContentScripts({ ids: [RETIRED_INTERCEPTOR_ID] });
+    if (Array.isArray(left) && left.length > 0) {
+      await chrome.scripting.unregisterContentScripts({ ids: [RETIRED_INTERCEPTOR_ID] });
     }
   } catch (err) {
-    console.warn("[Inox Hydra Bridge] Could not apply the network reading setting:", err);
+    // No registration to remove, or no scripting API: nothing runs.
+  }
+  try {
+    await new Promise((resolve) => chrome.storage.local.remove(RETIRED_KEYS, () => resolve()));
+  } catch (err) {
+    // Storage unavailable: the values are read by nothing.
   }
 }
 
-async function syncNetworkReading() {
-  await applyNetworkReading(await networkReadingEnabled());
+try {
+  chrome.runtime.onInstalled.addListener(() => { forgetNetworkReading(); });
+  chrome.runtime.onStartup.addListener(() => { forgetNetworkReading(); });
+} catch (err) {
+  // No runtime events: nothing to forget.
 }
-
-// The latest stored value wins, whatever order the change events arrive in.
-async function followNetworkReadingSetting() {
-  await applyNetworkReading(await networkReadingEnabled());
-}
-
-chrome.runtime.onInstalled.addListener(syncNetworkReading);
-chrome.runtime.onStartup.addListener(syncNetworkReading);
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes[NETWORK_READING_KEY]) {
-    followNetworkReadingSetting();
-  }
-});

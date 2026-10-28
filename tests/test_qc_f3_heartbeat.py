@@ -35,7 +35,7 @@ def test_a_hidden_linkedin_tab_still_reports_the_bridge():
     pages = Pages()
     try:
         page = pages.open(
-            "/feed/", page_html("<main></main>"), scripts=("voyager_schema.js", "content.js", "own_pages.js"),
+            "/feed/", page_html("<main></main>"), scripts=("content.js", "own_pages.js"),
             before="() => Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })",
         )
         page.clock.run_for(3 * 60 * 1000 + 1000)

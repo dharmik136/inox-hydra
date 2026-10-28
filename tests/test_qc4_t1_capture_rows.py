@@ -11,10 +11,10 @@ sections report's capture_health row):
            checked against a figure rather than a feeling.
   item 5   a creator analytics reading refused for identity raised before
            the captures row was written, so the reader read NOT SEEN YET
-           while it was running and being refused. The row is written first.
-           The schema names the extension sends and the names EXTRACTORS
-           lists disagreed: three of the five were recorded under names no
-           screen listed.
+           while it was running and being refused. The row was written
+           first. That reader was network reading's, retired in 2.10.2; its
+           refused rows stay in the log, and a refused row still reads as
+           refused and is never a good run or a capture.
   health   a reader whose latest run read nothing was shown as WORKING. It
            now says so, as its own state, and keeps the date it last worked.
 
@@ -138,58 +138,6 @@ def test_a_nonsense_timing_is_refused_not_stored(studio):
 
 
 # ---------------------------------------------------------------------------
-# Item 5: a refused network reading is a run that was refused
-# ---------------------------------------------------------------------------
-
-def test_a_creator_analytics_reading_refused_for_identity_leaves_a_refused_row(studio):
-    import onboarding
-    with pytest.raises(onboarding.RefusedCapture):
-        onboarding.record_voyager_ingest({
-            "schema_name": "creator_analytics", "vanity": "nobody-confirmed",
-            "data": [{"followers": 10}], "extension_version": "test",
-        })
-    entry = _health("voyager_creator_analytics")
-    assert entry["state"] == "refused", "a refused reading still reads as never run"
-    assert entry["refused"] == "identity"
-    assert entry["last_run_at"] is not None
-    assert entry["last_good_at"] is None, "a refused run is not a good run"
-
-
-def test_the_schema_names_the_extension_sends_are_the_names_the_health_lists(studio):
-    """
-    content.js forwards only the schemas whose responses carry the creator's
-    own data (FORWARDED_SCHEMAS) and sends each as voyager_<name>. Every one
-    is listed, opt-in, and is one the studio keeps something from.
-    """
-    import onboarding
-    with open(os.path.join(EXT, "content.js"), encoding="utf-8") as handle:
-        content = handle.read()
-    forwarded = re.search(r"const FORWARDED_SCHEMAS = new Set\(\[([^\]]*)\]\)", content)
-    assert forwarded, "content.js no longer names the schemas it forwards"
-    sent = {"voyager_" + name for name in re.findall(r'"([a-z_]+)"', forwarded.group(1))}
-    assert sent == {"voyager_feed_updates", "voyager_creator_analytics"}, sent
-    listed = {name for name in onboarding.EXTRACTORS if name.startswith("voyager_")}
-    assert sent == listed, f"sent {sorted(sent)} but listed {sorted(listed)}"
-    assert sent <= set(onboarding.OPT_IN_EXTRACTORS), "a network reading part is listed as if it ran for everyone"
-    assert {name[len("voyager_"):] for name in sent} == set(onboarding.VOYAGER_KEPT)
-
-
-def test_a_schema_name_the_registry_does_not_know_is_refused(studio):
-    import onboarding
-    with pytest.raises(onboarding.RefusedCapture):
-        onboarding.record_voyager_ingest({"schema_name": "something_else", "data": []})
-    assert _row("voyager_something_else") is None
-
-
-def test_an_accepted_network_reading_still_records_its_run(studio):
-    import onboarding
-    onboarding.record_voyager_ingest({"schema_name": "feed_updates", "data": []})
-    entry = _health("voyager_feed_updates")
-    assert entry["state"] == "read_nothing"
-    assert entry["refused"] is None
-
-
-# ---------------------------------------------------------------------------
 # The sections report's row: WORKING shown for a reader that read nothing
 # ---------------------------------------------------------------------------
 
@@ -224,6 +172,15 @@ def test_a_reader_that_read_something_is_working(studio):
     assert _health("activity_posts")["state"] == "working"
 
 
+def test_a_reader_whose_latest_run_was_refused_reads_refused_and_never_worked(studio):
+    _age("analytics", days=1, items_seen=1, items_kept=0, refused="identity")
+    entry = _health("analytics")
+    assert entry["state"] == "refused", "a refused run reads as something else"
+    assert entry["refused"] == "identity"
+    assert entry["last_run_at"] is not None
+    assert entry["last_good_at"] is None, "a refused run is not a good run"
+
+
 def test_every_state_is_one_the_screens_know(studio):
     """The states a row can produce, in one place, so a screen cannot meet one it does not draw."""
     import onboarding
@@ -236,44 +193,27 @@ def test_every_state_is_one_the_screens_know(studio):
 
 def test_the_prune_keeps_the_last_good_run_behind_refused_runs(studio):
     """
-    The review's scenario: creator analytics by network reading worked ten
-    days ago and has been refused for identity since. The prune kept "the
-    latest run with no drift that saw something", which was the newest
-    refused row, so the next capture of any reader deleted the real last good
-    run and Setup read REFUSED with no LAST WORKED date.
+    The review's scenario: a reader worked ten days ago and has been refused
+    for identity since (it was creator analytics by network reading, retired
+    in 2.10.2). The prune kept "the latest run with no drift that saw
+    something", which was the newest refused row, so the next capture of any
+    reader deleted the real last good run and Setup read REFUSED with no
+    LAST WORKED date.
     """
     import onboarding
-    worked = _age("voyager_creator_analytics", days=10, items_seen=1, items_kept=0)
-    _age("voyager_creator_analytics", days=9, items_seen=1, items_kept=0, refused="identity")
-    _age("voyager_creator_analytics", days=3, items_seen=1, items_kept=0, refused="identity")
+    worked = _age("analytics", days=10, items_seen=1, items_kept=0)
+    _age("analytics", days=9, items_seen=1, items_kept=0, refused="identity")
+    _age("analytics", days=3, items_seen=1, items_kept=0, refused="identity")
     onboarding.record_capture({"extractor": "engagers", "page_kind": "feed", "items_seen": 3, "items_kept": 1})
-    entry = _health("voyager_creator_analytics")
+    entry = _health("analytics")
     assert entry["state"] == "refused"
     assert entry["last_good_at"] == worked.isoformat(), "the prune deleted the last good run behind a refused one"
 
 
-def test_a_refused_reading_is_not_a_network_capture(studio):
-    """The side panel read "Voyager Active" and "24h Network Captures: 1" when nothing was stored."""
-    import onboarding
-    with pytest.raises(onboarding.RefusedCapture):
-        onboarding.record_voyager_ingest({
-            "schema_name": "creator_analytics", "vanity": "nobody-confirmed",
-            "data": [{"followers": 10}], "extension_version": "test",
-        })
-    health = onboarding.extension_health()
-    assert health["voyager_24h_captures"] == 0, "a refused reading is counted as a capture"
-    assert health["voyager_active"] is False
-
-
 def test_todays_last_capture_is_never_a_refused_run(studio):
-    import onboarding
     import today
     captured = _age("engagers", days=2, items_seen=3, items_kept=3)
-    with pytest.raises(onboarding.RefusedCapture):
-        onboarding.record_voyager_ingest({
-            "schema_name": "creator_analytics", "vanity": "nobody-confirmed",
-            "data": [{"followers": 10}], "extension_version": "test",
-        })
+    _age("analytics", days=0, items_seen=1, items_kept=0, refused="identity")
     assert today.today_brief()["freshness"]["last_capture_at"] == captured.isoformat(), (
         "Today's LAST CAPTURE moved with a reading the studio refused")
 

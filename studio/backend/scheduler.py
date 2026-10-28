@@ -28,12 +28,13 @@ import sqlite3
 from apscheduler.schedulers.background import BackgroundScheduler
 
 try:
-    from . import paths, changes
+    from . import paths, changes, sqlite_open
     from .database import get_db, init_db, SEEDED_DEMO_POST_IDS, DEFAULT_QUEUE_SLOTS, neutral_slot_label
     from .migrations import SCHEMA_VERSION
 except ImportError:
     import paths
     import changes
+    import sqlite_open
     from database import get_db, init_db, SEEDED_DEMO_POST_IDS, DEFAULT_QUEUE_SLOTS, neutral_slot_label
     from migrations import SCHEMA_VERSION
 
@@ -108,7 +109,10 @@ class NativeScheduler:
 
     def __init__(self):
         self.scheduler = BackgroundScheduler()
-        self._checked_profiles: set = set()
+        # The database files already checked against this build's schema, by
+        # path: a profile whose home changed (a test's fresh home, a moved
+        # data folder) is a new file and is checked again.
+        self._checked_databases: set = set()
         self.min_cooldown_hours = MIN_COOLDOWN_HOURS
         self.grace_window_minutes = GRACE_WINDOW_MINUTES
 
@@ -734,13 +738,23 @@ class NativeScheduler:
         ran and was rolled back. Writing to it unchecked could hit a column
         that is not there, or change data a newer schema means differently.
         """
-        if profile_id in self._checked_profiles:
+        if database in self._checked_databases:
             return True
+        # A database whose schema has not been written yet is being set up by
+        # init_db elsewhere (a creator profile just created or switched to, a
+        # fresh home): left alone this pass, without opening it. Read as
+        # "older than this build", it got a second init_db of its own while
+        # the first was migrating, and on Windows one of the two failed with
+        # "database is locked" (2.10.1's CI). Its queue is empty anyway.
+        if not sqlite_open.initialised(database):
+            return False
         reader = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
         try:
-            version = reader.execute("PRAGMA user_version").fetchone()[0]
+            version = reader.execute("PRAGMA user_version").fetchall()[0][0]
         finally:
             reader.close()
+        if not version:
+            return False
         if version > SCHEMA_VERSION:
             logger.warning("Profile %s was written by a newer build (schema %s); its queue is left alone.",
                            profile_id, version)
@@ -748,7 +762,7 @@ class NativeScheduler:
         if version < SCHEMA_VERSION:
             with paths.using_profile(profile_id):
                 init_db()
-        self._checked_profiles.add(profile_id)
+        self._checked_databases.add(database)
         return True
 
     def start(self):

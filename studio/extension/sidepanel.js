@@ -558,12 +558,10 @@ async function loadSideHealth() {
     const health = result.data || {};
     const bridge = health.bridge || {};
     const extractors = health.extractors || [];
-    const drift = health.recent_drift || [];
-    const voyagerActive = health.voyager_active;
 
     if (bridge.connected) {
-      badge.innerText = voyagerActive ? "Voyager Active" : "DOM Fallback";
-      badge.style.color = voyagerActive ? "var(--success)" : "#f59e0b";
+      badge.innerText = "Connected";
+      badge.style.color = "var(--success)";
     } else {
       badge.innerText = "Bridge Idle";
       badge.style.color = "var(--text-dim)";
@@ -574,60 +572,6 @@ async function loadSideHealth() {
     // this extension is older than the studio's ingest contract. Every one of
     // these was decided somewhere and shown nowhere.
     let html = await waitingAndRefusalPanel(health);
-
-    // The three honest states, in the studio's own sentence from the last
-    // heartbeat: off, on and seeing N calls with K matched, or on and
-    // matching nothing. An extension that has not reported the state is
-    // said to have not reported it, never shown as off or as standby.
-    const reading = health.network_reading;
-    const readingSentence = reading && reading.sentence
-      ? reading.sentence
-      : "Not reported by this extension yet. Reload the extension, then open a LinkedIn page.";
-    // What LinkedIn called on the last page read, by path and GraphQL query
-    // name, from the coverage meter: the names a network reader has to match,
-    // readable here without the browser's developer tools.
-    const calls = reading && reading.voyager_calls ? Object.entries(reading.voyager_calls) : [];
-    calls.sort((a, b) => b[1] - a[1]);
-    const callsLine = calls.length
-      ? "LinkedIn's data calls seen in the tab that last reported: " + calls.slice(0, 8).map(([key, count]) => {
-          const parts = String(key).split(" ");
-          return (parts[1] || parts[0]) + " (" + count + ")";
-        }).join(", ") + (calls.length > 8 ? ", and " + (calls.length - 8) + " more." : ".")
-      : "";
-    html += `
-      <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 8px;">
-        <div style="margin-bottom: 4px;">
-          <span style="color: var(--text-muted);">Network reading</span>
-          <div style="font-size: 10.5px; color: var(--text); margin-top: 2px;">${escapeHtml(readingSentence)}</div>
-          ${callsLine ? `<div style="font-size: 10.5px; color: var(--text-muted); margin-top: 4px;">${escapeHtml(callsLine)}</div>` : ""}
-        </div>
-        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-          <span style="color: var(--text-muted);">Schema Registry</span>
-          <span style="color: var(--accent); font-family: monospace;">v${escapeHtml(health.schema_version || "2026.10.1")}</span>
-        </div>
-        <div style="display: flex; justify-content: space-between;">
-          <span style="color: var(--text-muted);">24h Network Captures</span>
-          <span style="font-weight: 600;">${health.voyager_24h_captures || 0}</span>
-        </div>
-      </div>
-    `;
-
-    if (drift.length > 0) {
-      html += `
-        <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px; padding: 8px; margin-bottom: 8px;">
-          <div style="color: #f87171; font-weight: 600; margin-bottom: 4px; font-size: 11px;">⚠️ Detected API Drift (${drift.length})</div>
-          <div style="font-size: 10.5px; color: var(--text-muted);">
-            ${escapeHtml(drift[0].schema_name)}: missing ${escapeHtml((drift[0].drift_fields || []).join(", "))}
-          </div>
-        </div>
-      `;
-    } else {
-      html += `
-        <div style="background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.15); border-radius: 6px; padding: 8px; margin-bottom: 8px; text-align: center; color: var(--success); font-size: 11px;">
-          ✓ Zero drift detected - 100% schema match
-        </div>
-      `;
-    }
 
     html += `<div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">Observer Pipelines:</div>`;
     extractors.forEach(ext => {
@@ -669,7 +613,6 @@ const CAPTURE_WORDS = {
   "/api/v1/self/outbound/ingest": "your comments and reactions",
   "/api/v1/identity/observe": "your profile",
   "/api/v1/posts/bind-urn": "a post linked to your draft",
-  "/api/v1/bridge/voyager-ingest": "a network reading",
   "/api/analytics/ingest": "creator analytics",
   "/api/analytics/page-figures": "figures from your own analytics pages"
 };

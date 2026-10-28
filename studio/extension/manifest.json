@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Inox Hydra Bridge",
-  "version": "2.10.1",
+  "version": "2.10.2",
   "description": "Brings what you see on your own LinkedIn pages into Inox Hydra on this computer, and places your drafts in LinkedIn's composer.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -14,7 +14,6 @@
     "storage",
     "tabs",
     "scripting",
-    "webRequest",
     "alarms"
   ],
   "host_permissions": [
@@ -41,7 +40,7 @@
     },
     {
       "matches": ["https://*.linkedin.com/*"],
-      "js": ["voyager_schema.js", "content.js", "own_pages.js", "own_insights.js"],
+      "js": ["content.js", "own_pages.js", "own_insights.js"],
       "run_at": "document_idle"
     }
   ]

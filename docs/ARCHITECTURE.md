@@ -177,7 +177,7 @@ erDiagram
 
 ### Risk register
 
-The maintained register of what LinkedIn could notice is `planning/7 Roadmap/Risk - LinkedIn terms and detection.md`. As of cycle 3 it names three exposures: the Voyager network interceptor, the scrolled history import above, and `schedule_norm_share` ("Send to LinkedIn"), which writes to LinkedIn's private, undocumented `contentcreation/normShares` endpoint, a use outside LinkedIn's published terms, and could affect the account's standing if LinkedIn's systems treat it as automation. `egress.py:84` refuses that category by default (`INOX_ALLOW_LINKEDIN_EGRESS`), and since cycle 3 a studio installation's first Send to LinkedIn also requires a one-time, logged acknowledgement of that sentence, separate from the per-send confirmation that names the account and the time (see `docs/help/publish-queue-or-send-to-linkedin.md`).
+The maintained register of what LinkedIn could notice is `planning/7 Roadmap/Risk - LinkedIn terms and detection.md`. As of cycle 3 it names three exposures: the Voyager network interceptor (retired in 2.10.2 with network reading, so no longer an exposure), the scrolled history import above, and `schedule_norm_share` ("Send to LinkedIn"), which writes to LinkedIn's private, undocumented `contentcreation/normShares` endpoint, a use outside LinkedIn's published terms, and could affect the account's standing if LinkedIn's systems treat it as automation. `egress.py:84` refuses that category by default (`INOX_ALLOW_LINKEDIN_EGRESS`), and since cycle 3 a studio installation's first Send to LinkedIn also requires a one-time, logged acknowledgement of that sentence, separate from the per-send confirmation that names the account and the time (see `docs/help/publish-queue-or-send-to-linkedin.md`).
 
 ---
 

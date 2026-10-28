@@ -1515,10 +1515,9 @@ class BridgeHeartbeat(BaseModel):
     contract_version: Optional[int] = None
     waiting_captures: Optional[int] = None
     oldest_waiting_at: Optional[str] = None
-    # Whether network reading is on, registered and present in the page, and
-    # what the page saw LinkedIn call (counts by path and query name, never a
-    # query string). Absent from an extension older than this field, which
-    # the studio reports as not measured rather than as off.
+    # Network reading's state and the page's count of LinkedIn's data calls,
+    # which an extension before 2.10.2 still sends. Accepted, so its
+    # heartbeat is not refused, and kept nowhere: network reading was retired.
     network_reading: Optional[Dict[str, Any]] = None
     voyager_calls: Optional[Dict[str, Any]] = None
     # The worker's own heartbeat, one per browser per minute (cycle 4, track
@@ -1624,7 +1623,7 @@ def post_bridge_heartbeat(payload: BridgeHeartbeat):
     failing quietly on a field name that moved.
     """
     seen = onboarding.record_heartbeat(
-        payload.extension_version, payload.page_kind, payload.network_reading, payload.voyager_calls,
+        payload.extension_version, payload.page_kind,
         browser_instance_id=payload.browser_instance_id, browser=payload.browser,
         signed_in_vanity=payload.signed_in_vanity, contract_version=payload.contract_version,
         open_pages=payload.open_pages, held=payload.held, tabs_needing_reload=payload.tabs_needing_reload,
@@ -1652,29 +1651,28 @@ def post_bridge_capture(payload: Dict[str, Any]):
 
 
 @app.post("/api/v1/bridge/voyager-ingest", tags=["Onboarding"])
-def post_bridge_voyager_ingest(payload: Dict[str, Any]):
-    """Ingests structured data captured via Voyager API network interception."""
-    try:
-        return onboarding.record_voyager_ingest(payload)
-    except onboarding.RefusedCapture as error:
-        _refusal(error)
+def post_bridge_voyager_ingest():
+    """
+    Retired in 2.10.2 with network reading. An extension not yet reloaded may
+    still send a reading here: it is answered "retired", with a 200 so the
+    extension neither keeps it to send again nor reports an error, and
+    nothing is read from it or written.
+    """
+    return onboarding.network_reading_retired_answer()
 
 
 @app.post("/api/v1/bridge/schema-drift", tags=["Onboarding"])
-def post_bridge_schema_drift(payload: Dict[str, Any]):
-    """Records Voyager API schema drift events when response shapes change."""
-    try:
-        return onboarding.record_schema_drift(payload)
-    except onboarding.RefusedCapture as error:
-        _refusal(error)
+def post_bridge_schema_drift():
+    """Retired in 2.10.2 with network reading; answered as voyager-ingest is."""
+    return onboarding.network_reading_retired_answer()
 
 
 @app.get("/api/v1/extension/health", tags=["Onboarding"])
 def get_extension_health():
     """
-    Aggregated health of the extension and of Voyager interception, plus the
-    two things the creator could not see before: which contract the extension
-    speaks, and how many captures it is holding because the studio was busy.
+    Aggregated health of the extension and its readers, plus the two things
+    the creator could not see before: which contract the extension speaks,
+    and how many captures it is holding because the studio was busy.
     """
     health = onboarding.extension_health()
     health["contract"] = ingest_contract.handshake()

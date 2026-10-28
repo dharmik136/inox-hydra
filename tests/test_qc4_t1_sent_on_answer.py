@@ -14,7 +14,7 @@ import pytest
 
 from qc_f3_pages import Pages, page_html
 
-SCRIPTS = ("voyager_schema.js", "content.js", "own_pages.js")
+SCRIPTS = ("content.js", "own_pages.js")
 INGEST = "/api/v1/self/posts/ingest"
 
 POSTS = page_html("""

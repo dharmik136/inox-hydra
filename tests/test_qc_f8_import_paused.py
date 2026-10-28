@@ -116,7 +116,7 @@ def test_run_import_in_a_hidden_tab_reports_paused_then_resumed():
     try:
         page = pages.open(
             f"/in/{ME}/recent-activity/all/", page_html("<main></main>"),
-            scripts=("voyager_schema.js", "content.js", "own_pages.js"), me=ME,
+            scripts=("content.js", "own_pages.js"), me=ME,
             before=(
                 "() => { window.__hidden = true;"
                 " Object.defineProperty(document, 'visibilityState', { configurable: true,"

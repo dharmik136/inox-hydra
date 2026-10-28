@@ -1,8 +1,10 @@
 """
 Telemetry Ingress Shard & In-Memory Batch Buffer.
 =================================================
-Provides decoupled, high-velocity ingestion for passive Voyager telemetry,
-browser extension observer events, and reader dwell metrics.
+Provides decoupled, high-velocity ingestion for the analytics readings the
+browser extension sends and reader dwell metrics. Network reading's observer
+events and passive Voyager telemetry no longer arrive: network reading was
+retired in 2.10.2.
 
 Architectural Guarantees:
 1. Subsystem Sharding: Writes land in analytics_telemetry.db, completely
