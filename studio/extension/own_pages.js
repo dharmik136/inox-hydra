@@ -880,6 +880,85 @@
     return result;
   }
 
+  // The 2026 Activity list (the owner's own page, 2026-10-28) is a
+  // LazyColumn that fills after the route settles: the one read 2.5 s after
+  // the route change found no card and logged items_seen 0, while 38 cards
+  // were there a second later. So the first read waits for a card, up to
+  // CARD_WAIT_MS while the list is on the page and LIST_WAIT_MS while it is
+  // not, and the list is then watched for a minute: cards it adds are read
+  // 1.2 s after they stop arriving, at most LIST_REREADS times. Scrolling
+  // reads more, as it always has, and an import reads on its own.
+  const ACTIVITY_LIST = '[data-testid^="ProfileRecentActivity"][role="list"], main [data-component-type="LazyColumn"][role="list"]';
+  const CARD_WAIT_MS = 15000;
+  const LIST_WAIT_MS = 4000;
+  const CARD_POLL_MS = 500;
+  const LIST_WATCH_MS = 60000;
+  const LIST_REREADS = 10;
+
+  function activityList() {
+    return document.querySelector(ACTIVITY_LIST);
+  }
+
+  // The list's rows that carry words: its items, or its children when the
+  // items carry no role. The LazyColumn's own spacers carry none.
+  function listRowsWithWords() {
+    const list = activityList();
+    if (!list) return 0;
+    const items = list.querySelectorAll('[role="listitem"]');
+    const rows = items.length ? Array.from(items) : Array.from(list.children);
+    return rows.filter((row) => clean(row.innerText || row.textContent)).length;
+  }
+
+  // Waits for the first card, or the limit; false when a newer read of the
+  // page took over meanwhile.
+  let activityRun = 0;
+  async function cardsArrived(run) {
+    const started = Date.now();
+    while (run === activityRun && !activityCards().length) {
+      const waited = Date.now() - started;
+      if (waited >= CARD_WAIT_MS || (!activityList() && waited >= LIST_WAIT_MS)) break;
+      await new Promise((resolve) => setTimeout(resolve, CARD_POLL_MS));
+    }
+    return run === activityRun;
+  }
+
+  let listWatch = null;
+  function stopListWatch() {
+    if (listWatch) listWatch();
+  }
+
+  function watchList(kind, me) {
+    stopListWatch();
+    const list = activityList();
+    if (!list || typeof MutationObserver !== "function") return;
+    const path = window.location.pathname;
+    const read = new Set(activityCards().map(cardUrn));
+    let rereads = 0;
+    let timer = null;
+    const observer = new MutationObserver(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(async () => {
+        timer = null;
+        if (importRunning || window.location.pathname !== path || !isOwnActivityPage(me)) return;
+        const urns = activityCards().map(cardUrn);
+        if (urns.every((urn) => read.has(urn))) return;
+        urns.forEach((urn) => read.add(urn));
+        rereads += 1;
+        if (rereads >= LIST_REREADS) stop();
+        await sendActivity(kind, me);
+      }, 1200);
+    });
+    const ends = setTimeout(() => stop(), LIST_WATCH_MS);
+    function stop() {
+      observer.disconnect();
+      clearTimeout(ends);
+      if (timer) clearTimeout(timer);
+      if (listWatch === stop) listWatch = null;
+    }
+    listWatch = stop;
+    observer.observe(list.parentElement || list, { childList: true, subtree: true });
+  }
+
   function cardActor(card) {
     const link = card.querySelector(
       ".update-components-actor__meta-link, a.update-components-actor__image, .update-components-actor a[href*='/in/'], .feed-shared-actor a[href*='/in/'], a[data-field='actor_name'], a.app-aware-link[href*='/in/']"
@@ -1001,11 +1080,28 @@
     // So the post's text is skipped, and a count is a figure directly followed
     // by its word ("9 comments"), never a figure somewhere in a sentence.
     const textEl = cardTextElement(card);
-    const counted = (text, word) => new RegExp("^\\d[\\d.,'\\s]*[km]?\\s*(?:" + word + ")\\b", "i").test(text);
-    card.querySelectorAll("button, span, a").forEach((el) => {
-      if (textEl && textEl.contains(el)) return;
+    // The 2026 action bar (the owner's own Activity page, 2026-10-28): the
+    // comment and repost counts are the bare figure inside the button whose
+    // name is the action, "Comment" and "Repost". A button with no figure in
+    // it shows no count, which is not read, never 0.
+    for (const [key, action] of [["comments", "comment"], ["reposts", "repost"]]) {
+      if (counts[key] !== null) continue;
+      const button = Array.from(card.querySelectorAll("button[aria-label]"))
+        .find((el) => clean(el.getAttribute("aria-label")).toLowerCase() === action);
+      const figure = button ? clean(button.innerText || button.textContent) : "";
+      if (/^\d[\d.,']*\s*[km]?$/i.test(figure)) counts[key] = parseCount(figure);
+    }
+    const leading = (text, word) => new RegExp("^\\d[\\d.,'\\s]*[km]?\\s*(?:" + word + ")\\b", "i").test(text);
+    // A paragraph too, when the whole line is the count: "499 impressions"
+    // is a plain line on the 2026 cards, and a line that only starts with a
+    // count is somebody's sentence. The post's own words are skipped whether
+    // the element sits inside them or holds them.
+    const whole = (text, word) => new RegExp("^\\d[\\d.,'\\s]*[km]?\\s*(?:" + word + ")$", "i").test(text);
+    card.querySelectorAll("button, span, a, p").forEach((el) => {
+      if (textEl && (textEl.contains(el) || el.contains(textEl))) return;
       const text = clean(el.getAttribute("aria-label") || el.innerText || "");
       if (text.length > 60) return;
+      const counted = el.tagName === "P" ? whole : leading;
       if (counts.reactions === null && counted(text, "reactions?|likes?")) counts.reactions = parseCount(text);
       if (counts.comments === null && counted(text, "comments?")) counts.comments = parseCount(text);
       if (counts.reposts === null && counted(text, "reposts?")) counts.reposts = parseCount(text);
@@ -1172,7 +1268,11 @@
     // unread author had already been replaced by the creator, so never fired.
     const drift = [];
     if (kind === "activity_posts" && items.length && items.unreadActors === items.length) drift.push("post_author");
-    reportCapture(kind, cards.length, items.length, drift);
+    // The list has rows with words and not one of them is a card this reader
+    // knows: plainly the Activity page, and the markup has moved on.
+    const rows = cards.length ? 0 : listRowsWithWords();
+    if (rows) drift.push("post_cards");
+    reportCapture(kind, cards.length || rows, items.length, drift);
 
     const fresh = items.filter((item) => !sentKeys.has(itemKey(item)));
     if (!fresh.length) return 0;
@@ -1752,11 +1852,16 @@
   }
 
   async function onActivityPage(kind) {
+    const run = ++activityRun;
     const me = await getConfirmedVanity();
     if (!isOwnActivityPage(me)) return; // someone else's activity: not read
 
+    // The list renders after the route settles: its first cards are waited
+    // for, and the cards it adds after are read as they arrive.
+    if (!(await cardsArrived(run))) return;
     // Whatever is on screen is read either way. Scrolling needs a request.
     await sendActivity(kind, me);
+    watchList(kind, me);
 
     const pending = await studio("/api/v1/self/imports/pending", { kind: IMPORT_KIND[kind] });
     if (pending && pending.request) runImport(kind, me, pending.request);
@@ -1816,6 +1921,7 @@
 
   let settleTimer = null;
   function onRoute() {
+    stopListWatch();
     noteMeRedirect();
     pageState();
     if (settleTimer) clearTimeout(settleTimer);

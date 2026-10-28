@@ -2069,6 +2069,34 @@ def _migrate_bridge_coordination(cursor: sqlite3.Cursor) -> None:
             cursor.execute(f"ALTER TABLE self_import_requests ADD COLUMN {column} TEXT")
 
 
+def _migrate_content_page_figures(cursor: sqlite3.Cursor) -> None:
+    """
+    Members reached, saves, sends and the network split from the creator
+    analytics page, by day and by window (2.10.1).
+
+    LinkedIn's 2026 content page (the owner's own, 2026-10-28) shows, beside
+    impressions and reactions, members reached, comments, reposts, saves,
+    sends and the share of impressions from inside and outside the creator's
+    network. A reading over the past 24 hours is a day: analytics_daily
+    gains the four columns it had no room for (members reached has had its
+    column since the first schema, waiting for a reader). Any other window
+    is kept as that window in analytics_windows, which gains all five, and a
+    window the page did not name is kept as one ('unnamed'), never as a day.
+    A figure the page did not show is NULL, never 0; rows already written
+    keep NULL in the new columns.
+    """
+    for table, columns in (
+        ("analytics_daily", (("saves", "INTEGER"), ("sends", "INTEGER"), ("in_network_pct", "REAL"),
+                             ("out_of_network_pct", "REAL"))),
+        ("analytics_windows", (("members_reached", "INTEGER"), ("saves", "INTEGER"), ("sends", "INTEGER"),
+                               ("in_network_pct", "REAL"), ("out_of_network_pct", "REAL"))),
+    ):
+        have = {row[1] for row in cursor.execute(f"PRAGMA table_info({table})")}
+        for column, kind in columns:
+            if column not in have:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -2115,6 +2143,9 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (35, "One bridge per browser: heartbeats and capture rows per browser and minute, "
          "and a history import claimed by one tab",
      _migrate_bridge_coordination),
+    (36, "Members reached, saves, sends and the network split from the creator analytics page, "
+         "by day and by window",
+     _migrate_content_page_figures),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

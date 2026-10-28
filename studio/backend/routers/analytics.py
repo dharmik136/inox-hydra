@@ -339,7 +339,8 @@ def get_analytics_overview(range: str = "30d"):
         # by what it covers. Beside the daily series, never in it: nothing
         # here is summed into a day or a range.
         cursor.execute("""
-        SELECT date, period_label, observed_at, impressions, reactions, comments, shares, followers, precision, source
+        SELECT date, period_label, observed_at, impressions, reactions, comments, shares, followers,
+               members_reached, saves, sends, in_network_pct, out_of_network_pct, precision, source
         FROM analytics_windows WHERE date >= ? AND date <= ? ORDER BY date ASC, period_label ASC
         """, (start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
         windows = [{**dict(r), **window_words(r["period_label"])} for r in cursor.fetchall()]
@@ -658,6 +659,9 @@ def ingest_live_analytics(payload: dict):
             pass
 
     result = linkedin_client.ingest_analytics_payload(payload)
-    changes.publish_written(account=result.get("buckets_ingested") or result.get("followers_saved"), people=(result.get("leads_added") or 0) + (result.get("leads_updated") or 0), database=result.get("posts_updated"))
+    # A reading kept only as a window is a change too (2.10.1): the content
+    # page opens on a multi-day range, and its reading was not announced.
+    changes.publish_written(account=result.get("buckets_ingested") or result.get("followers_saved")
+                            or result.get("windows_saved"), people=(result.get("leads_added") or 0) + (result.get("leads_updated") or 0), database=result.get("posts_updated"))
     return result
 
