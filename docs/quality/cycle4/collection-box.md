@@ -152,3 +152,44 @@ About ten new API paths, each reached by the interface; the census in `tests/tes
 ## Tests
 
 Per item: a failing test first, against the fake Bot API and a fake provider on loopback (moved into `tests/ai_fake.py`, shared as `tests/telegram_fake.py` is); a guard falsified; the custody checks each new table passes (the pattern of `tests/test_qc4_t7_schema_and_custody.py`); a browser test with axe in both themes for each new control; the census re-measured. One full suite as CI runs it at the end, with flake8 and `tools/ui_audit.py`.
+
+## Phase 3 record
+
+What was built, item by item, on `qc4/collection-box` from `a360b74` (2.11.0). Each item: a failing test first, the code, one guard falsified, one commit. Census in `tests/test_endpoint_reachability.py` as total paths / reached by the interface / unreachable.
+
+| Item | Commit | What the creator sees | Tests first | Falsified, and caught by | Census |
+| --- | --- | --- | --- | --- | --- |
+| This PRD | `01bf14f` | Nothing yet: the reading, the reuse, the migrations, the preferences, what may go where, and the sections | | | 228/180/48 |
+| 1. The collection box | `9f33436` | Your collection, a view of From your record: everything sent to the bot, live, with status filters (with counts), a kind filter and Find a word; Use as a draft, Not now, Back to new, Remove. A bookmark is the post's address rebuilt from its id with the creator's words; a forward keeps its text, never its origin | `test_collection_box.py`, `test_collection_custody.py`, `test_collection_box_ui.py` | A bookmark kept as the address sent (with its slug): `test_someone_elses_post_is_a_bookmark_kept_without_its_slug` | 232/184/48 |
+| 2. Make something out of it | `aabbe0d` | Make a post, the "<n> angles" button and Combine in the box; Write it up and "<n> angles" on the bot; the switch "The bot may send me what it writes from my collection" and the morning idea, both off; Brand's Writing view, every preference with its default | `test_collection_writing.py`, `test_collection_bot_writing.py`, `test_collection_writing_ui.py` | The grounding check switched off: `test_an_invented_figure_or_a_known_name_is_refused_never_repaired`; the words switch forced on: `test_the_words_switch_is_off_by_default` | 235/187/48 |
+| 3. Memory | `a88126d` | Things to remember under Brand, Writing (add, edit, tick, choose which go, remove), `/remember` with Undo, `/forget`, `/recall`; the Composer's What this draft was written from and From your collection (Add to the draft, Undo); Ideas draw on and Ideas asked for each day on What the studio knows | `test_memory.py`, `test_memory_custody.py`, `test_resurfacing.py`, `test_memory_ui.py` | Things to remember sent with memory off: `test_only_the_ticked_ones_with_chosen_and_none_with_off` | 239/191/48 |
+| 4. Photos and voice notes | `2ed09cc` | A photo shown and a voice note with a player in the box, each "kept as it is", never read; Add to your media library on a photo; the bot's two new sentences for a file too big or not handed over | `test_phone_media.py`, `test_phone_media_ui.py` | The file's real address (with the token) given to the egress check: `test_the_file_is_fetched_through_the_egress_check_and_counted_without_the_token` | 240/192/48 |
+
+The full suite as CI runs it (`pytest tests studio/tests -q -rs`), at the end: 4,358 passed, 0 failed, 17 skipped (phase 2 of the bot ended at 4,267 passed). flake8 as CI runs it: 0. `tools/ui_audit.py`: 68 screens, 0 with blocking findings. The version stays 2.11.0.
+
+Migrations: 38 (`collection_items`), 39 (`remembered`, `posts.made_with`), 40 (`collection_items.media`, `media_asset_id`), each appended to `MIGRATIONS`, forward only, re-runnable, with the automatic backup before it and a test that an older database gains it and a second run adds nothing.
+
+### The preferences, as built
+
+Every AI choice is the creator's, read through `writing.py` from one `settings` row (`writing_preferences`), with its default shown beside the feature it shapes: length of a draft, tone, language, opening line, emojis, hashtags, line breaks, ending and words to avoid (Brand, Writing; read by Make a post, Combine, Angles, Write it up, Command and, for tone, language, emojis and words to avoid, Re-Hook); how many angles (Brand, Writing; the box's and the bot's button says the number); which things to remember go (all, the ticked ones, or none; Brand, Writing); what ideas draw on (your collection, your posts, your asks; What the studio knows, and beside the morning idea); how many ideas the daily model stage asks for (3, one to five; What the studio knows, beside the model stage; it was a fixed three); the morning idea's switch, days and hour, and whether the bot carries what it writes (the Telegram panel). Each is tested: changing it changes what the fake provider receives or what the bot offers, and a fresh profile gets the default. The provider and model are the one connected on the Prompt tab, named beside each feature: the product connects one for every task.
+
+### Decided against, while building
+
+- A per-task provider or model: the product connects one provider; each feature names it.
+- Changing Re-Hook's ten forms or its count: they are its catalogue.
+- Attaching a photo to a post in the Composer: no Composer post carries a file today (the Media tab says so), so a photo goes to the media library, where the images for a post are kept.
+- Fetching anything for a sticker, a file or a video: still not kept.
+- Writing anything when an item arrives: nothing is written until the creator asks.
+
+### Also corrected
+
+- The bot's `/help` said it never sends the creator's words, which stopped being true with the words switch: it now says it sends their words and figures only if they allow them, and nothing about anyone else.
+- `/recall` said "1 items"; one match is now said in the singular.
+- A `/remember` over 300 characters was answered as if it were empty; it now says how long a thing to remember may be.
+- `tests/test_qc_f7_ui.py` counted Brand's three views; Writing is the fourth, and all four fit at 375 pixels.
+- A LinkedIn post's address inside a note's or a forward's words is rebuilt from its id, without the slug that names its author, but no test held it: switching that off broke nothing. `test_a_post_link_inside_a_forward_is_kept_without_its_slug` now catches it.
+- `test_a_strangers_photo_is_never_fetched`: a photo from any chat but the paired one is refused before anything is asked of Telegram.
+
+### On the real phone
+
+`docs/help/test-your-telegram-bot.md`, steps 7 to 13 of the later, optional part: Write it up and the angles, with the words switch off and on; the morning idea; `/drafts`; `/remember` with its Undo and the note on a draft it went with, then `/forget`; `/recall`; the Composer's From your collection; a photo with a caption and Add to your media library; a voice note played at the computer.

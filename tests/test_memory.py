@@ -28,7 +28,6 @@ for folder in (os.path.join(REPO_ROOT, "studio", "backend"), os.path.dirname(__f
         sys.path.insert(0, folder)
 
 import telegram_bot  # noqa: E402
-from ai_fake import FakeProvider  # noqa: E402
 from database import get_db  # noqa: E402
 from test_collection_writing import provider, studio  # noqa: E402,F401
 from test_telegram_bot_e2e import OWNER, _until, bot  # noqa: E402,F401

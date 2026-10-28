@@ -32,7 +32,7 @@ import paths  # noqa: E402
 import telegram_bot  # noqa: E402
 from database import get_db  # noqa: E402
 from test_collection_box import _items, _labels, _send  # noqa: E402
-from test_telegram_bot_e2e import OWNER, TOKEN, _until, bot  # noqa: E402,F401
+from test_telegram_bot_e2e import OWNER, STRANGER, TOKEN, _until, bot  # noqa: E402,F401
 from test_telegram_bot_replies import _saved, _texts  # noqa: E402
 
 SAID = telegram_bot.SENTENCES
@@ -158,6 +158,18 @@ def test_a_file_telegram_will_not_hand_over_is_said_and_nothing_kept(bot):
     assert os.listdir(os.path.join(paths.get_assets_dir())) in ([], ["phone"])
     phone = os.path.join(paths.get_assets_dir(), "phone")
     assert not os.path.isdir(phone) or os.listdir(phone) == [], "a half file was left behind"
+
+
+def test_a_strangers_photo_is_never_fetched(bot):
+    _saved(bot)
+    bot["fake"].add_file("ph-stranger", JPEG_SMALL, "photos/file_4.jpg")
+    bot["fake"].push(STRANGER, None, photo=[{"file_id": "ph-stranger", "width": 9, "height": 9,
+                                             "file_size": len(JPEG_SMALL)}])
+    assert _until(lambda: bot["fake"].waiting() == [])
+    assert _until(lambda: len(_texts(bot, STRANGER)) == 1)
+    assert bot["fake"].calls_of("getFile") == [] and bot["fake"].calls_of("file") == [] and _items() == []
+    phone = os.path.join(paths.get_assets_dir(), "phone")
+    assert not os.path.isdir(phone) or os.listdir(phone) == []
 
 
 def test_a_sticker_or_a_document_is_still_not_kept(bot):

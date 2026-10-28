@@ -113,6 +113,22 @@ def test_a_forwarded_message_keeps_its_text_and_never_its_origin(bot):
         assert origin_word not in stored, f"a forward's origin was kept: {origin_word}"
 
 
+def test_a_post_link_inside_a_forward_is_kept_without_its_slug(bot):
+    """A forward's links are its words, never a request; a LinkedIn post's address in them is rebuilt from its id."""
+    _saved(bot)
+    link = ("https://www.linkedin.com/posts/jane-strangewood_pricing-secrets-nobody-tells-activity-"
+            "7390000000000000777-AbCd?utm_source=share&utm_medium=member_desktop")
+    assert _send(bot, f"read this later {link}", forward_date=1761700000,
+                 forward_origin={"type": "hidden_user", "date": 1761700000, "sender_user_name": "Someone"}) == (
+        SAID["collected"])
+    [item] = _items()
+    assert (item["kind"], item["text"]) == (
+        "forward", "read this later https://www.linkedin.com/feed/update/urn:li:activity:7390000000000000777/")
+    stored = _everything_stored()
+    for slug_word in ("strangewood", "pricing-secrets", "nobody-tells", "utm_source", "member_desktop", "Someone"):
+        assert slug_word not in stored, f"kept: {slug_word}"
+
+
 def test_a_link_to_ones_own_post_asks_today_and_is_listed(bot):
     _saved(bot)
     mine = _own_post(bot)
