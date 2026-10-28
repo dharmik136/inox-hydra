@@ -1,6 +1,6 @@
 # Privacy policy: Inox Hydra Bridge
 
-**Last updated: 27 October 2026. Applies to Inox Hydra Bridge version 2.9.0.**
+**Last updated: 28 October 2026. Applies to Inox Hydra Bridge version 2.9.0.**
 
 Inox Hydra Bridge is a browser extension that connects the LinkedIn pages you
 open to Inox Hydra, a program that runs on your own computer. The extension has
@@ -39,6 +39,11 @@ It does one other thing to a LinkedIn page, in the other direction, and it is
 described under LinkedIn's composer below: when you ask for a draft to be
 placed in the composer, it opens the composer and types. It never posts,
 comments, reacts, messages or connects.
+
+When the extension is installed or updated, it starts its readers in the
+LinkedIn tabs you already have open, as a reload of each tab would, so that
+no tab has to be reloaded by hand. They read what is described here and
+nothing more, and nothing is added to the page.
 
 From **other people's activity on your posts** (`content.js`): the names,
 profile addresses, headlines and comment or reaction details of people who
@@ -110,8 +115,9 @@ While it is on, two further things happen:
    (`background.js`, using `chrome.webRequest.onCompleted`): the address, cut
    before any part that would name a member and with any LinkedIn id in it
    blanked, the HTTP status and the method. **Not the contents.** Each LinkedIn page you
-   open also counts the data requests it made and sends Inox Hydra the counts
-   with its regular check-in, by address and query name: an address is kept
+   open also counts the data requests it made, by address and query name,
+   and hands the counts to the extension, which sends Inox Hydra those of the
+   page you looked at last with its check-in once a minute: an address is kept
    only as words from a fixed list of the words LinkedIn's data addresses use,
    with every other part written as a blank, and a query name only in
    LinkedIn's own form, otherwise as "other". Never a query string. Inox Hydra
@@ -154,24 +160,41 @@ previous account.
 
 **In the browser**, under the extension's own storage: whether network reading
 is on; the profile name of the LinkedIn account this browser is signed in to;
-that member's LinkedIn id; the cookie digest described above; a record of the
-last capture, saying what kind of thing it was, when, what Inox Hydra answered
-and which tab it came from, never who; this session's count of captures per
-tab, for the toolbar badge; when network reading last stored something; and,
-until the browser closes, the last notice that a part of the capture could not
-read a page (naming the part, the kind of page and the fields) and the last
-notice a LinkedIn page had for you, in Inox Hydra's own words, which the side
-panel shows instead of drawing it into LinkedIn's page; and the captures
-Inox Hydra did not take, so that your own activity is not lost. A capture is
-held when Inox Hydra is not running, when its database is busy and it asks to
-be tried again, and when it refuses this browser because the browser has not
-been paired with it yet. Those held captures contain the same engagement
-details described above, including the name, profile address, headline and
-comment of a person who engaged with your post. They are sent to Inox Hydra on
-this computer at the next successful contact and then removed, at most 200 are
-held, the oldest going first, and removing the extension removes all of it. Inox
-Hydra's Today screen says how many are waiting, once the extension has
-reported.
+that member's LinkedIn id; the cookie digest described above; a random
+identifier the extension makes the first time it runs in this browser, which
+says nothing about you or the browser and lets Inox Hydra tell two browsers
+apart; a one-way digest (SHA-256) of each LinkedIn account your creator
+profiles in Inox Hydra have confirmed, never the account's name, so that a
+capture held for one of those accounts is sent as soon as it has a home; the
+version number the extension found in its own files at its last look, whether
+it could read them, and when; a record of the last capture, saying what kind of
+thing it was, when, what Inox Hydra answered and which tab it came from, never
+who; this session's count of captures per tab, for the toolbar badge; when
+network reading last stored something; and, until the browser closes, the last
+notice that a part of the capture could not read a page (naming the part, the
+kind of page and the fields) and the last notice a LinkedIn page had for you,
+in Inox Hydra's own words, which the side panel shows instead of drawing it
+into LinkedIn's page; a list of the LinkedIn tabs open, each with the kind of
+page it shows, whether it is in view, the version of the extension's readers it
+carries and its network reading counts, and which tabs could not be given new
+readers after an update; and a one-way digest (SHA-256) of each capture sent in
+the last ten seconds, never the capture itself, so that the same capture read
+in two tabs is sent once; and the captures Inox Hydra did not take, so that
+your own activity is not lost. A capture is held when Inox Hydra is
+not running, when its database is busy and it asks to be tried again, and when it
+refuses this browser because the browser has not been paired with it yet. A
+capture is also held when it was read while this browser is signed in to a
+LinkedIn account that none of your creator profiles has confirmed: Inox Hydra
+writes it into no profile, and the extension keeps it, marked with that
+account's profile name, until a profile confirms the account. Those held
+captures contain the same engagement details described above, including the
+name, profile address, headline and comment of a person who engaged with your
+post. They are sent to Inox Hydra on this computer at the next successful
+contact (one held for an account, once a profile has confirmed it) and then
+removed, at most 200 are held, the oldest going first, and removing the
+extension removes all of it. Inox Hydra's Today screen says how many are
+waiting, once the extension has reported, and its Health screen says how many
+are held for which account.
 
 **On your computer**, in Inox Hydra's own folder (its location is shown in the
 app, and is set by `INOX_HYDRA_HOME`): a SQLite database file holding
@@ -212,7 +235,28 @@ or set aside, or for a day, and nothing in the file is sent anywhere.
 If you keep more than one creator profile, each profile is a separate folder
 with its own database, under `profiles/` inside that same folder, and nothing
 of one profile's data is in another's. The vault key, the logs and the browser
-profiles belong to the machine and are held once, outside them.
+profiles belong to the machine and are held once, outside them. Each capture
+the extension sends names the LinkedIn account its browser is signed in to,
+which is your own, and Inox Hydra files it in the profile that confirmed that
+account; a capture for an account no profile has confirmed is written into
+none of them and stays held in the browser, as described above.
+
+**The bridge's own record**, in the database of the creator profile that is
+open: for each browser the extension runs in, at most one check-in a minute,
+saying when, the extension's version and the version found in its files,
+whether it could read them and when it looked, which browser it is (as the
+browser names itself, such as Microsoft Edge or Brave), the random identifier
+described above, the profile name of the LinkedIn account it is signed in to,
+how many LinkedIn pages of each kind it had open, how many captures it held for
+which account, how many tabs still carried an older copy of its readers, and
+whether it reloads itself; with each run of a reader, which browser ran it; and
+with a history import, which browser and tab ran it, so that two tabs never
+both scroll. Every capture also says which tab, window and page it was read in,
+and Inox Hydra keeps no more of that than is listed here. Check-ins and runs
+are kept for seven days, except the latest run of each reader. Inox Hydra also
+remembers, in memory only and for ten minutes, a one-way digest of each capture
+it took, so that the same capture sent twice is answered "already seen" and not
+written again; none of it is written to disk.
 
 **These database files are not encrypted.** Keep your operating system's disk
 encryption on. Anyone with access to your user account on this computer can
@@ -265,7 +309,10 @@ and hold no key of yours anywhere but on your own disk.
 - We do not serve advertising, build advertising profiles, or include any
   third-party tracker, analytics library or tag.
 - We do not load or execute any code fetched at runtime. Everything the
-  extension runs is in the uploaded package.
+  extension runs is in the uploaded package. To notice an update, it reads its
+  own manifest file from its own folder every five minutes, and when the
+  version there differs from the one it runs, it reloads itself from that
+  folder.
 
 ## Children
 

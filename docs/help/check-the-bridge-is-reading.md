@@ -5,7 +5,9 @@ The extension reads LinkedIn's pages, and LinkedIn changes how they are built wi
 
 ## The line under the title
 
-It says whether the bridge browser has been heard from, which extension version it runs, and how long ago it last reported. If the extension is older than the studio expects, the line says to reload it; see [After an update, reload the browser extension](after-an-update-reload-the-extension.md).
+It says whether the bridge browser has been heard from, which extension version it runs, and how long ago it last reported. It says to reload only when a reload will not happen by itself: an extension from before 2.10, which cannot reload itself; one whose folder is gone or is not the studio's, which must be loaded again; or LinkedIn tabs the update could not give the new readers, which need reloading themselves. From 2.10 the extension reloads itself after an update, and the line says nothing about it. See [After an update, the browser extension reloads itself](after-an-update-reload-the-extension.md).
+
+When the bridge runs in more than one browser, or a browser holds captures for a LinkedIn account no creator profile has confirmed, a list under the line names each browser: which browser it is, the account it is signed in to, whether it is connected, how many LinkedIn pages it has open, and how many captures it holds for which account. A capture read in a browser signed in to such an account is kept there, written into no profile, until a profile confirms the account.
 
 ## The four figures
 
@@ -14,7 +16,7 @@ It says whether the bridge browser has been heard from, which extension version 
 | Readers working | How many of the readers listed below read something on their latest run |
 | Readers that cannot read | How many found their page but not the fields they need |
 | Captures waiting | How many captures the extension is holding for a studio that was busy, as it last reported. "Not reported" until the extension has reported since the studio started |
-| Heartbeats | How many times the bridge reported in the last 7 days. It reports once a minute while a LinkedIn tab is open |
+| Heartbeats | How many times the bridge reported in the last 7 days. From 2.10 it reports once a minute for each browser while the browser is open, whether or not a LinkedIn tab is; a version before 2.10 reported once a minute from each open LinkedIn tab |
 
 ## Readers, last 7 days
 
@@ -69,7 +71,7 @@ Network reading is off unless you turn it on in the extension's popup. While it 
 
 ## The blocks on the right
 
-- **Bridge heartbeats, last 7 days**: how many times the bridge was heard from, the first and last time, the longest silence between two heartbeats and when it ended, and each extension version seen with its first and last heartbeat. A machine that slept or a tab that was closed shows as a silence.
+- **Bridge heartbeats, last 7 days**: how many times the bridge was heard from, the first and last time, the longest silence between two heartbeats and when it ended, and each extension version seen with its first and last heartbeat. A machine that slept or a browser that was closed shows as a silence; with a version before 2.10, so does closing the last LinkedIn tab.
 - **Waiting captures and refusals, since the studio started**: the captures the extension is holding for a studio that was busy, as it last said, and how many captures each refusal reason turned away. Both are counted from the moment the studio started, and say so.
 - **Network reading and drift**: the newest drift events the network reader recorded, each with the response it could not read and when. While network reading is off there are none, and the block says so.
 - **Post analytics fields**: for each figure the reader of your posts' analytics pages started looking for in this version (such as followers gained and profile viewers), when one of those pages last carried it, or on how many it was not read, for example "not read on any of the last 12 post analytics pages". LinkedIn does not show every figure to every member or on every post, so a figure that is missing is not counted as the reader failing; this is where one that never appears shows.
