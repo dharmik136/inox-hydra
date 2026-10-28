@@ -47,7 +47,7 @@ Why this file exists: a listing is reviewed against Chrome's Limited Use policy,
 | Authentication information | Yes | Inox Hydra's own access cookie, every time; your LinkedIn li_at cookie, read in the browser to show whether you are signed in and kept only as a one-way digest; your LinkedIn session cookies (li_at, JSESSIONID), given to Inox Hydra only when you press Sync LinkedIn Session. |
 | Personal communications | No | Messages are never read. Comments on your posts are covered under website content. |
 | Location | No | No device location. A location typed into a LinkedIn profile is profile text, under the first row. |
-| Web history | Yes | Which of your own LinkedIn pages a reading came from; with network reading on, the addresses of LinkedIn's own data requests, without their query. |
+| Web history | Yes | Which of your own LinkedIn pages a reading came from, and which post a short link you sent from your phone landed on when you open it from Inox Hydra's Today; with network reading on, the addresses of LinkedIn's own data requests, without their query. |
 | User activity | Yes, with network reading on | With network reading on, the address, status and method of LinkedIn's data requests on the pages you open (network monitoring). No clicks, keystrokes or mouse movement are recorded. |
 | Website content | Yes | Your posts, figures and analytics, and the comments and reactions on your posts, as they appear on the pages you open. |
 | Health information, Financial and payment information | No | None. |
