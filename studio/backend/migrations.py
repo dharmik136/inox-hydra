@@ -2097,6 +2097,25 @@ def _migrate_content_page_figures(cursor: sqlite3.Cursor) -> None:
                 cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
 
+def _migrate_desk_request_short_links(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 37 (2.10.1, track 6):
+    A short link from the phone is a desk request that waits for the post it
+    opens.
+
+    The LinkedIn app's Copy link gives an lnkd.in/p/<code> address, which
+    names no post: the studio never fetches it to find out. desk_requests.link
+    keeps the short link as the phone sent it, and the request's
+    activity_urn stays '' until the post it opens in the creator's browser is
+    reported (the extension reads #inox-desk-<id> on the page it landed on)
+    or the creator presses Done. NULL for every request made from a full post
+    link, as every row before this one was: nothing is filled in.
+    """
+    cursor.execute("PRAGMA table_info(desk_requests)")
+    if "link" not in {row[1] for row in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE desk_requests ADD COLUMN link TEXT")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -2146,6 +2165,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (36, "Members reached, saves, sends and the network split from the creator analytics page, "
          "by day and by window",
      _migrate_content_page_figures),
+    (37, "A short link from the phone is a desk request that waits for the post it opens",
+     _migrate_desk_request_short_links),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

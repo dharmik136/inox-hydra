@@ -18,6 +18,7 @@ A single suggestion, with its reason. The studio picks it by a fixed order, beca
 | Open LinkedIn | The bridge browser has not been heard from recently |
 | Your latest post's analytics page | Your latest post is under three days old and its figures were not read in the last 12 hours |
 | A post you asked for from your phone | You shared a link to one of your own posts with your Telegram bot (see [Send a post idea or a post link from your phone with Telegram](send-a-post-idea-from-telegram.md)). The reason reads "You asked from your phone to read this post's analytics", oldest request first. It is done once that post's analytics page has been read after you asked, and closed with a note after a week unread; **Not now** closes it at once. A link to someone else's post never appears here |
+| A post you sent from your phone as a short link | You sent your bot an `lnkd.in` link, which the LinkedIn app's **Copy link** gives. The reason starts "You sent a post from your phone". **Open it in the bridge browser** opens the link in your browser, and once the extension sees which post it landed on, this becomes the request above. **Done** closes it if that never happens; **Not now** closes it at once |
 | Your latest post | Otherwise, because opening it picks up anyone who has commented since |
 
 **Open it in the bridge browser** opens the page in the bridge browser, where the extension reads it.

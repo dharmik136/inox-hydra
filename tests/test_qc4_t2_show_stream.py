@@ -775,6 +775,9 @@ EXTENSION_WRITES = {
     "/api/v1/self/posts/analytics": "readings",
     "/api/v1/self/outbound/ingest": "outbound",
     "/api/v1/self/imports/event": "imports",
+    # A short link from the phone landed on a post (2.10.1): the request it
+    # answers changes, and Today reads again.
+    "/api/v1/desk-requests/landed": "desk",
     # Not announced, each for its reason; the backstop reports them as
     # "database", which every screen reads as "anything may have changed".
     "/api/v1/posts/bind-urn": "unannounced: writes only when a post binds, which is rare",

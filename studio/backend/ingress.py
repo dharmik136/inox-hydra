@@ -11,6 +11,11 @@ request (desk_requests.py) that Today surfaces as the page to open at this
 computer. The phone sends a link, never a figure: nothing it says is written
 as a reading, and the extension reads the real page at the desk.
 
+A short link, which the LinkedIn app's Copy link gives (lnkd.in/p/<code>),
+names no post, and the studio never fetches it. It is a post sent from the
+phone all the same: a desk request holding the short link, never a draft,
+which Today opens in the creator's own browser (2.10.1).
+
 Strict Invariants:
 - Zero open inbound ports (pure outbound HTTP long-polling).
 - Zero em-dashes in any generated or parsed text.
@@ -54,17 +59,37 @@ TOKEN_SHAPE = re.compile(r"^\d{5,15}:[A-Za-z0-9_-]{20,}$")
 # Your own chat with the bot: a positive integer. A group's id is negative,
 # and any member of the group could then file drafts, so it is refused.
 CHAT_ID_SHAPE = re.compile(r"^\d{1,20}$")
-# Said by the panel and the help until the owner has run one end-to-end test
-# against the real service; the suite only ever simulates Telegram.
-NOT_YET_TESTED = ("This has not yet been tested against the real Telegram service, only against a "
-                  "simulated one.")
+# When a message from the chat saved in a profile was first saved there, so
+# the panel can stop saying it has not been seen working. Removed whenever
+# the chat id changes: a message from one chat says nothing about another.
+SETTINGS_HEARD_KEY = "telegram_chat_heard_at"
+# The ingress met the real Telegram service on the owner's install on
+# 2026-10-28: polling worked, a chat that was not the one saved was refused,
+# and once the right chat was paired its message was saved. On another
+# computer the panel says this until a message from its own chat is saved.
+NOT_YET_TESTED = ("Not yet seen working on this computer: no message from your own chat has been saved here. "
+                  "Send your bot a message to check.")
+
+# Telegram never shows a creator their chat id, so the bot can be saved with
+# its token alone, and the chats it refused say who wrote: the last few, in
+# memory only and never stored (the log keeps a refused chat's id, never its
+# text), each with how many messages, when, and the first characters of the
+# first one, for the panel to ask "Is that you?". Pairing is the creator's
+# press; nothing here pairs a chat by itself.
+REFUSED_CHATS_KEPT = 5
+REFUSED_START_CHARS = 60
 
 # A LinkedIn address in a message. The app's share menu writes
 # /posts/<slug>-activity-<id>-<suffix> with tracking parameters; the feed
 # writes /feed/update/urn:li:activity:<id>/. post_identity.extract_activity_urn
-# reads both. An lnkd.in short link names nothing the studio can resolve
-# without fetching it, which it will not do, so it stays ordinary text.
+# reads both.
 LINKEDIN_URL = re.compile(r"https?://(?:[a-z]{1,3}\.)?linkedin\.com/[^\s<>\"']+", re.IGNORECASE)
+# The app's Copy link: an lnkd.in short link, whose code names nothing the
+# studio can resolve without fetching it, which it never does. Kept as its
+# address alone: the host lower-cased, the code exactly as written (its case
+# is part of it), with no query, fragment or punctuation after it.
+SHORT_LINK = re.compile(r"\bhttps?://lnkd\.in(/[A-Za-z0-9_\-/]{1,80})", re.IGNORECASE)
+SHORT_LINK_HOST = "lnkd.in"
 
 MAX_UPDATE_ATTEMPTS = 3
 
@@ -176,6 +201,15 @@ class IngressMessageParser:
                 read_request = {"url": url, "activity_urn": urn}
                 content = re.sub(r"[ \t]{2,}", " ", content.replace(url, " ")).strip()
                 break
+        # A short link is a post sent from the phone, alone or with text
+        # around it: the request, and never a draft. The text around it is
+        # the share sheet's or a note on the post, not a post idea.
+        if read_request is None:
+            short = SHORT_LINK.search(content)
+            if short:
+                link = "https://" + SHORT_LINK_HOST + short.group(1).rstrip("/")
+                read_request = {"url": link, "activity_urn": None, "short_link": link}
+                content = ""
 
         # Extract hashtags from text (capped to 30 unique tags, max 50 chars each)
         raw_hashtags = re.findall(r"#(\w+)", content)
@@ -186,7 +220,7 @@ class IngressMessageParser:
         lines = [l.strip() for l in content.splitlines() if l.strip()]
         title = lines[0][:60] if lines else "Untitled Mobile Ingress"
         if read_request and not lines:
-            title = "Read request from the phone"
+            title = "A post sent from the phone" if read_request.get("short_link") else "Read request from the phone"
 
         metrics = cls.calculate_fold_metrics(content)
 
@@ -257,6 +291,9 @@ class TelegramIngressDaemon:
         self.total_messages_processed = 0
         self.last_poll_at: Optional[str] = None
         self.last_error: Optional[str] = None
+        # chat id -> {chat_id, count, first_at, last_at, first}: the chats
+        # refused since this bot was set, newest last, in memory only.
+        self.refused_chats: Dict[str, Dict[str, Any]] = {}
 
     def configure(self, bot_token: str, authorized_chat_id: str, origin: Optional[str],
                   profile_id: Optional[str] = None) -> None:
@@ -273,8 +310,12 @@ class TelegramIngressDaemon:
             # the old offset confirmed the new bot's waiting messages unread.
             self.last_update_id = 0
             self._failed_updates = {}
+            # Who wrote to the old bot says nothing about who writes to this one.
+            self.refused_chats = {}
         self.bot_token = token
         self.authorized_chat_id = authorized_chat_id or ""
+        # A chat now saved is no longer asked about.
+        self.refused_chats.pop(str(self.authorized_chat_id), None)
         self.configured_from = origin if self.bot_token else None
         self.profile_id = profile_id if self.bot_token else None
         self.consecutive_errors = 0
@@ -317,6 +358,31 @@ class TelegramIngressDaemon:
 
         self.current_delay = self.base_delay
         return self.base_delay
+
+    def _remember_refusal(self, chat_id: str, message: Dict[str, Any]) -> None:
+        """One more message refused from this chat, kept in memory for the panel's "Is that you?"."""
+        if not chat_id:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        held = self.refused_chats.pop(chat_id, None)
+        if held is None:
+            text = message.get("text")
+            if isinstance(text, str) and text.strip():
+                first = " ".join(text.split())[:REFUSED_START_CHARS]
+            else:
+                first = "a voice note" if "voice" in message else "a message with no text"
+            held = {"chat_id": chat_id, "count": 0, "first_at": now, "first": first}
+        held["count"] += 1
+        held["last_at"] = now
+        # Newest last; the oldest goes when there are more than a few.
+        self.refused_chats[chat_id] = held
+        while len(self.refused_chats) > REFUSED_CHATS_KEPT:
+            self.refused_chats.pop(next(iter(self.refused_chats)))
+
+    def refused(self) -> List[Dict[str, Any]]:
+        """The chats refused since this bot was set, newest first, each saying whether it can be paired."""
+        return [{**chat, "own_chat": bool(CHAT_ID_SHAPE.match(chat["chat_id"]))}
+                for chat in reversed(list(self.refused_chats.values()))]
 
     def get_daemon_status(self) -> Dict[str, Any]:
         """Telemetry diagnostics for the ingress daemon."""
@@ -383,18 +449,22 @@ class TelegramIngressDaemon:
         # taking the local one with it.
         if from_telegram:
             if not self.authorized_chat_id:
+                self._remember_refusal(chat_id, message)
                 self.last_error = (
                     "TELEGRAM_CHAT_ID is not set, so every incoming message is "
                     "refused. Set it to your own numeric chat id to accept drafts "
                     "from yourself."
                 )
+                # The chat id goes in the log, never the message: it is what
+                # the creator needs, and the panel offers it (This is me).
                 logger.warning(
-                    "Refused an ingress message: TELEGRAM_CHAT_ID is not configured, "
-                    "so this bot has no way to tell you from anybody else."
+                    "Refused an ingress message from chat_id: %s. No chat id is saved, so this bot has no way to "
+                    "tell you from anybody else; if it is yours, press This is me under Local security.", chat_id
                 )
                 return None
 
             if chat_id != str(self.authorized_chat_id):
+                self._remember_refusal(chat_id, message)
                 logger.warning(f"Unauthorized ingress attempt from chat_id: {chat_id}")
                 return None
 
@@ -413,7 +483,10 @@ class TelegramIngressDaemon:
                                "saved. Set the bot up again in the profile you use.")
             return None
         with (paths.using_profile(pinned) if pinned else nullcontext()):
-            return self._store(text)
+            stored = self._store(text)
+            if from_telegram and stored is not None:
+                _note_heard()
+            return stored
 
     def _store(self, text: str) -> Optional[Dict[str, Any]]:
         """Saves one accepted message: a desk request for a post link, a draft for any text."""
@@ -422,8 +495,11 @@ class TelegramIngressDaemon:
         # A post link is a request to read that post at the desk. Recorded
         # first, so a message that is only a link is not a draft of nothing.
         request = None
-        if parsed.get("read_request"):
-            request = self._record_desk_request(parsed["read_request"]["activity_urn"])
+        asked = parsed.get("read_request")
+        if asked and asked.get("short_link"):
+            request = self._record_short_link(asked["short_link"])
+        elif asked:
+            request = self._record_desk_request(asked["activity_urn"])
         if not parsed["raw_content"].strip():
             return {"kind": "desk_request", **request} if request else None
 
@@ -460,6 +536,19 @@ class TelegramIngressDaemon:
         conn = get_db()
         try:
             return desk_requests.record(conn, activity_urn, source=desk_requests.SOURCE_TELEGRAM)
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _record_short_link(link: str) -> Dict[str, Any]:
+        """
+        Writes a short link as a request that waits for its post. Nothing
+        follows the link here: which post it is becomes known only in the
+        creator's own browser, when they open it from Today.
+        """
+        conn = get_db()
+        try:
+            return desk_requests.record_short(conn, link, source=desk_requests.SOURCE_TELEGRAM)
         finally:
             conn.close()
 
@@ -676,6 +765,17 @@ ingress_daemon = TelegramIngressDaemon()
 # The settings behind the Local security panel (cycle 4, decision D6)
 # ---------------------------------------------------------------------------
 
+def _note_heard() -> None:
+    """A message from the saved chat was saved: the first time, the open profile records when."""
+    conn = get_db()
+    try:
+        with conn:
+            conn.execute("INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+                         (SETTINGS_HEARD_KEY, datetime.now(timezone.utc).isoformat()))
+    finally:
+        conn.close()
+
+
 def read_settings(profile_id: Optional[str] = None) -> Dict[str, str]:
     """The bot token (unsealed, for the worker) and chat id held in a profile, the open one by default."""
     with (paths.using_profile(profile_id) if profile_id else nullcontext()):
@@ -710,7 +810,9 @@ def apply_settings(at_startup: bool = False) -> bool:
         except Exception:
             # A profile whose database cannot be read keeps no bot that can run.
             continue
-        if held["token"] and held["chat_id"]:
+        # A token alone runs too: every message is refused until the creator
+        # says which refused chat is theirs (This is me).
+        if held["token"]:
             ingress_daemon.configure(held["token"], held["chat_id"], origin="settings", profile_id=profile_id)
             ingress_daemon.start_worker()
             return True
@@ -723,8 +825,11 @@ def apply_settings(at_startup: bool = False) -> bool:
 def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
     """
     Keeps the token (sealed) and the chat id, then applies them. Both empty
-    removes them and stops the worker. A value of the wrong shape is refused
-    with a sentence and nothing is written.
+    removes them and stops the worker. An empty field keeps what is held:
+    a token alone starts the bot with no chat saved, every message refused
+    and its chat remembered for the panel, and a chat id alone (This is me)
+    pairs that chat with the token held. A value of the wrong shape is
+    refused with a sentence and nothing is written.
     """
     token = (bot_token or "").strip()
     chat = (chat_id or "").strip()
@@ -732,11 +837,19 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
         conn = get_db()
         try:
             with conn:
-                conn.execute("DELETE FROM settings WHERE key IN (?, ?)", (SETTINGS_TOKEN_KEY, SETTINGS_CHAT_KEY))
+                conn.execute("DELETE FROM settings WHERE key IN (?, ?, ?)",
+                             (SETTINGS_TOKEN_KEY, SETTINGS_CHAT_KEY, SETTINGS_HEARD_KEY))
         finally:
             conn.close()
         apply_settings()
         return describe_settings()
+    held = read_settings()
+    if not token:
+        if not held["token"]:
+            return {"status": "error", "message": (
+                "Paste your bot token first: the chat id says which chat with that bot is yours. "
+                "Nothing was stored.")}
+        token = held["token"]
     if not TOKEN_SHAPE.match(token):
         return {"status": "error", "message": (
             "That is not the shape of a Telegram bot token: BotFather issues a number, a colon and a secret, "
@@ -745,21 +858,26 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
         return {"status": "error", "message": (
             "That is a group's chat id: any member of the group could then file drafts in your studio. Use your "
             "own chat id with the bot, a number with no minus sign. Nothing was stored.")}
-    if not CHAT_ID_SHAPE.match(chat):
+    if chat and not CHAT_ID_SHAPE.match(chat):
         return {"status": "error", "message": (
-            "Your chat id is a number, digits only. Without it the bot cannot tell you from anybody else, "
-            "so both are needed. Nothing was stored.")}
+            "Your chat id is a number, digits only. Or leave it empty: save the token, message the bot once, "
+            "then press This is me. Nothing was stored.")}
+    chat = chat or held["chat_id"]
     conn = get_db()
     try:
         with conn:
-            conn.execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
-                (SETTINGS_TOKEN_KEY, secret_settings.seal(SETTINGS_TOKEN_KEY, token)))
-            conn.execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
-                (SETTINGS_CHAT_KEY, chat))
+            if token != held["token"]:
+                conn.execute(
+                    "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+                    (SETTINGS_TOKEN_KEY, secret_settings.seal(SETTINGS_TOKEN_KEY, token)))
+            if chat:
+                conn.execute(
+                    "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+                    (SETTINGS_CHAT_KEY, chat))
+            if chat != held["chat_id"]:
+                conn.execute("DELETE FROM settings WHERE key = ?", (SETTINGS_HEARD_KEY,))
     finally:
         conn.close()
     apply_settings()
@@ -776,6 +894,7 @@ def describe_settings() -> Dict[str, Any]:
         desk_requests.settle(conn)
         waiting = desk_requests.open_count(conn)
         links = desk_requests.recent(conn)
+        heard = conn.execute("SELECT value FROM settings WHERE key = ?", (SETTINGS_HEARD_KEY,)).fetchone()
     finally:
         conn.close()
     active = paths.get_active_profile_id()
@@ -788,6 +907,9 @@ def describe_settings() -> Dict[str, Any]:
         "status": "success",
         "profile": active,
         "configured": bool(held["token"] and held["chat_id"]),
+        # A token and no chat yet: every message is refused, and the chats
+        # that wrote are listed for the creator to say which is theirs.
+        "pairing": bool(held["token"] and not held["chat_id"]),
         "has_token": bool(held["token"]),
         "chat_id": held["chat_id"],
         "running": running_here,
@@ -801,6 +923,10 @@ def describe_settings() -> Dict[str, Any]:
         # The newest links from the phone, each with what became of it; a
         # refused one says why: not one of your posts.
         "recent_links": links,
-        "tested_against_real_service": False,
-        "not_yet_tested": NOT_YET_TESTED,
+        # The chats this profile's bot refused, newest first: in memory only.
+        "refused_chats": ingress_daemon.refused() if running_here or (
+            from_settings and ingress_daemon.profile_id == active) else [],
+        # A message from the chat saved here has been saved here.
+        "tested_against_real_service": bool(heard),
+        "not_yet_tested": None if heard else NOT_YET_TESTED,
     }

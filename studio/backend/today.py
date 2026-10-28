@@ -445,6 +445,12 @@ def _phone_request_rule(conn) -> Optional[Dict[str, Any]]:
     anything else was refused when it arrived and is never offered here.
     Settling first closes what has since been read, and what waited a week,
     and Today's Not now dismisses one.
+
+    A short link whose post is not known yet (desk_requests.py) is offered
+    as itself, to open in the creator's browser with the fragment the post
+    page keeps: the extension then says which post it was, and the request
+    asks for that post's analytics like any other. Done closes it when
+    nothing does.
     """
     if not desk_requests.open_count(conn):
         return None
@@ -453,6 +459,13 @@ def _phone_request_rule(conn) -> Optional[Dict[str, Any]]:
         request = desk_requests.oldest_open(conn)
         if not request:
             return None
+        if desk_requests.waits_for_its_post(request):
+            return {"action": "open", "url": desk_requests.open_url(request),
+                    "reason": ("You sent a post from your phone. Open it here: once your browser lands on the "
+                               "post, Today asks for its analytics next. If it does not, press Done when you have "
+                               "seen it."),
+                    "phone_request": {"id": request["id"], "activity_urn": "", "asked_at": request["asked_at"],
+                                      "source": request["source"], "short_link": request["link"]}}
         url = desk_requests.analytics_url(request["activity_urn"])
         if desk_requests.known_post(conn, request["activity_urn"]) and url:
             break

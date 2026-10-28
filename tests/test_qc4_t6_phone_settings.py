@@ -3,10 +3,11 @@ Decision D6: the Telegram ingress leaves dev mode behind a Settings surface.
 ===========================================================================
 
 The bot token is sealed like the AI key, never answered back, and the
-worker starts only when both the token and the chat id are set in the
-profile. The help and the panel say plainly that this has not yet been
-tested against the real Telegram service, and that the phone sends a link,
-never a figure.
+worker starts once a token is set in the profile; until a chat id is saved
+too, every message is refused (tests/test_qc4_t6_telegram_pairing.py pairs
+one). The panel says it has not been seen working on this computer until a
+message from the creator's own chat is saved, and the help says that the
+phone sends a link, never a figure.
 
 Strict Invariants:
 - Zero em-dashes.
@@ -124,10 +125,12 @@ def test_removing_the_bot_stops_and_forgets(studio):
     assert res.json()["configured"] is False and res.json()["has_token"] is False
 
 
+# A token with no chat id is no longer refused: it is how pairing starts
+# (tests/test_qc4_t6_telegram_pairing.py).
 @pytest.mark.parametrize("payload", [
     {"bot_token": "not a token", "chat_id": CHAT},
     {"bot_token": TOKEN, "chat_id": "me"},
-    {"bot_token": TOKEN, "chat_id": ""},
+    {"bot_token": "not a token", "chat_id": ""},
 ])
 def test_a_value_of_the_wrong_shape_is_refused_with_a_sentence(studio, payload):
     client, started, _stopped = studio
@@ -160,11 +163,11 @@ def test_the_routes_are_for_the_creator_not_only_a_maintainer(studio):
     assert client.get("/api/v1/ingress/settings").status_code == 200
 
 
-def test_the_answer_says_it_is_untested_against_the_real_service(studio):
+def test_the_answer_says_it_has_not_been_seen_working_here_until_your_chat_writes(studio):
     client, _started, _stopped = studio
     body = client.get("/api/v1/ingress/settings").json()
     assert body["tested_against_real_service"] is False
-    assert "not yet been tested" in body["not_yet_tested"].lower() or "not yet tested" in body["not_yet_tested"].lower()
+    assert "not yet seen working on this computer" in body["not_yet_tested"].lower()
     assert "open_requests" in body and body["open_requests"] == 0
 
 
@@ -183,8 +186,8 @@ def test_the_panel_is_on_the_local_security_tab_and_says_what_the_phone_sends():
 
 
 def test_the_help_states_the_two_facts():
-    article = _read("docs/help/send-a-post-idea-from-telegram.md")
-    assert "has not yet been tested against the real Telegram service" in article
+    article = " ".join(_read("docs/help/send-a-post-idea-from-telegram.md").split())
+    assert "tested against the real Telegram service on 2026-10-28" in article
     assert "a link, never a figure" in article
     assert "Local security" in article and "Save and start" in article
     leaves = _read("docs/help/what-leaves-this-machine.md")

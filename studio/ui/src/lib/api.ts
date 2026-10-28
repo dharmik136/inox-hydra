@@ -2290,8 +2290,12 @@ export interface TodayBrief {
     action: "open" | "setup";
     url?: string;
     reason: string;
-    /** Present when the page to open is one the phone asked for through the Telegram bot. */
-    phone_request?: { id: number; activity_urn: string; asked_at: string; source: string };
+    /**
+     * Present when the page to open is one the phone asked for through the
+     * Telegram bot. short_link is set for an lnkd.in link whose post is not
+     * known yet: the url opens it with #inox-desk-<id>, and Done closes it.
+     */
+    phone_request?: { id: number; activity_urn: string; asked_at: string; source: string; short_link?: string | null };
   };
   /** What the demo cleanup removed, until dismissed; null when there is nothing to say. */
   demo_cleanup?: { removed: { kind: string; count: number }[]; backup: string | null; removed_at: string | null } | null;
@@ -2307,6 +2311,12 @@ export async function fetchToday(): Promise<TodayBrief> {
 export async function dismissDeskRequest(id: number): Promise<boolean> {
   const data = await call<{ dismissed?: boolean }>(`/api/v1/desk-requests/${id}/dismiss`, { method: "POST" });
   return !!data.dismissed;
+}
+
+/** Today's Done, for a short link from the phone whose post the browser never reported. */
+export async function markDeskRequestDone(id: number): Promise<boolean> {
+  const data = await call<{ done?: boolean }>(`/api/v1/desk-requests/${id}/done`, { method: "POST" });
+  return !!data.done;
 }
 
 // -------------------------------------------------------------
@@ -3849,10 +3859,24 @@ export async function importLibraryBundle(text: string): Promise<{ status: strin
 // Your phone, through Telegram: the settings behind Local security
 // -------------------------------------------------------------
 
+/** A chat the bot refused since it was set, kept by the studio in memory only, for "Is that you?". */
+export interface RefusedChat {
+  chat_id: string;
+  count: number;
+  first_at: string;
+  last_at: string;
+  /** The first characters of the first message refused from this chat. */
+  first: string;
+  /** Your own chat with a bot is a positive number; a group's can never be saved. */
+  own_chat: boolean;
+}
+
 export interface IngressSettings {
   profile: string;
   /** Both the token and the chat id are set, so the studio asks Telegram for messages. */
   configured: boolean;
+  /** A token and no chat id yet: every message is refused, and the chats that wrote are listed to pair one. */
+  pairing: boolean;
   /** Whether a token is held. The token itself is sealed and never answered. */
   has_token: boolean;
   chat_id: string;
@@ -3869,22 +3893,32 @@ export interface IngressSettings {
   /** The newest links from the phone, newest first, each with what became of it in a sentence. */
   recent_links: {
     id: number;
+    /** Empty for a short link whose post is not known yet. */
     activity_urn: string;
+    /** The lnkd.in short link the phone sent, or null for a full post link. */
+    link: string | null;
     asked_at: string;
     done_at: string | null;
-    state: "open" | "read" | "expired" | "dismissed" | "refused";
+    state: "open" | "read" | "expired" | "dismissed" | "done" | "refused";
     said: string;
   }[];
+  /** The chats this profile's bot refused, newest first; This is me saves one. */
+  refused_chats: RefusedChat[];
+  /** A message from the chat saved here has been saved on this computer. */
   tested_against_real_service: boolean;
-  /** The server's own sentence, shown until the owner has tested against the real service. */
-  not_yet_tested: string;
+  /** The server's own sentence until then; null once a message from your chat has been saved. */
+  not_yet_tested: string | null;
 }
 
 export async function fetchIngressSettings(): Promise<IngressSettings> {
   return call<IngressSettings>("/api/v1/ingress/settings");
 }
 
-/** Both empty removes the bot and stops asking Telegram. */
+/**
+ * Both empty removes the bot and stops asking Telegram. An empty field keeps
+ * what is held: a token alone starts pairing, and a chat id alone (This is
+ * me) pairs that chat with the token already saved.
+ */
 export async function saveIngressSettings(bot_token: string, chat_id: string): Promise<IngressSettings> {
   return call<IngressSettings>("/api/v1/ingress/settings", {
     method: "POST",

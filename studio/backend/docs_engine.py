@@ -733,6 +733,9 @@ HELP_SECTIONS = [
             "quality/cycle4/t4-sections.md",
             "quality/cycle4/t2-show.md",
             "quality/cycle4/t4-phase-b.md",
+            # 2.10.1, track 6: the real analytics export, and the phone
+            # against the real Telegram.
+            "quality/cycle4/export-2026.md",
             # Cycle 4, track 6: the phone pairing design (item 27) and the
             # answer on LinkedIn's public-client OAuth flow (decision D2).
             "PHONE_PAIRING_DESIGN.md",

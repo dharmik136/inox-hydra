@@ -27,21 +27,39 @@ Where each sheet goes, every figure exact, source 'linkedin_export':
   FOLLOWERS     new followers by day, and the total   -> analytics_daily
   TOP POSTS     impressions and engagements of each   -> post_metric_observations,
                 of your posts published in the range     dated at the range's end
+  MOST RECENT   each listed post's figures, read the  -> post_metric_observations,
+  POSTS         way TOP POSTS is                         dated at the range's end
   a post's own  its figures, each under its name      -> post_metric_observations,
   export                                                 dated when it was exported
   DISCOVERY     totals over the range                 -> the import's own record
-  DEMOGRAPHICS  recognised, not imported
+
+And the shares LinkedIn gives as percentages, the account's own (no post,
+activity_urn ''), dated at the range's last day, one export's set a day:
+
+  AUDIENCE      your audience, by group and label     -> audience_demographic_readings,
+  DEMOGRAPHICS                                           source 'linkedin_export_audience'
+  CONTENT       who engaged with your posts over the  -> audience_demographic_readings,
+  DEMOGRAPHICS  range                                    source 'linkedin_export_content'
+  DEMOGRAPHICS  a sheet named only that does not say whose shares it holds:
+                recognised, not imported
 
 A day's engagements go in analytics_daily.reactions, where the page reader
 has always put LinkedIn's engagements card and where the Analytics screen
 reads Engagements: one definition for one figure. One row is one source: a
 day the analytics page already read is kept as it was read, and said so.
 
-Verified against a real file: not yet. LinkedIn documents neither the sheets
-nor the columns, and no real export has been supplied, so every sheet and
-column name here is this module's best understanding, treated as
-unverified. A sheet or column it does not recognise is reported in the
-preview as not recognised and left out, never guessed at.
+Verified against a real file: yes, on 2026-10-28. LinkedIn's aggregate
+export (AggregateAnalytics_<name>_<start>_<end>.xlsx) met the importer on
+the owner's install, which imported 399 days of exact daily figures from
+it; its preview named the sheets DISCOVERY, ENGAGEMENT, MOST RECENT POSTS,
+TOP POSTS, FOLLOWERS, AUDIENCE DEMOGRAPHICS and CONTENT DEMOGRAPHICS, the
+last two headed Top Demographics, Value, Percentage. What that preview did
+not show is still this module's understanding: the columns of MOST RECENT
+POSTS (at least two of a post's figure names, as the preview's refusal
+shows), and whether a share is written 12%, 0.12 shown as a percentage, or
+12. A post's own export has not been checked. A sheet or column it does not
+recognise is reported in the preview as not recognised and left out, never
+guessed at.
 
 Strict Invariants:
 - Zero em-dashes in any code, docstring or comment.
@@ -51,12 +69,16 @@ Strict Invariants:
   figure never lands under a name it was not read under, a date whose day
   and month order cannot be told is no date, and a top post's figure that
   covers only part of its life is not a reading of it.
+- A share is never a count, a share LinkedIn gives only as a bound (< 1%)
+  is no figure, and a bare number that could be a fraction or a percentage
+  (0.3: 30 percent, or 0.3 percent) is read as neither.
 - An .xlsx is a zip of XML, read with the standard library because openpyxl
   is not a dependency; every part is bounded, and markup a spreadsheet never
   carries (a DOCTYPE, an entity) is refused.
 """
 
 import json
+import math
 import os
 import re
 import threading
@@ -84,13 +106,25 @@ SOURCE = "linkedin_export"
 PRECISION = "exact"
 PERIOD = "1d"
 
-VERIFIED_AGAINST_REAL_FILE = False
-VERIFICATION = ("Checked against a real LinkedIn export: not yet. The sheet and column names the studio looks for "
-                "are its best understanding of LinkedIn's export; anything it does not recognise is listed as not "
-                "recognised and left out, never guessed at.")
+# The export's demographics are the account's, kept apart by source: who
+# follows the creator, and who engaged with their posts over the range.
+AUDIENCE_SOURCE = "linkedin_export_audience"
+CONTENT_SOURCE = "linkedin_export_content"
+DEMOGRAPHIC_SOURCES = {"audience_demographics": AUDIENCE_SOURCE, "content_demographics": CONTENT_SOURCE}
 
-# Offered from Downloads by name (unverified: LinkedIn's file names are not
-# documented either; the dashboard's is reported as Content_<start>_<end>_<name>).
+VERIFIED_AGAINST_REAL_FILE = True
+VERIFIED_ON = "2026-10-28"
+REAL_SHEETS = ("DISCOVERY", "ENGAGEMENT", "MOST RECENT POSTS", "TOP POSTS", "FOLLOWERS", "AUDIENCE DEMOGRAPHICS",
+               "CONTENT DEMOGRAPHICS")
+VERIFICATION = (f"Checked against a real LinkedIn export on {VERIFIED_ON}: LinkedIn's aggregate export, whose sheets "
+                f"are {', '.join(REAL_SHEETS[:-1])} and {REAL_SHEETS[-1]}. A post's own export has not been checked "
+                "yet. Anything the studio does not recognise is listed as not recognised and left out, never "
+                "guessed at.")
+
+# Offered from Downloads by name. LinkedIn documents none of its file names:
+# the aggregate export checked on 2026-10-28 is named
+# AggregateAnalytics_<name>_<start>_<end>.xlsx, and an older one is reported
+# as Content_<start>_<end>_<name>.xlsx.
 EXPORT_SUFFIX = ".xlsx"
 NAME_HINTS = ("content_", "linkedin", "analytics", "postanalytics", "post_analytics")
 NAME_RANGE = re.compile(r"(\d{4}-\d{2}-\d{2})[_ ](\d{4}-\d{2}-\d{2})")
@@ -126,14 +160,18 @@ BUSY_MESSAGE = "The studio is already importing an analytics export. Wait for it
 NOT_YOURS = "not one of your recorded posts; import your posts first"
 
 # ---------------------------------------------------------------------------
-# The layout, every name unverified
+# The layout: the aggregate export's sheet names and its demographics header
+# as checked on 2026-10-28, the rest this module's understanding
 # ---------------------------------------------------------------------------
 
 SHEET_NAMES = {
     "discovery": "discovery",
     "engagement": "engagement", "engagements": "engagement",
     "top posts": "top_posts",
+    "most recent posts": "recent_posts", "recent posts": "recent_posts",
     "followers": "followers", "new followers": "followers",
+    "audience demographics": "audience_demographics",
+    "content demographics": "content_demographics",
     "demographics": "demographics", "top demographics": "demographics",
     "performance": "post", "post performance": "post", "post analytics": "post",
 }
@@ -152,7 +190,13 @@ VOCABULARY: Dict[str, Dict[str, Tuple[str, ...]]] = {
              "members_reached": ("members reached", "unique viewers", "unique views", "reach"),
              "reactions": ("reactions",), "comments": ("comments",), "reposts": ("reposts", "shares"),
              "saves": ("saves",), "sends": ("sends", "sends on linkedin"), "engagements": ("engagements",)},
+    "demographics_table": {"dimension": ("top demographics",), "label": ("value",), "share": ("percentage",)},
 }
+# MOST RECENT POSTS lists posts as rows. The real file's columns were not
+# shown, only that its header carries at least two of a post's figure names
+# (its preview refused it as a post's own export with three rows), so its
+# columns are read by a post's names, each figure under its own.
+VOCABULARY["recent_posts"] = VOCABULARY["post"]
 
 # Labels a LinkedIn export is reported to carry that the studio keeps no
 # figure for yet: listed as left out with that reason, not as unrecognised.
@@ -160,13 +204,18 @@ NO_HOME_YET = ("profile viewers from this post", "followers gained from this pos
                "link visits", "link clicks", "premium button clicks", "premium custom button clicks")
 
 POST_FIGURES = ("impressions", "members_reached", "reactions", "comments", "reposts", "saves", "sends", "engagements")
+# The figures each list of posts is read for.
+LISTED_FIGURES = {"top_posts": ("engagements", "impressions"), "recent_posts": POST_FIGURES}
 
 LABELS = {
     "engagement": "Impressions and engagements by day",
     "followers": "New followers by day, and your follower total",
     "top_posts": "Your top posts of the range",
+    "recent_posts": "Your most recent posts",
     "discovery": "Totals over the range",
-    "demographics": "Audience demographics",
+    "audience_demographics": "Your audience's demographics",
+    "content_demographics": "Who engaged with your posts",
+    "demographics": "Demographics",
     "post": "One post's own figures",
 }
 WRITES = {
@@ -175,12 +224,24 @@ WRITES = {
     "top_posts": ("A reading of each of your recorded posts that was published inside the export's range: its "
                   "impressions and engagements up to the range's last day. A post published before the range "
                   "is left out, because the figure covers only part of its life."),
+    "recent_posts": ("A reading of each of your recorded posts in the list that was published inside the export's "
+                     "range, each figure under its own name, dated at the range's last day, as for your top posts. "
+                     "A post the studio does not hold is left out, never created."),
     "discovery": "Kept with the record of this import, as read. A total over the range is not a day's figure.",
+    "audience_demographics": ("Your audience's demographics: each group's share as a percentage, kept as one reading "
+                              "dated the range's last day, apart from who engaged with your posts. The sheet holds no "
+                              "one's name, and nothing else in it is kept."),
+    "content_demographics": ("The demographics of who engaged with your posts over the range: each group's share as "
+                             "a percentage, kept as one reading dated the range's last day, apart from your "
+                             "audience's. The sheet holds no one's name, and nothing else in it is kept."),
     "post": ("A reading of the post the file names, dated when it was exported, with each figure under its own "
              "name."),
 }
-DEMOGRAPHICS_NOTE = "Recognised, not imported: the studio keeps no audience demographics from exports."
-DEFAULTS = {"engagement": True, "followers": True, "top_posts": True, "discovery": True, "post": True}
+DEMOGRAPHICS_NOTE = ("Recognised, not imported: a sheet called only Demographics does not say whose shares it "
+                     "holds, your audience's or those of the people who engaged with your posts, so they are not "
+                     "kept.")
+DEFAULTS = {"engagement": True, "followers": True, "top_posts": True, "recent_posts": True, "discovery": True,
+            "post": True, "audience_demographics": True, "content_demographics": True}
 
 
 class ExportError(ValueError):
@@ -348,6 +409,10 @@ def discard(source: str) -> Dict[str, Any]:
 # Reading the spreadsheet
 # ---------------------------------------------------------------------------
 
+class Share(float):
+    """A number the workbook formats as a percentage: 0.32 there is shown, and meant, as 32%."""
+
+
 class _Parts:
     """The zip's parts, read with a running total so the whole file is bounded too."""
 
@@ -417,6 +482,39 @@ def _shared_strings(parts: _Parts) -> List[str]:
     return [_text_of(item) for item in _xml(data).iter(f"{NS_MAIN}si")]
 
 
+def _percent_styles(parts: _Parts) -> frozenset:
+    """
+    The cell styles that show a number as a percentage: Excel's built-in 0%
+    and 0.00% (formats 9 and 10), or a format of the file's own with a % in
+    it that is not quoted text. A number in such a cell is a fraction shown
+    as a percentage: 0.32 is 32%.
+    """
+    data = parts.get("xl/styles.xml")
+    if data is None:
+        return frozenset()
+    root = _xml(data)
+    codes: Dict[str, str] = {}
+    formats = root.find(f"{NS_MAIN}numFmts")
+    if formats is not None:
+        for fmt in formats.findall(f"{NS_MAIN}numFmt"):
+            codes[(fmt.get("numFmtId") or "").strip()] = fmt.get("formatCode") or ""
+    styles = root.find(f"{NS_MAIN}cellXfs")
+    if styles is None:
+        return frozenset()
+    found = set()
+    for index, style in enumerate(styles.findall(f"{NS_MAIN}xf")):
+        number_format = (style.get("numFmtId") or "0").strip()
+        if number_format in ("9", "10") or _scales_by_100(codes.get(number_format, "")):
+            found.add(index)
+    return frozenset(found)
+
+
+def _scales_by_100(code: str) -> bool:
+    """Whether a number format multiplies by 100: a % that is neither quoted nor escaped."""
+    code = re.sub(r'"[^"]*"', "", code)
+    return "%" in re.sub(r"\\.", "", code)
+
+
 def _sheet_parts(parts: _Parts) -> Tuple[List[Tuple[str, str]], date]:
     """(sheet name, part name) in workbook order, and the day its serial dates count from."""
     workbook = parts.get("xl/workbook.xml")
@@ -451,7 +549,14 @@ def _column_index(reference: str) -> Optional[int]:
     return index - 1
 
 
-def _cell_value(cell: ElementTree.Element, strings: List[str]) -> Any:
+def _style(cell: ElementTree.Element) -> int:
+    try:
+        return int(cell.get("s") or 0)
+    except ValueError:
+        return -1
+
+
+def _cell_value(cell: ElementTree.Element, strings: List[str], percent: frozenset = frozenset()) -> Any:
     kind = cell.get("t") or "n"
     if kind == "inlineStr":
         inline = cell.find(f"{NS_MAIN}is")
@@ -476,10 +581,12 @@ def _cell_value(cell: ElementTree.Element, strings: List[str]) -> Any:
         number = float(text)
     except ValueError:
         return text[:MAX_CELL_CHARS]
+    if percent and _style(cell) in percent:
+        return Share(number)
     return int(number) if number.is_integer() and abs(number) < 1e15 else number
 
 
-def _rows(data: bytes, strings: List[str]) -> Tuple[List[List[Any]], bool]:
+def _rows(data: bytes, strings: List[str], percent: frozenset = frozenset()) -> Tuple[List[List[Any]], bool]:
     rows: List[List[Any]] = []
     for row in _xml(data).iter(f"{NS_MAIN}row"):
         if len(rows) >= MAX_ROWS:
@@ -493,7 +600,7 @@ def _rows(data: bytes, strings: List[str]) -> Tuple[List[List[Any]], bool]:
                 continue
             while len(cells) <= index:
                 cells.append(None)
-            cells[index] = _cell_value(cell, strings)
+            cells[index] = _cell_value(cell, strings, percent)
         rows.append(cells)
     return rows, False
 
@@ -515,6 +622,7 @@ def read_workbook(path: str) -> Dict[str, Any]:
             raise ExportError("That file holds far more parts than a spreadsheet does, so it was not read.")
         parts = _Parts(archive)
         strings = _shared_strings(parts)
+        percent = _percent_styles(parts)
         sheets = []
         named, epoch = _sheet_parts(parts)
         if not named:
@@ -525,7 +633,7 @@ def read_workbook(path: str) -> Dict[str, Any]:
                 # Named by the workbook and absent from the file: listed, not dropped.
                 sheets.append({"name": name, "rows": [], "truncated": False, "missing": True})
                 continue
-            rows, truncated = _rows(data, strings)
+            rows, truncated = _rows(data, strings, percent)
             sheets.append({"name": name, "rows": rows, "truncated": truncated})
     return {"bytes": size, "sheets": sheets, "epoch": epoch}
 
@@ -634,8 +742,8 @@ def _dates(values: List[Any], within: Optional[Tuple[date, date]],
 
 
 def _count(value: Any) -> Optional[int]:
-    """A whole, non-negative figure, or None. Nothing is rounded into existence."""
-    if value is None or isinstance(value, bool):
+    """A whole, non-negative figure, or None. Nothing is rounded into existence, and a share is not a count."""
+    if value is None or isinstance(value, (bool, Share)):
         return None
     if isinstance(value, int):
         return value if value >= 0 else None
@@ -774,21 +882,28 @@ def _followers_total(rows: List[List[Any]], within: Optional[Tuple[date, date]],
     return None
 
 
-def _top_posts(rows: List[List[Any]]) -> Dict[str, Any]:
+def _listed_posts(rows: List[List[Any]], kind: str) -> Dict[str, Any]:
     """
-    Each post's figures, from one or more tables side by side under one
-    header row: each table is read on its own, by its own post column, and
-    the figures are joined by post. A row is never read across two tables.
+    Each listed post's figures (TOP POSTS, MOST RECENT POSTS), from one or
+    more tables side by side under one header row: each table is read on its
+    own, by its own post column, and the figures are joined by post. A row
+    is never read across two tables.
     """
-    vocabulary = VOCABULARY["top_posts"]
+    vocabulary = VOCABULARY[kind]
+    wanted = LISTED_FIGURES[kind]
+    unlinked = False
     for at, row in enumerate(rows[:HEADER_SCAN]):
         tables = []
         unknown: List[str] = []
+        no_home: List[str] = []
         for start, end in _blocks(row):
             found, extra = _header(row, vocabulary, start, end)
-            if "url" in found and ({"engagements", "impressions"} & set(found)):
+            if "url" in found and (set(wanted) & set(found)):
                 tables.append(found)
-                unknown += extra
+                unknown += [c for c in extra if _norm(c) not in NO_HOME_YET]
+                no_home += [c for c in extra if _norm(c) in NO_HOME_YET]
+            elif set(wanted) & set(found):
+                unlinked = True
         if not tables:
             continue
         posts: Dict[str, Dict[str, Any]] = {}
@@ -800,8 +915,7 @@ def _top_posts(rows: List[List[Any]]) -> Dict[str, Any]:
                 if url is None or str(url).strip() == "":
                     continue
                 urn = _urn(str(url))
-                figures = {f: _count(r[i]) for f, i in found.items()
-                           if f in ("engagements", "impressions") and i < len(r)}
+                figures = {f: _count(r[i]) for f, i in found.items() if f in wanted and i < len(r)}
                 figures = {f: v for f, v in figures.items() if v is not None}
                 if not urn or not figures:
                     skipped += 1
@@ -811,9 +925,102 @@ def _top_posts(rows: List[List[Any]]) -> Dict[str, Any]:
                 if "published" in found and found["published"] < len(r):
                     entry["published"] = entry["published"] or r[found["published"]]
         recognised = sorted({f for found in tables for f in found})
-        return {"posts": posts, "recognised": recognised, "unknown": unknown, "problem": None,
+        return {"posts": posts, "recognised": recognised, "unknown": unknown, "no_home": no_home, "problem": None,
                 "rows": len(posts), "skipped": skipped, "tables": len(tables)}
-    return {"posts": {}, "recognised": [], "unknown": [], "rows": 0, "skipped": 0, "tables": 0,
+    return {"posts": {}, "recognised": [], "unknown": [], "no_home": [], "rows": 0, "skipped": 0, "tables": 0,
+            "problem": ("it gives figures without a link to each post, so which of your posts a row is cannot be "
+                        "told" if unlinked else "none of its columns are the ones the studio knows")}
+
+
+# A share written as text: "12%", "6.5 %". One LinkedIn gives only as a
+# bound ("< 1%") says the share is under one percent, not what it is.
+_PERCENT_TEXT = re.compile(r"^(\d{1,3}(?:\.\d+)?)\s*%$")
+_BOUND_TEXT = re.compile(r"^(?:<|>|<=|>=|less than|under|more than|over)\s*\d{1,3}(?:\.\d+)?\s*%$", re.I)
+_BARE_NUMBER = re.compile(r"^\d{1,3}(?:\.\d+)?$")
+DEMOGRAPHIC_ROWS = 400
+
+
+def _share_of(value: Any) -> Tuple[str, Optional[float]]:
+    """
+    How one cell gives a share: ('percent', n) as printed, a percent sign or
+    a percent format saying so; ('bound', None) for a share given only as a
+    bound; ('bare', n) for a number with neither, whose scale only its
+    column can settle; or ('none', None).
+    """
+    if value is None or isinstance(value, bool):
+        return "none", None
+    if isinstance(value, Share):
+        number = float(value) * 100
+        return ("percent", round(number, 2)) if math.isfinite(number) else ("none", None)
+    if isinstance(value, (int, float)):
+        return ("bare", float(value)) if math.isfinite(value) else ("none", None)
+    text = str(value).strip()
+    found = _PERCENT_TEXT.match(text)
+    if found:
+        return "percent", round(float(found.group(1)), 2)
+    if _BOUND_TEXT.match(text):
+        return "bound", None
+    if _BARE_NUMBER.match(text):
+        return "bare", float(text)
+    return "none", None
+
+
+def _demographics_table(rows: List[List[Any]]) -> Dict[str, Any]:
+    """
+    A demographics sheet (Top Demographics | Value | Percentage), read into
+    {(group, label): share}, the share a percentage from 0 to 100 as printed.
+
+    A row with no group, no label or no readable share is left out, and so
+    is a share given only as a bound. Bare numbers are read as percentages
+    only when one of them is over 1, which no fraction is; when all are 1 or
+    under, 0.3 could be 30 percent or 0.3 percent, and the sheet is not read.
+    Two different shares for one group and label are both left out.
+    """
+    vocabulary = VOCABULARY["demographics_table"]
+    for at, row in enumerate(rows[:HEADER_SCAN]):
+        found, unknown = _header(row, vocabulary)
+        if not {"dimension", "label", "share"} <= set(found):
+            continue
+        body = [r for r in rows[at + 1:] if any(c is not None and str(c).strip() != "" for c in r)]
+
+        def text_in(r: List[Any], field: str, limit: int) -> str:
+            value = r[found[field]] if found[field] < len(r) else None
+            return re.sub(r"\s+", " ", str(value if value is not None else "")).strip()[:limit]
+
+        read = []
+        skipped = bounds = 0
+        for r in body[:DEMOGRAPHIC_ROWS]:
+            group, label = text_in(r, "dimension", 40).lower(), text_in(r, "label", 120)
+            how, share = _share_of(r[found["share"]] if found["share"] < len(r) else None)
+            if not group or not label or how == "none":
+                skipped += 1
+            elif how == "bound":
+                bounds += 1
+            else:
+                read.append((group, label, how, share))
+        problem = None
+        bare = [share for _g, _l, how, share in read if how == "bare"]
+        if bare and max(bare) <= 1:
+            problem = (f"its shares are written as bare numbers, and {bare[0]:g} could be "
+                       f"{round(bare[0] * 100, 4):g} percent or {bare[0]:g} percent, so which cannot be told")
+        outside = next((share for _g, _l, _h, share in read if not 0 <= share <= 100), None)
+        if outside is not None:
+            problem = f"one of its shares reads {outside:g} percent, which no share of a whole can be"
+        entries: Dict[Tuple[str, str], float] = {}
+        torn = set()
+        for group, label, _how, share in read:
+            if (group, label) in entries and entries[(group, label)] != share:
+                torn.add((group, label))
+            entries.setdefault((group, label), share)
+        for key in torn:
+            del entries[key]
+        torn_rows = sum(1 for group, label, _h, _s in read if (group, label) in torn)
+        if not problem and not entries:
+            problem = "none of its rows holds a share the studio can keep"
+        return {"entries": {} if problem else entries, "recognised": sorted(found), "unknown": unknown,
+                "problem": problem, "rows": 0 if problem else len(entries), "skipped": skipped, "bounds": bounds,
+                "torn": torn_rows}
+    return {"entries": {}, "recognised": [], "unknown": [], "rows": 0, "skipped": 0, "bounds": 0, "torn": 0,
             "problem": "none of its columns are the ones the studio knows"}
 
 
@@ -920,6 +1127,7 @@ def _understand(name: str, workbook: Dict[str, Any], modified: Optional[datetime
             continue
         entry.update(label=LABELS[kind], writes=WRITES.get(kind), default=DEFAULTS.get(kind, False))
         problem = None
+        notes: List[str] = []
         if kind in ("engagement", "followers"):
             read = _daily_table(rows, kind, within, epoch)
             entry.update(recognised=read["recognised"], not_recognised=read["unknown"], rows=read["rows"])
@@ -935,12 +1143,27 @@ def _understand(name: str, workbook: Dict[str, Any], modified: Optional[datetime
             problem = read["problem"]
             if not problem:
                 daily_dates.extend(read["days"])
-        elif kind == "top_posts":
-            read = _top_posts(rows)
+        elif kind in LISTED_FIGURES:
+            read = _listed_posts(rows, kind)
             read["epoch"] = epoch
+            entry.update(recognised=read["recognised"], not_recognised=read["unknown"], left_out=read["no_home"],
+                         rows=read["rows"])
+            entry["read"] = read
+            problem = read["problem"]
+        elif kind in DEMOGRAPHIC_SOURCES:
+            read = _demographics_table(rows)
             entry.update(recognised=read["recognised"], not_recognised=read["unknown"], rows=read["rows"])
             entry["read"] = read
             problem = read["problem"]
+            if read["bounds"]:
+                notes.append(f"Left out: {_plural(read['bounds'], 'share')} LinkedIn gives only as a bound, such as "
+                             "< 1%, which says what a share is under, not what it is.")
+            if read["torn"]:
+                notes.append(f"Left out: {_plural(read['torn'], 'row')} giving one group and label two different "
+                             "shares.")
+            if read["skipped"]:
+                notes.append(f"Left out: {_plural(read['skipped'], 'row')} without a group, a label or a share the "
+                             "studio can read.")
         elif kind == "discovery":
             read = _pairs_sheet(rows, VOCABULARY["discovery"])
             entry.update(recognised=sorted(read["values"]), not_recognised=read["unknown"],
@@ -963,9 +1186,8 @@ def _understand(name: str, workbook: Dict[str, Any], modified: Optional[datetime
         if problem:
             entry.update(importable=False, note=f"Recognised, but not imported: {problem}.")
         else:
-            notes = []
             if entry["not_recognised"]:
-                notes.append("Not recognised, and left out: " + ", ".join(entry["not_recognised"]) + ".")
+                notes.insert(0, "Not recognised, and left out: " + ", ".join(entry["not_recognised"]) + ".")
             if entry["left_out"]:
                 notes.append("Recognised, left out because the studio keeps no such figure yet: "
                              + ", ".join(entry["left_out"]) + ".")
@@ -979,6 +1201,10 @@ def _understand(name: str, workbook: Dict[str, Any], modified: Optional[datetime
     else:
         span = {"start": None, "end": None, "from": None}
     return {"sheets": sheets, "range": span}
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def _public(entry: Dict[str, Any]) -> Dict[str, Any]:
@@ -1115,14 +1341,26 @@ def _held(conn, urn: str) -> bool:
     return bool(conn.execute("SELECT 1 FROM own_posts WHERE activity_urn = ?", (urn,)).fetchone())
 
 
-def _write_top_posts(conn, read: Dict[str, Any], span: Dict[str, Any], columns: set) -> Tuple[Dict[str, Any], List[str]]:
-    if not span.get("start") or not span.get("end"):
+def _range_end(span: Dict[str, Any]) -> Optional[datetime]:
+    """
+    When a reading over the range is dated: the end of the range's last day,
+    or now when that is still to come, because a reading dated in the future
+    would stand as the newest until then. One instant for the whole import,
+    so a post in two lists gets one reading.
+    """
+    if not span.get("end"):
+        return None
+    end = date.fromisoformat(span["end"])
+    return min(datetime(end.year, end.month, end.day, 23, 59, 59, tzinfo=timezone.utc), datetime.now(timezone.utc))
+
+
+def _write_listed_posts(conn, read: Dict[str, Any], span: Dict[str, Any], at: Optional[datetime],
+                        columns: set) -> Tuple[Dict[str, Any], List[str]]:
+    """TOP POSTS and MOST RECENT POSTS: a reading of each held post published inside the range. No post is made."""
+    if not span.get("start") or not span.get("end") or at is None:
         return {"left_out": "the range the export covers could not be read, so whether a figure covers a post's "
                             "whole life cannot be told"}, []
     start, end = date.fromisoformat(span["start"]), date.fromisoformat(span["end"])
-    # The end of the range's last day, or now when that is still to come: a
-    # reading dated in the future would stand as the post's newest until then.
-    at = min(datetime(end.year, end.month, end.day, 23, 59, 59, tzinfo=timezone.utc), datetime.now(timezone.utc))
     added = not_yours = before = undated = 0
     urns = []
     for urn, entry in read["posts"].items():
@@ -1144,6 +1382,29 @@ def _write_top_posts(conn, read: Dict[str, Any], span: Dict[str, Any], columns: 
     if not_yours:
         out["not_yours_because"] = NOT_YOURS
     return out, urns
+
+
+def _write_demographics(conn, read: Dict[str, Any], span: Dict[str, Any], at: Optional[datetime],
+                        source: str) -> Dict[str, Any]:
+    """
+    One export's shares as the account's (activity_urn ''), dated the range's
+    last day, under the sheet's own source. A day holds one export's set:
+    importing another export that ends the same day replaces the set rather
+    than mixing two ranges' shares in it. Only group, label and share are
+    kept; the sheet holds no names.
+    """
+    if not span.get("end") or at is None:
+        return {"left_out": "the range the export covers could not be read, so these shares cannot be dated"}
+    day = span["end"]
+    conn.execute("DELETE FROM audience_demographic_readings WHERE observed_on = ? AND activity_urn = '' "
+                 "AND source = ?", (day, source))
+    for (group, label), share in sorted(read["entries"].items()):
+        conn.execute(
+            "INSERT INTO audience_demographic_readings "
+            "(observed_at, observed_on, activity_urn, source, dimension, label, percentage) "
+            "VALUES (?, ?, '', ?, ?, ?, ?)", (at.isoformat(), day, source, group, label, share))
+    return {"shares_kept": len(read["entries"]), "dated": day, "left_out_as_bounds": read["bounds"],
+            "rows_skipped": read["skipped"] + read["torn"]}
 
 
 def _write_post(conn, read: Dict[str, Any], modified: datetime, columns: set) -> Tuple[Dict[str, Any], List[str]]:
@@ -1189,6 +1450,7 @@ def import_export(source: str, include: Optional[List[str]] = None) -> Dict[str,
         conn = get_db()
         try:
             columns = _columns(conn, "post_metric_observations")
+            at = _range_end(understood["range"])
             summary: Dict[str, Any] = {}
             refreshed: List[str] = []
             days: Dict[date, Dict[str, int]] = {}
@@ -1212,9 +1474,13 @@ def import_export(source: str, include: Optional[List[str]] = None) -> Dict[str,
                         elif total:
                             tally["total_followers"] = {"left_out": total["problem"]}
                         summary[entry["name"]] = tally
-                    elif kind == "top_posts":
-                        summary[entry["name"]], urns = _write_top_posts(conn, read, understood["range"], columns)
+                    elif kind in LISTED_FIGURES:
+                        summary[entry["name"]], urns = _write_listed_posts(conn, read, understood["range"], at,
+                                                                           columns)
                         refreshed += urns
+                    elif kind in DEMOGRAPHIC_SOURCES:
+                        summary[entry["name"]] = _write_demographics(conn, read, understood["range"], at,
+                                                                     DEMOGRAPHIC_SOURCES[kind])
                     elif kind == "post":
                         summary[entry["name"]], urns = _write_post(conn, read, modified, columns)
                         refreshed += urns

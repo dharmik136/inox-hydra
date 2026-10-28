@@ -420,9 +420,16 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # 2.10.0 integration of tracks 7 and 4 (phase 2 and phase b), measured on the
 # merged tree: 224 paths, 177 reached, 47 unreachable.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 224
-REACHED_BY_INTERFACE = 177
-UNREACHABLE = 47
+# 2.10.1, track 6: a short link from the phone. Today's Done
+# (/api/v1/desk-requests/{id}/done), reached; and the extension's report of
+# the post a short link landed on (/api/v1/desk-requests/landed), which only
+# the extension calls, so it sits in the unreachable column as
+# /api/analytics/page-figures does. Total 224 -> 226, reached 177 -> 178,
+# unreachable 47 -> 48.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 226
+REACHED_BY_INTERFACE = 178
+UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

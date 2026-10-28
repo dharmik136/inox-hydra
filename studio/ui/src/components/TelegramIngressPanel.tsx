@@ -12,9 +12,15 @@ import { cn } from "@/lib/utils";
  * a link, never a figure. The token is sealed like the AI key and never read
  * back; every line here is read from the server's own answer.
  *
- * The sentence saying this has not been tested against the real Telegram
- * service comes from the server too, so it disappears from here the day the
- * server stops saying it (decision D6).
+ * Telegram never shows a creator their chat id, so the token can be saved
+ * alone: every message is then refused, and the chats that wrote are listed
+ * with the start of their first message and "Is that you?". This is me saves
+ * that chat id through the same save, with the same shape check. Nothing
+ * pairs a chat but that press.
+ *
+ * The sentence saying the bot has not been seen working on this computer
+ * comes from the server too, and goes once a message from the saved chat has
+ * been saved here.
  */
 export function TelegramIngressPanel() {
   const [state, setState] = useState<IngressSettings | null>(null);
@@ -32,6 +38,19 @@ export function TelegramIngressPanel() {
       live = false;
     };
   }, []);
+
+  // While the bot waits to be paired, the chat that writes to it shows up
+  // here within a few seconds, without a reload.
+  const pairing = !!state?.pairing && state.running;
+  useEffect(() => {
+    if (!pairing) return undefined;
+    const timer = window.setInterval(() => {
+      fetchIngressSettings()
+        .then((result) => setState(result))
+        .catch(() => undefined);
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [pairing]);
 
   async function save(nextToken: string, nextChat: string, said: string) {
     setBusy(true);
@@ -52,7 +71,7 @@ export function TelegramIngressPanel() {
   const rows: { label: string; value: string; good: boolean }[] = state
     ? [
         { label: "Bot token", value: state.has_token ? "SET, SEALED" : "NOT SET", good: state.has_token },
-        { label: "Your chat id", value: state.chat_id || "NOT SET", good: !!state.chat_id },
+        { label: "Your chat id", value: state.chat_id || (state.pairing ? "NOT SET YET, PAIR BELOW" : "NOT SET"), good: !!state.chat_id },
         { label: "Asking Telegram for messages", value: state.running ? "YES" : "NO", good: state.running },
         // The count is the running bot's, so it is shown only for this profile's.
         ...(state.running
@@ -101,13 +120,52 @@ export function TelegramIngressPanel() {
               there. One bot is asked at a time: saving one here switches to it.
             </p>
           )}
+          {state.pairing && (
+            <p className="mt-3 text-[12px] leading-relaxed text-ink-secondary">
+              Now message your bot once from your phone. Your chat appears here with the start of your message:
+              press This is me. That first message only says which chat is yours; it is not saved.
+            </p>
+          )}
+          {state.refused_chats.length > 0 && (
+            <div className="mt-3">
+              <p className="studio-meta text-ink-muted">CHATS THE BOT REFUSED, NEWEST FIRST</p>
+              <ul className="mt-1 flex flex-col gap-2">
+                {state.refused_chats.map((chat) => (
+                  <li key={chat.chat_id} className="flex flex-col items-start gap-1 text-[12px] leading-snug">
+                    <span className="text-ink-secondary">
+                      {`${chat.count.toLocaleString()} ${chat.count === 1 ? "message" : "messages"} refused from chat ${chat.chat_id}, first: '${chat.first}'.`}{" "}
+                      {chat.own_chat
+                        ? "Is that you?"
+                        : "This is a group's chat: the studio takes messages only from your own chat with the bot."}
+                    </span>
+                    {chat.own_chat && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          void save(
+                            "",
+                            chat.chat_id,
+                            "Paired. Messages from this chat now arrive in the studio. The one you sent to pair was not kept, so send it again if you want it.",
+                          )
+                        }
+                        className="rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                      >
+                        This is me
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {state.recent_links.length > 0 && (
             <div className="mt-3">
               <p className="studio-meta text-ink-muted">LINKS FROM YOUR PHONE, NEWEST FIRST</p>
               <ul className="mt-1 flex flex-col gap-1.5">
                 {state.recent_links.map((link) => (
                   <li key={link.id} className="text-[12px] leading-snug">
-                    <span className="studio-meta block truncate text-ink-secondary">{link.activity_urn}</span>
+                    <span className="studio-meta block truncate text-ink-secondary">{link.activity_urn || link.link}</span>
                     <span className={link.state === "refused" ? "text-signal-orange-text" : "text-ink-secondary"}>
                       {link.said}
                     </span>
@@ -132,21 +190,29 @@ export function TelegramIngressPanel() {
           type="text"
           value={chatId}
           onChange={(event) => setChatId(event.target.value)}
-          placeholder="Your numeric chat id"
+          placeholder="Your numeric chat id, or leave empty and pair below"
           aria-label="Telegram chat id"
           className="rounded-md border border-edge bg-ink px-2.5 py-1.5 text-[12px] text-ink-primary outline-none placeholder:text-ink-muted focus-visible:border-edge-strong"
         />
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => void save(token.trim(), chatId.trim(), "Saved. The studio is asking Telegram for your messages.")}
-            disabled={busy || !token.trim() || !chatId.trim()}
+            onClick={() =>
+              void save(
+                token.trim(),
+                chatId.trim(),
+                chatId.trim() || state?.chat_id
+                  ? "Saved. The studio is asking Telegram for your messages."
+                  : "Saved. Now message your bot once from your phone, then press This is me beside your chat.",
+              )
+            }
+            disabled={busy || !(token.trim() || (state?.has_token && chatId.trim()))}
             className="flex items-center justify-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
           >
             {busy && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
             Save and start
           </button>
-          {state?.configured && (
+          {state?.has_token && (
             <button
               type="button"
               onClick={() => void save("", "", "Removed from this profile.")}
@@ -164,7 +230,7 @@ export function TelegramIngressPanel() {
           </p>
         )}
 
-        {state && (
+        {state?.not_yet_tested && (
           <p className="studio-meta leading-relaxed text-signal-orange-text">{state.not_yet_tested.toUpperCase()}</p>
         )}
         <p className="studio-meta leading-relaxed text-ink-muted">

@@ -388,9 +388,12 @@ def test_a_waiting_notice_is_carried_by_the_waiting_count_not_a_mark(run):
 # ---------------------------------------------------------------------------
 
 # What a page may relay that is about a moment, or a question, rather than
-# the creator's data: never kept for a busy studio and never a capture.
+# the creator's data: never kept for a busy studio and never a capture. The
+# landing of a short link from the phone (2.10.1) is a moment: lost to a busy
+# studio, the creator opens the link again from Today, or presses Done.
 BOOKKEEPING = {"/api/v1/bridge/heartbeat", "/api/v1/bridge/capture", "/api/v1/bridge/schema-drift",
-               "/api/v1/identity/me", "/api/v1/self/imports/pending", "/api/v1/self/imports/event"}
+               "/api/v1/identity/me", "/api/v1/self/imports/pending", "/api/v1/self/imports/event",
+               "/api/v1/desk-requests/landed"}
 
 
 def _paths(source, opening):

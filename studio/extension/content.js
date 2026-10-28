@@ -1401,6 +1401,46 @@ window.addEventListener("studio:locationchange", () => {
 });
 setTimeout(maybeBindPostUrn, 2500);
 
+/**
+ * A short link the phone sent, opened from Today (2.10.1).
+ *
+ * The LinkedIn app's Copy link gives an lnkd.in link that names no post, and
+ * the studio never follows it. Today opens it in this browser with
+ * #inox-desk-<request id>, and a browser keeps a fragment across lnkd.in's
+ * redirect, so the post page it lands on carries it. This says which post
+ * that was, once per page. The landing address is also read from the
+ * navigation entry, which keeps it when LinkedIn's routing rewrites the
+ * address afterwards; with the fragment in neither, nothing is sent, and the
+ * creator's Done on Today closes the request.
+ */
+const DESK_FRAGMENT = /^#inox-desk-(\d{1,12})$/;
+let deskLandingSent = false;
+
+function deskLanding() {
+  const here = DESK_FRAGMENT.exec(window.location.hash || "");
+  if (here) return { id: Number(here[1]), urn: extractActivityUrn(window.location.pathname) };
+  try {
+    const entry = performance.getEntriesByType("navigation")[0];
+    const landed = entry && entry.name ? new URL(entry.name) : null;
+    const kept = landed && DESK_FRAGMENT.exec(landed.hash || "");
+    if (kept) return { id: Number(kept[1]), urn: extractActivityUrn(landed.pathname) };
+  } catch (e) {
+    // No navigation entry to read: nothing is reported.
+  }
+  return null;
+}
+
+function maybeReportDeskLanding() {
+  if (deskLandingSent) return;
+  const landing = deskLanding();
+  if (!landing || !landing.urn) return;
+  deskLandingSent = true;
+  studioApi("/api/v1/desk-requests/landed", { request_id: landing.id, activity_urn: landing.urn });
+}
+
+window.addEventListener("hashchange", maybeReportDeskLanding);
+maybeReportDeskLanding();
+
 // -------------------------------------------------------------
 // Auto-Capture Engagers (Commenters & Reactors) into Local CRM
 // -------------------------------------------------------------

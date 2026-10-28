@@ -505,8 +505,11 @@ DEFAULT_TARGET_URL = "https://www.linkedin.com/feed/"
 STUDIO_TAB_URL = "http://127.0.0.1:8000/"
 
 # Hosts this launcher will open. Everything else, including anything that could
-# be read as a Chromium switch, falls back to the feed.
-ALLOWED_TARGET_HOSTS = ("www.linkedin.com", "linkedin.com")
+# be read as a Chromium switch, falls back to the feed. lnkd.in is LinkedIn's
+# short link, which the phone sends when the app's Copy link is used: Today
+# opens it in the creator's browser, which follows it, and the studio never
+# does (2.10.1).
+ALLOWED_TARGET_HOSTS = ("www.linkedin.com", "linkedin.com", "lnkd.in")
 
 
 def _validated_target(target_url):
@@ -607,6 +610,17 @@ def _clean_stale_locks(profile_dir: str) -> None:
                         pass
 
 
+def _devtools_new_path(safe_url: str) -> str:
+    """
+    The DevTools request that opens a URL in a new tab. The URL travels as
+    the query of an HTTP request, where a bare # would end the request's
+    address and drop the fragment, so it goes encoded; the browser decodes
+    it back. Today's short links depend on their fragment (#inox-desk-<id>).
+    """
+    import urllib.parse
+    return "/json/new?" + urllib.parse.quote(safe_url, safe=":/?=&%+@!$*[]")
+
+
 def _try_open_in_running_browser(
     safe_url: str,
     selected: Dict[str, Any],
@@ -620,7 +634,6 @@ def _try_open_in_running_browser(
         return None
 
     import http.client
-    import urllib.parse
     import json
 
     cdp_hosts = ["::1", "127.0.0.1", "localhost"]
@@ -658,8 +671,7 @@ def _try_open_in_running_browser(
                     "message": f"Focused active bridge browser window with {safe_url}.",
                 }
             else:
-                quoted_url = urllib.parse.quote(safe_url, safe=":/?=&%#+@!$*[]")
-                conn.request("PUT", f"/json/new?{quoted_url}")
+                conn.request("PUT", _devtools_new_path(safe_url))
                 new_resp = conn.getresponse()
                 new_tab = json.loads(new_resp.read().decode("utf-8"))
                 new_id = new_tab.get("id")

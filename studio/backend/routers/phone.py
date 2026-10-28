@@ -28,6 +28,11 @@ except (ImportError, ValueError):
 router = APIRouter()
 
 
+class DeskLandingPayload(BaseModel):
+    request_id: int = Field(..., ge=1, description="The request named by the #inox-desk-<id> fragment the page kept")
+    activity_urn: str = Field(..., min_length=1, max_length=80, description="The post the page names")
+
+
 class IngressSettingsPayload(BaseModel):
     bot_token: Optional[str] = Field(None, max_length=200, description="The bot token Telegram's BotFather gave you; empty removes it")
     chat_id: Optional[str] = Field(None, max_length=40, description="Your own numeric chat id; empty removes it")
@@ -59,5 +64,34 @@ def dismiss_desk_request(request_id: int):
     conn = get_db()
     try:
         return {"status": "success", "dismissed": desk_requests.dismiss(conn, request_id)}
+    finally:
+        conn.close()
+
+
+@router.post("/api/v1/desk-requests/{request_id}/done", tags=["Phone"])
+def done_desk_request(request_id: int):
+    """
+    Today's Done, for a short link from the phone whose post the browser
+    never reported: the creator says they have seen it. Says whether one was
+    closed; a request that names its post is done when that post is read.
+    """
+    conn = get_db()
+    try:
+        return {"status": "success", "done": desk_requests.done(conn, request_id)}
+    finally:
+        conn.close()
+
+
+@router.post("/api/v1/desk-requests/landed", tags=["Phone"])
+def desk_request_landed(payload: DeskLandingPayload):
+    """
+    From the extension, through its worker: a post page that kept a short
+    link's #inox-desk-<id> fragment, and the post it names. One of the
+    creator's posts is attached to that request; anyone else's refuses it.
+    The studio never follows the short link itself.
+    """
+    conn = get_db()
+    try:
+        return {"status": "success", **desk_requests.landed(conn, payload.request_id, payload.activity_urn)}
     finally:
         conn.close()

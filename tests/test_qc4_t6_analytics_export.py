@@ -4,9 +4,10 @@ exact and named as the export's.
 ==========================================================================
 
 Built against LinkedIn's documented export (Help a701208, a704175) and this
-track's best understanding of its sheets, in tests/linkedin_export_fixtures.py,
-because no real file has been supplied. So the rules held here are the ones
-that do not depend on the guess being right:
+track's best understanding of its sheets, in tests/linkedin_export_fixtures.py.
+A real aggregate export met the importer on 2026-10-28; its sheet names and
+its demographics header are in the fixtures exactly, its values are not. So
+the rules held here are the ones that do not depend on the guess being right:
 
 - nothing is written until the creator has previewed it;
 - a sheet or a column the studio does not know is reported as not
@@ -111,8 +112,8 @@ def test_the_preview_names_every_sheet_and_writes_nothing(studio):
     assert "Something, else" in unknown["note"], "the preview does not show what it could not read"
     assert _sheet(preview, "DEMOGRAPHICS")["importable"] is False
     assert preview["range"] == {"start": "2026-09-26", "end": "2026-10-25", "from": "the file's name"}
-    assert preview["verified_against_real_file"] is False
-    assert "not yet" in preview["verification"]
+    assert preview["verified_against_real_file"] is True
+    assert "2026-10-28" in preview["verification"] and "post's own export has not been checked" in preview["verification"]
     assert _rows(studio["db"], "SELECT * FROM analytics_daily") == []
     assert _rows(studio["db"], "SELECT * FROM post_metric_observations") == []
 
@@ -388,9 +389,9 @@ def _read(path):
         return handle.read()
 
 
-def test_the_help_says_it_has_not_been_checked_against_a_real_file():
+def test_the_help_says_when_it_was_checked_and_that_the_unknown_is_left_out():
     article = _read("docs/help/import-linkedins-analytics-export.md")
-    assert "Verified against a real file: not yet." in article
+    assert "Verified against a real file: yes, on 2026-10-28" in article
     assert "not recognised" in article
 
 
@@ -562,3 +563,172 @@ def test_a_copy_older_than_a_day_is_removed_when_the_studio_starts(studio):
     with TestClient(app_module.app):
         pass
     assert not os.path.exists(old), "a copy older than a day outlived the studio's start"
+
+
+
+# ---------------------------------------------------------------------------
+# The real aggregate export (2.10.1): MOST RECENT POSTS and the demographics
+# ---------------------------------------------------------------------------
+
+def _hold(studio, *posts):
+    """The creator's recorded posts, as the posts import or the archive would hold them."""
+    conn = studio["db"]()
+    with conn:
+        for urn, day in posts:
+            conn.execute(
+                "INSERT OR REPLACE INTO own_posts (activity_urn, text, published_at, published_at_source, "
+                "first_seen_at, last_seen_at) VALUES (?, ?, ?, 'urn', ?, ?)",
+                (urn, f"A post of mine from {day}", f"{day.isoformat()}T12:00:00+00:00",
+                 "2026-10-28T00:00:00+00:00", "2026-10-28T00:00:00+00:00"))
+    conn.close()
+
+
+def _demographics(studio, source=None):
+    sql = ("SELECT observed_on, activity_urn, source, dimension, label, percentage "
+           "FROM audience_demographic_readings")
+    if source:
+        return _rows(studio["db"], sql + " WHERE source = ? ORDER BY dimension, label", (source,))
+    return _rows(studio["db"], sql + " ORDER BY source, dimension, label")
+
+
+def test_the_aggregate_exports_sheets_are_each_recognised(studio):
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets()), name=fx.AGGREGATE_NAME).json()
+    kinds = {s["name"]: s["kind"] for s in preview["sheets"]}
+    assert kinds == {"DISCOVERY": "discovery", "ENGAGEMENT": "engagement", "MOST RECENT POSTS": "recent_posts",
+                     "TOP POSTS": "top_posts", "FOLLOWERS": "followers",
+                     "AUDIENCE DEMOGRAPHICS": "audience_demographics",
+                     "CONTENT DEMOGRAPHICS": "content_demographics"}
+    assert preview["range"] == {"start": "2025-09-24", "end": "2026-10-28", "from": "the file's name"}
+    for name in ("MOST RECENT POSTS", "AUDIENCE DEMOGRAPHICS", "CONTENT DEMOGRAPHICS"):
+        assert _sheet(preview, name)["importable"] is True, _sheet(preview, name)["note"]
+
+
+def test_most_recent_posts_are_read_like_top_posts(studio):
+    """
+    The real file's MOST RECENT POSTS was refused as a post's own export with
+    three rows. It is a list of the creator's recent posts, one per row: each
+    is matched to a recorded post by its link, never creating one.
+    """
+    _hold(studio, (fx.RECENT_A, date(2026, 10, 20)), (fx.RECENT_B, date(2026, 10, 10)))
+    end = date(2026, 10, 25)
+    name = f"AggregateAnalytics_Sample Creator_2025-09-24_{end.isoformat()}.xlsx"
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets(end=end)), name=name).json()
+    res = studio["client"].post("/api/v1/analytics-export/import",
+                                json={"source": preview["source"], "include": ["MOST RECENT POSTS"]})
+    summary = res.json()["summary"]["MOST RECENT POSTS"]
+    assert summary["added"] == 2 and summary["not_yours"] == 1
+    readings = {r["activity_urn"]: r for r in _rows(
+        studio["db"], "SELECT * FROM post_metric_observations WHERE source = 'linkedin_export'")}
+    assert set(readings) == {fx.RECENT_A, fx.RECENT_B}, "a post the studio does not hold was written"
+    a = readings[fx.RECENT_A]
+    assert (a["impressions"], a["engagements"], a["precision"]) == (1830, 61, "exact")
+    assert a["observed_at"].startswith("2026-10-25T23:59:59"), "not dated by the export's end"
+    held = [r["activity_urn"] for r in _rows(studio["db"], "SELECT activity_urn FROM own_posts")]
+    assert fx.STRANGER not in held, "a post was created from the export"
+
+
+def test_a_list_of_posts_without_their_links_is_not_matched_by_anything_else(studio):
+    """A row is one of the creator's posts only by its link: not by its date, not by its figures."""
+    recent = [["Post publish date", "Impressions", "Engagements"], ["10/20/2026", 1830, 61]]
+    sheets = [(n, recent if n == "MOST RECENT POSTS" else rows) for n, rows in fx.aggregate_sheets()]
+    preview = _upload(studio["client"], fx.build(sheets), name=fx.AGGREGATE_NAME).json()
+    sheet = _sheet(preview, "MOST RECENT POSTS")
+    assert sheet["importable"] is False and "without a link to each post" in sheet["note"]
+
+
+def test_the_audience_and_content_demographics_are_kept_apart_and_dated(studio):
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets()), name=fx.AGGREGATE_NAME).json()
+    res = studio["client"].post("/api/v1/analytics-export/import", json={
+        "source": preview["source"], "include": ["AUDIENCE DEMOGRAPHICS", "CONTENT DEMOGRAPHICS"]})
+    summary = res.json()["summary"]
+    assert summary["AUDIENCE DEMOGRAPHICS"]["shares_kept"] == 5
+    assert summary["AUDIENCE DEMOGRAPHICS"]["left_out_as_bounds"] == 1
+    assert summary["AUDIENCE DEMOGRAPHICS"]["dated"] == "2026-10-28"
+    audience = _demographics(studio, "linkedin_export_audience")
+    content = _demographics(studio, "linkedin_export_content")
+    assert len(audience) == 5 and len(content) == 3
+    assert {r["observed_on"] for r in audience + content} == {"2026-10-28"}, "not dated by the export's end"
+    assert {r["activity_urn"] for r in audience + content} == {""}, "an account's demographics were filed under a post"
+    first = next(r for r in audience if r["label"] == "Software Engineer")
+    assert (first["dimension"], first["percentage"]) == ("job titles", 12.0)
+    assert next(r for r in audience if r["label"] == "Product Manager")["percentage"] == 6.5
+    assert not [r for r in audience if r["label"] == "10,001+ employees"], "a bound (< 1%) was stored as a figure"
+    assert next(r for r in content if r["label"] == "Mumbai")["percentage"] == 14.0
+
+
+def test_importing_the_demographics_twice_keeps_one_reading_a_day(studio):
+    for _ in range(2):
+        preview = _upload(studio["client"], fx.build(fx.aggregate_sheets()), name=fx.AGGREGATE_NAME).json()
+        studio["client"].post("/api/v1/analytics-export/import", json={
+            "source": preview["source"], "include": ["AUDIENCE DEMOGRAPHICS", "CONTENT DEMOGRAPHICS"]})
+    assert len(_demographics(studio)) == 8
+
+
+def test_a_later_export_ending_the_same_day_replaces_that_days_shares_rather_than_mixing_them(studio):
+    """A 7-day and a 365-day export can end on the same day; one day's set is one export's."""
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets()), name=fx.AGGREGATE_NAME).json()
+    studio["client"].post("/api/v1/analytics-export/import",
+                          json={"source": preview["source"], "include": ["CONTENT DEMOGRAPHICS"]})
+    shorter = [["Job titles", "Founder", "11%"], ["Locations", "Pune", "8%"]]
+    name = "AggregateAnalytics_Sample Creator_2026-10-22_2026-10-28.xlsx"
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets(content=shorter)), name=name).json()
+    studio["client"].post("/api/v1/analytics-export/import",
+                          json={"source": preview["source"], "include": ["CONTENT DEMOGRAPHICS"]})
+    got = {(r["dimension"], r["label"]): r["percentage"] for r in _demographics(studio, "linkedin_export_content")}
+    assert got == {("job titles", "Founder"): 11.0, ("locations", "Pune"): 8.0}
+
+
+def test_no_post_screen_shows_the_accounts_demographics(studio):
+    """Only per-post readers read this table, by post; the export's rows are the account's."""
+    _hold(studio, (fx.RECENT_A, date(2026, 10, 20)), (fx.RECENT_B, date(2026, 10, 10)))
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets()), name=fx.AGGREGATE_NAME).json()
+    studio["client"].post("/api/v1/analytics-export/import", json={"source": preview["source"]})
+    assert len(_demographics(studio)) == 8
+    import onboarding
+    for row in _rows(studio["db"], "SELECT activity_urn FROM own_posts"):
+        assert onboarding.post_demographics(row["activity_urn"]) == [], "a post's screen shows the account's shares"
+
+
+def test_a_share_stored_as_a_percent_formatted_number_is_read_as_a_percentage(studio):
+    shares = [["Job titles", "Designer", fx.Pct(0.25)], ["Locations", "Pune", fx.Pct(0.075)]]
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets(audience=shares)), name=fx.AGGREGATE_NAME).json()
+    studio["client"].post("/api/v1/analytics-export/import",
+                          json={"source": preview["source"], "include": ["AUDIENCE DEMOGRAPHICS"]})
+    got = {r["label"]: r["percentage"] for r in _demographics(studio, "linkedin_export_audience")}
+    assert got == {"Designer": 25.0, "Pune": 7.5}
+
+
+def test_plain_numbers_that_could_be_fractions_or_percentages_are_not_guessed(studio):
+    """0.3 with no percent sign and no percent format could be 30 percent or 0.3 percent."""
+    shares = [["Job titles", "Designer", 0.3], ["Locations", "Pune", 0.2]]
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets(audience=shares)), name=fx.AGGREGATE_NAME).json()
+    sheet = _sheet(preview, "AUDIENCE DEMOGRAPHICS")
+    assert sheet["importable"] is False and "30 percent or 0.3 percent" in sheet["note"]
+    shares = [["Job titles", "Designer", 31], ["Locations", "Pune", 0.4]]
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets(audience=shares)), name=fx.AGGREGATE_NAME).json()
+    assert _sheet(preview, "AUDIENCE DEMOGRAPHICS")["importable"] is True, "a column with 31 in it is percentages"
+
+
+def test_deleting_everything_forgets_the_exports_demographics(studio):
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets()), name=fx.AGGREGATE_NAME).json()
+    studio["client"].post("/api/v1/analytics-export/import", json={"source": preview["source"]})
+    assert _demographics(studio)
+    import onboarding
+    onboarding.forget_identity()
+    assert _demographics(studio) == []
+
+
+def test_the_preview_and_the_help_say_a_real_export_was_checked():
+    import analytics_export as module
+    assert module.VERIFIED_AGAINST_REAL_FILE is True
+    assert "2026-10-28" in module.VERIFICATION and "AUDIENCE DEMOGRAPHICS" in module.VERIFICATION
+    article = " ".join(_read("docs/help/import-linkedins-analytics-export.md").split())
+    assert "Verified against a real file: yes, on 2026-10-28" in article
+    for sheet in ("DISCOVERY", "ENGAGEMENT", "MOST RECENT POSTS", "TOP POSTS", "FOLLOWERS",
+                  "AUDIENCE DEMOGRAPHICS", "CONTENT DEMOGRAPHICS"):
+        assert sheet in article, f"the help does not name {sheet}"
+
+
+def test_the_policy_names_the_demographics_the_export_keeps():
+    policy = " ".join(_read("docs/PRIVACY_POLICY.md").split())
+    assert "the demographics of your audience and of who engaged with your posts" in policy
