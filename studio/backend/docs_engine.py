@@ -727,6 +727,7 @@ HELP_SECTIONS = [
             "quality/cycle4/t6-posture.md",
             "quality/cycle4/t4-sections.md",
             "quality/cycle4/t2-show.md",
+            "quality/cycle4/t4-phase-b.md",
             # Cycle 4, track 6: the phone pairing design (item 27) and the
             # answer on LinkedIn's public-client OAuth flow (decision D2).
             "PHONE_PAIRING_DESIGN.md",

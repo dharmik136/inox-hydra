@@ -291,7 +291,24 @@ def get_lead_interaction_timeline(lead_id: str):
     res = reverse_crm.get_lead_timeline(lead_id)
     if res["status"] == "not_found":
         raise HTTPException(status_code=404, detail="Lead not found")
-    res["interactions"] = onboarding.annotate_interactions(res["interactions"])
+    conn = get_db()
+    try:
+        stage_history = [dict(r) for r in conn.execute(
+            "SELECT from_status, to_status, changed_at, post_urn FROM lead_stage_events WHERE lead_id = ? "
+            "ORDER BY changed_at", (lead_id,))]
+    finally:
+        conn.close()
+    # One annotation for one read (tests/test_qc3_t7_leads_dossier.py): the
+    # interactions, and the stage changes made from a post, each given its
+    # post's opening by the same reading of the creator's posts.
+    from_posts = [event for event in stage_history if event["post_urn"]]
+    interactions = res["interactions"]
+    res["interactions"] = onboarding.annotate_interactions(interactions + from_posts)[:len(interactions)]
+    for event in stage_history:
+        if not event["post_urn"]:
+            event["post_excerpt"] = None
+        event.pop("post_origin", None)
+    res["stage_history"] = stage_history
     # Reactions older than 24 months that retention folded into counts: how
     # many, and on whose posts; which posts is no longer kept.
     res["folded_reactions"] = retention.folded_for_lead(lead_id)
@@ -302,19 +319,6 @@ def get_lead_interaction_timeline(lead_id: str):
     res["lead"]["scored"] = (bool(res["interactions"]) or bool(res["folded_reactions"])
                              or float(res["lead"].get("icp_score") or 0) > 0)
     res["lead"]["qualification_tier"] = qualification_tier(res["lead"].get("icp_score"))
-    conn = get_db()
-    try:
-        res["stage_history"] = [dict(r) for r in conn.execute(
-            "SELECT from_status, to_status, changed_at, post_urn FROM lead_stage_events WHERE lead_id = ? "
-            "ORDER BY changed_at", (lead_id,))]
-    finally:
-        conn.close()
-    # Which post each change came from, by its opening, as the interactions
-    # name theirs; none for a change made with no post in view.
-    for event in onboarding.annotate_interactions(res["stage_history"]):
-        if not event["post_urn"]:
-            event["post_excerpt"] = None
-        event.pop("post_origin", None)
     return res
 
 
