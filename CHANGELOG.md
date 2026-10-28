@@ -5,6 +5,40 @@ asks for an entry per release (`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`
 section 5.5); this file starts with the work since v2.5.2, which was never
 released. Version numbers follow `studio/__version__.py`.
 
+## 2.10.1
+
+From the first tests on your own live LinkedIn pages and a real analytics
+export: LinkedIn rebuilt several of its pages in 2026, and three readers and
+parts of the export import did not yet know them.
+
+### Before you use 2.10.1
+
+- **Your database is upgraded** the first time you start it, from schema 35 to
+  37, after the usual automatic backup: the analytics page's members reached,
+  saves, sends and network split by day and by window, and short links sent
+  from your phone.
+- **No hand reload.** An extension loaded from the studio's folder reloads
+  itself when the studio is updated.
+
+### Fixed
+
+- **Your posts list is read again** on LinkedIn's rebuilt Activity page. The
+  reader waits for your posts to load, keeps reading as more appear, and now
+  keeps each post's impressions.
+- **Your analytics page is read again**, by its own section names: impressions,
+  members reached, reactions, comments, reposts, saves, sends and the share of
+  impressions inside and outside your network, each with the range LinkedIn
+  names. A 24-hour reading is kept as that day's figure; a range the page does
+  not name is kept as unnamed, never as a day.
+- **Search appearances are read** from the page LinkedIn now sends you to.
+- **LinkedIn's analytics export** now also imports its Most recent posts sheet
+  and both demographics sheets, and is verified against a real export.
+- **Telegram is paired with one press.** Save the bot's token, send the bot one
+  message, and press This is me; there is no chat number to find.
+- **A post link shared from the LinkedIn app** (a short lnkd.in link) becomes
+  a request on Today with an Open button; opening it in your browser tells the
+  studio which post it is.
+
 ## 2.10.0
 
 The bridge now behaves as one per browser however many LinkedIn tabs you have

@@ -59,6 +59,18 @@ capability first and merged on a release branch. Ten tabs on one post went
 from 620 requests to 3. Records: `docs/quality/cycle4/t1-phase2.md`,
 `t4-phase-b.md`, `t7-phase2.md`.
 
+## In 2.10.1
+
+The first tests on the owner's live LinkedIn pages found three readers that
+LinkedIn's 2026 rebuild had broken (the posts list, the analytics page and
+search appearances), a real analytics export with three sheets the importer
+did not know, and the Telegram path's first contact with the real service
+(pairing by chat id, short links). The owner captured sanitised outlines of
+their own pages with a console snippet; the readers were rebuilt from them.
+They also showed that LinkedIn's site no longer calls /voyager/api/, so
+network reading has nothing to read. Records:
+`docs/quality/cycle4/readers-2026.md`, `export-2026.md`.
+
 ## Carried to 2.9.0, as planned at 2.8.0
 
 | Work | Why it waits |
