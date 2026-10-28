@@ -661,8 +661,10 @@ class TelegramIngressDaemon:
         self.last_poll_at = datetime.now(timezone.utc).isoformat()
 
         try:
-            # Refuses rather than connecting when this category is off. See egress.py.
-            _egress.require(url, "ingress")
+            # Refuses rather than connecting when this category is off. See
+            # egress.py. Counted under an address without the token, which
+            # the ledger would otherwise show on Local security.
+            _egress.require(telegram_bot.ledger_url("getUpdates"), "ingress")
             res = requests.get(url, params=params, timeout=35)
             if token != self.bot_token:
                 # The bot changed while this request waited on Telegram. The

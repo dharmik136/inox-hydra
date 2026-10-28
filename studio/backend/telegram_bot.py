@@ -87,6 +87,16 @@ def method_url(token: str, method: str) -> str:
     return f"{API_BASE}/bot{token}/{method}"
 
 
+def ledger_url(method: str) -> str:
+    """
+    The same address as the egress ledger records it, without the token.
+    The ledger shows each category's last destination on Local security,
+    and the Bot API carries a bot's token in the path, which the ledger's
+    own clean-up (scheme, host and path) keeps.
+    """
+    return f"{API_BASE}/bot<token>/{method}"
+
+
 def plain_words(status: int, description: str = "", retry_after: Optional[float] = None) -> str:
     """Telegram's answer to a request, as the panel says it. Never the token, never the message."""
     text = (description or "").lower()
@@ -116,7 +126,7 @@ def send_message(token: str, chat_id: Any, text: str, timeout: float = SEND_TIME
     """
     url = method_url(token, "sendMessage")
     try:
-        _egress.require(url, "ingress")
+        _egress.require(ledger_url("sendMessage"), "ingress")
     except _egress.EgressRefused:
         return {"ok": False, "kind": "refused_here", "said": EGRESS_OFF, "retry_after": None}
     try:

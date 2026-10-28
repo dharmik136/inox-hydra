@@ -146,3 +146,22 @@ def test_a_dropped_connection_is_retried_with_backoff_and_recovers(bot):
     assert gaps[1] > gaps[0], f"the wait after a second failure did not grow: {gaps}"
     bot["fake"].push(OWNER, "Idea: back online")
     assert _until(lambda: _drafts() == ["back online"]), "the worker did not recover after the network came back"
+
+
+def test_the_token_never_reaches_the_egress_ledger(bot):
+    """
+    Found while building the replies: the ledger kept each request's address
+    as its last destination, and a Bot API address carries the bot's token in
+    its path, so Local security showed the token after the first poll.
+    """
+    import egress
+    _save(bot)
+    bot["fake"].push(OWNER, "Idea: counted, not shown")
+    assert _until(lambda: _drafts() == ["counted, not shown"])
+    assert _until(lambda: len(bot["fake"].calls_of("sendMessage")) >= 1)
+    ledger = repr(egress.describe())
+    assert TOKEN not in ledger and TOKEN.split(":")[1] not in ledger, "the bot's token is in the egress ledger"
+    shown = bot["client"].get("/api/v1/egress/status").text
+    assert TOKEN.split(":")[1] not in shown
+    ingress_row = next(c for c in egress.describe()["categories"] if c["name"] == "ingress")
+    assert ingress_row["performed"] >= 2 and "/bot" in (ingress_row["last_destination"] or "")
