@@ -193,7 +193,7 @@ says how many are held for which account.
 app, and is set by `INOX_HYDRA_HOME`): a SQLite database file holding
 your posts, drafts, queue, post readings, leads and their engagement, your
 comments and reactions, any connections you imported from your own LinkedIn
-data archive, daily analytics, logs and settings; your media files; the network
+data archive, daily analytics, logs and settings; your media files; the extension
 readings log, as a separate file, which holds a copy of each analytics reading
 the extension sends and, from before network reading was retired, what it
 noted of LinkedIn's requests; and the daily backups folder.
@@ -266,7 +266,7 @@ read them.
 
 **How long it is kept, and how to remove it.** Inox Hydra's "Storage and
 privacy" panel shows how much space each kind of data takes, lets you set
-retention for post readings, reactions and the network readings log, lets you
+retention for post readings, reactions and the extension readings log, lets you
 review and forget people who have gone quiet, and lets you compact the database
 so that removed rows no longer occupy the file. Forgetting a person removes
 their lead record, every engagement of theirs the studio read, their stage

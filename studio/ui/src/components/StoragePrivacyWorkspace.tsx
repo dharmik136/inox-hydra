@@ -40,7 +40,7 @@ const SELECT =
   "rounded-md border border-edge bg-canvas px-2 py-1 text-[12px] text-ink-primary focus:border-signal-orange focus:outline-none";
 
 const JOB_NAME: Record<string, string> = {
-  telemetry: "Network readings log",
+  telemetry: "Extension readings log",
   readings: "Post readings",
   reactions: "Old reactions",
   daily_backup: "Daily backup",
@@ -156,7 +156,7 @@ function Holdings({ view, busy, act }: { view: StorageOverview; busy: string | n
             />
           ))}
         <SizeRow label="The database file" bytes={readableBytes(sizes.database_bytes)} total />
-        <SizeRow label="Network readings log (a separate file)" bytes={readableBytes(sizes.telemetry_bytes)} />
+        <SizeRow label="Extension readings log (a separate file)" bytes={readableBytes(sizes.telemetry_bytes)} />
         <SizeRow label="Media" bytes={readableBytes(sizes.media_bytes)} />
         <SizeRow label="Backups folder" bytes={readableBytes(sizes.backups_bytes)} />
       </dl>
@@ -261,7 +261,7 @@ function Backups({ view, busy, changeRule }: { view: StorageOverview; busy: stri
 }
 
 const RULE_COPY: Record<RetentionJob, { title: string; confirm: string }> = {
-  telemetry: { title: "Network readings log", confirm: "Back up, then remove" },
+  telemetry: { title: "Extension readings log", confirm: "Back up, then remove" },
   readings: { title: "Post readings", confirm: "Back up, then roll up" },
   reactions: { title: "Reactions older than 24 months", confirm: "Back up, then fold" },
 };

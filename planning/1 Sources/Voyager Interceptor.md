@@ -1,15 +1,17 @@
 ---
 type: source
-status: opt-in
+status: retired
 tags:
   - source
   - extension
   - network
   - risk
-code: studio/extension/voyager_interceptor.js
+code: studio/extension/voyager_interceptor.js (removed in 2.10.2)
 ---
 
 # Voyager Interceptor
+
+**Retired in 2.10.2 (2026-10-28, owner's decision).** Testing on the owner's own account showed LinkedIn's 2026 web app makes no `/voyager/api/` requests: its data arrives through React Server Component actions (`/flagship-web/rsc-action/...`) in an internal streaming format, so the interceptor read nothing. It, its schema registry, the observer, the popup switch and the `webRequest` permission are gone (`tests/test_network_reading_retired.py`), and the studio answers an older extension's two routes "retired" and keeps nothing. The page readers, rebuilt on LinkedIn's 2026 markup in 2.10.1, and the analytics export import cover what it was meant to add. The rest of this note describes it as it was.
 
 **Off by default since 2026-10-19** (owner's decision). It runs only after the creator switches on "Read LinkedIn's network responses" in the extension popup, where what it does is written beside the switch; while it is off, its two capture paths are refused. Retire it once [[LinkedIn Data Archive Import]] and the page readers are shown to cover what it adds.
 

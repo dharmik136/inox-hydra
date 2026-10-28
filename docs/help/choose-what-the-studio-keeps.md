@@ -11,7 +11,7 @@ The panel acts on the open creator profile only. Each profile keeps its own data
 
 ## What this profile holds
 
-The first section lists each kind of data with its number of rows and its size inside the database: your posts, drafts and queue; post readings; leads and their engagement; your comments and reactions on other posts; connections from your LinkedIn archive; what your archive says you saved, followed, voted on, reposted and searched for; From your record (your asks, the daily cards, their marks and your notes); daily analytics; logs; the help search index; and settings. Below them are the database file, the network readings log (a separate file), your media and the backups folder.
+The first section lists each kind of data with its number of rows and its size inside the database: your posts, drafts and queue; post readings; leads and their engagement; your comments and reactions on other posts; connections from your LinkedIn archive; what your archive says you saved, followed, voted on, reposted and searched for; From your record (your asks, the daily cards, their marks and your notes); daily analytics; logs; the help search index; and settings. Below them are the database file, the extension readings log (a separate file), your media and the backups folder.
 
 If this computer's copy of SQLite cannot measure the parts of the database, each part says "not measured" and only the file sizes are shown.
 
@@ -24,7 +24,7 @@ When you forget people or a cleanup removes rows, the space they took stays insi
 | What | Default | Choices | Never removed |
 | --- | --- | --- | --- |
 | Daily backup | On | On, Off | The newest backup |
-| Network readings log (a copy of each analytics reading the extension sent, and, from before 2.10.2, what network reading noted of LinkedIn's network requests) | 30 days | 7, 30 or 90 days | |
+| Extension readings log (a copy of each analytics reading the extension sent, and, from before 2.10.2, what network reading noted of LinkedIn's network requests; it was called the network readings log until then) | 30 days | 7, 30 or 90 days | |
 | Post readings | Every reading for 30 days, then the first and the last reading of each day | 30, 90 or 365 days; Off | The first and the last reading of each day, every reading from 36 to 72 hours after a post went out, and everything recent |
 | Reactions older than 24 months | Folded into counts | On, Off | Comments, all of them; how many people reacted to each post; how many old reactions each person made |
 | People silent for 24 months | Listed for you to review | List them, Do not list them | Everyone you have not chosen to forget |
