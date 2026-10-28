@@ -147,3 +147,20 @@ def test_the_panel_and_the_help_name_both_switches():
     article = " ".join(open(os.path.join(REPO_ROOT, "docs", "help", "send-a-post-idea-from-telegram.md"),
                             encoding="utf-8").read().split())
     assert "Tell me when a queued post is due" in article and "Send my latest post's figures at about 24 hours" in article
+
+
+def test_deleting_everything_forgets_what_the_bot_has_told(notifying):
+    """What was told names the creator's posts, so it goes with everything else the studio holds about them."""
+    bot = notifying
+    _saved(bot)
+    _record(latest_days=5)
+    bot["client"].post("/api/v1/ingress/options", json={"notify_due": True})
+    _due()
+    assert _until(lambda: _texts(bot) == [SAID["due_one"]])
+    import onboarding
+    onboarding.forget_identity()
+    conn = get_db()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM settings WHERE key = ?", (telegram_bot.TOLD_KEY,)).fetchone()[0] == 0
+    finally:
+        conn.close()

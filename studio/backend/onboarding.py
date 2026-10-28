@@ -186,13 +186,19 @@ def forget_archive(conn) -> None:
 
 
 def forget_phone_and_export(conn) -> None:
-    """The phone's desk requests and the analytics export's record of its imports (cycle 4, track 6)."""
+    """
+    The phone's desk requests, what the Telegram bot has told (which names
+    the creator's posts, 2.11.0), and the analytics export's record of its
+    imports (cycle 4, track 6).
+    """
     try:
-        from . import analytics_export, desk_requests
+        from . import analytics_export, desk_requests, telegram_bot
     except ImportError:
         import analytics_export
         import desk_requests
+        import telegram_bot
     desk_requests.forget(conn)
+    conn.execute("DELETE FROM settings WHERE key = ?", (telegram_bot.TOLD_KEY,))
     analytics_export.forget(conn)
 
 
