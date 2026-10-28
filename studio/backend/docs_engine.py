@@ -742,6 +742,8 @@ HELP_SECTIONS = [
             "quality/cycle4/retire-network-reading.md",
             # The Telegram bot, phases 1 and 2 (2.11.0).
             "quality/cycle4/telegram-bot.md",
+            # Phase 3: the collection box, written before its code, then its record.
+            "quality/cycle4/collection-box.md",
             # Cycle 4, track 6: the phone pairing design (item 27) and the
             # answer on LinkedIn's public-client OAuth flow (decision D2).
             "PHONE_PAIRING_DESIGN.md",
