@@ -20,6 +20,15 @@ SCRIPTS = ("voyager_schema.js", "content.js", "own_pages.js")
 HEARTBEAT = "/api/v1/bridge/heartbeat"
 
 
+def _states(pages, page):
+    """
+    What the page told the worker about itself. Pages used to send the studio
+    a heartbeat each; since cycle 4, track 1, phase 2 they tell the worker
+    (PAGE_STATE), and the worker carries it on one heartbeat per browser.
+    """
+    return [m for m in pages.sent(page) if m.get("action") == "PAGE_STATE"]
+
+
 @pytest.fixture(scope="module")
 def pages():
     p = Pages()
@@ -36,8 +45,9 @@ def _fetch(page, url):
 
 
 def _latest_beat(pages, page):
-    beats = pages.sent(page, HEARTBEAT)
+    beats = _states(pages, page)
     assert beats
+    assert not pages.sent(page, HEARTBEAT), "a tab sent the studio a heartbeat of its own"
     return beats[-1]
 
 
@@ -115,11 +125,11 @@ def test_the_state_is_reported_as_soon_as_the_switch_is_known(pages):
     """
     page = pages.open("/feed/", page_html("<main></main>"), scripts=SCRIPTS, storage={"networkReading": True},
                       before=HOLD_STORAGE)
-    first = pages.sent(page, HEARTBEAT)
+    first = _states(pages, page)
     assert first and "network_reading" not in first[0]
     page.evaluate("() => window.__release.splice(0).forEach((f) => f())")
     page.wait_for_timeout(50)
-    beats = pages.sent(page, HEARTBEAT)
+    beats = _states(pages, page)
     assert any((b.get("network_reading") or {}).get("switch") is True for b in beats), (
         "the state waited for the next minute's heartbeat")
 

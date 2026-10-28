@@ -192,11 +192,12 @@ const busy = { status: 503, retryAfter: 0.01, body: { detail: { code: "studio_bu
   out.badgeAfterPanel = badge.text.filter((d) => d.tabId !== undefined).slice(-2).map((d) => d.text);
   out.countsAfterPanel = storage.badgeCounts || null;
 
-  // 6. The worker heartbeat carries the switch and the registration.
+  // 6. The worker heartbeat carries the switch and the registration. It
+  //    beats on its own minute's alarm (cycle 4, track 1, phase 2).
   sent.length = 0;
   storage.networkReading = true;
   storage.keptCaptures = [];
-  for (const fn of listeners.alarm) fn({ name: "studio_drain_kept" });
+  for (const fn of listeners.alarm) fn({ name: "inox_bridge_heartbeat" });
   await tick(80);
   const beats = writes("/api/v1/bridge/heartbeat").filter((b) => b.page_kind === "service_worker");
   out.workerBeat = beats.length ? beats[beats.length - 1] : null;

@@ -2460,9 +2460,12 @@ def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: 
                 conn.execute("UPDATE self_import_requests SET items_seen = COALESCE(?, items_seen) "
                              "WHERE id = ? AND finished_at IS NULL", (_count(items_seen), request_id))
             elif event == "started":
+                # A tab starting an import someone paused and gave back is
+                # scrolling it now, so it no longer reads as paused.
                 conn.execute(
-                    "UPDATE self_import_requests SET started_at = COALESCE(started_at, ?) "
-                    "WHERE id = ? AND finished_at IS NULL", (_now(), request_id),
+                    "UPDATE self_import_requests SET started_at = COALESCE(started_at, ?), "
+                    "outcome = CASE WHEN outcome = ? THEN NULL ELSE outcome END "
+                    "WHERE id = ? AND finished_at IS NULL", (_now(), IMPORT_PAUSED_HIDDEN, request_id),
                 )
             elif event in ("paused", "resumed"):
                 # The extension stops scrolling while its LinkedIn tab is

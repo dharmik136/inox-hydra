@@ -225,3 +225,17 @@ def test_an_extension_that_names_no_tab_is_handed_the_import_as_before(studio):
     request = _confirmed_request()
     assert onboarding.pending_import("posts")["id"] == request
     assert onboarding.pending_import("posts")["id"] == request
+
+
+def test_a_tab_taking_over_a_paused_import_says_it_is_scrolling_again(studio):
+    """The first tab paused in the background and gave its claim back; the tab in front starts it again."""
+    import onboarding
+    request = _confirmed_request()
+    onboarding.pending_import("posts", claimant="b1:11")
+    onboarding.update_import(request, "started", claimant="b1:11")
+    onboarding.update_import(request, "paused", items_seen=12, claimant="b1:11")
+    onboarding.update_import(request, "released", items_seen=12, claimant="b1:11")
+    assert onboarding.pending_import("posts", claimant="b1:12")["id"] == request
+    onboarding.update_import(request, "started", claimant="b1:12")
+    assert _rows("SELECT outcome FROM self_import_requests WHERE id = ?", request) == [(None,)], (
+        "the import still reads as paused while another tab scrolls it")

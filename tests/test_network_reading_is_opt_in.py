@@ -15,6 +15,7 @@ node with a fake chrome API, so they test behaviour rather than source text.
 """
 
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -92,7 +93,8 @@ const setting = async (value) => {
   out.requestNotesWhileOff = calls.fetch.filter((u) => u.endsWith("/api/analytics/ingest")).length;
   out.offIngest = await relay("/api/v1/bridge/voyager-ingest");
   out.offDrift = await relay("/api/v1/bridge/schema-drift");
-  out.fetchesWhileOff = calls.fetch.length;
+  // The worker's own heartbeat is not a capture (cycle 4, track 1, phase 2).
+  out.fetchesWhileOff = calls.fetch.filter((u) => !u.endsWith("/api/v1/bridge/heartbeat")).length;
 
   await setting(true);
   out.registerCalls = calls.register;
@@ -156,7 +158,15 @@ def test_nothing_else_injects_it():
         with open(os.path.join(EXT, name), encoding="utf-8") as handle:
             source = handle.read()
         assert "INJECT_INTERCEPTOR" not in source, f"{name} still asks for the interceptor to be injected"
-        assert "executeScript" not in source or "voyager_interceptor" not in source, f"{name} injects it directly"
+        # The worker gives the LinkedIn tabs already open the readers on an
+        # update (cycle 4, track 1, phase 2), and never the interceptor.
+        injected = re.findall(r"executeScript\([^)]*?files:\s*(\[[^\]]*\]|[A-Z_]+)", source, re.DOTALL)
+        named = {name for files in injected for name in re.findall(r'"([\w.]+\.js)"', files)}
+        for constant in [files for files in injected if not files.startswith("[")]:
+            declared = re.search(r"const " + constant + r" = (\[[^\]]*\])", source)
+            assert declared, f"{name} injects {constant}, which it does not declare"
+            named |= set(re.findall(r'"([\w.]+\.js)"', declared.group(1)))
+        assert "voyager_interceptor.js" not in named, f"{name} injects the interceptor directly"
 
 
 def test_off_by_default(run):

@@ -41,6 +41,11 @@
 
   const EXTENSION_VERSION = chrome.runtime.getManifest().version;
   const HEARTBEAT_MS = 60 * 1000;
+  // A history import is claimed by one tab (cycle 4, track 1, phase 2). The
+  // tab renews its claim this often while it scrolls, and gives it back when
+  // it has been hidden this long, so another tab can take it over.
+  const IMPORT_PROGRESS_MS = 30 * 1000;
+  const HIDDEN_RELEASE_MS = 60 * 1000;
 
   // ---------------------------------------------------------------
   // Talking to the studio, through the worker's allowlisted relay
@@ -1577,8 +1582,22 @@
   const pause = (ms) => new Promise((r) => setTimeout(r, ms));
   const humanPause = () => pause(1600 + Math.random() * 1600);
 
-  async function whileHidden() {
-    while (document.visibilityState !== "visible" && !stopRequested) await pause(1000);
+  // Waits while the tab is hidden. False when it stayed hidden past the
+  // limit, so the import can give its claim back.
+  async function whileHidden(limitMs) {
+    const until = limitMs ? Date.now() + limitMs : Infinity;
+    while (document.visibilityState !== "visible" && !stopRequested) {
+      if (Date.now() >= until) return false;
+      await pause(1000);
+    }
+    return true;
+  }
+
+  // The import this tab holds, so leaving the page gives its claim back.
+  let currentImport = null;
+
+  function claimedElsewhere(answer) {
+    return !!answer && answer.status === "claimed_elsewhere";
   }
 
   const LOAD_MORE_WORDS = /^(show more results|see more|load more|show more)/i;
@@ -1620,11 +1639,19 @@
     importWarning = "";
     sentKeys.clear();
     offeredKeys.clear();
-    await studio("/api/v1/self/imports/event", { id: request.id, event: "started" });
+    currentImport = { id: request.id };
+    // The studio hands an import to one tab: another tab holding it now is
+    // told so here, and this one does not scroll.
+    if (claimedElsewhere(await studio("/api/v1/self/imports/event", { id: request.id, event: "started" }))) {
+      importRunning = false;
+      currentImport = null;
+      return;
+    }
 
     const noun = { posts: "posts", comments: "comments", reactions: "reactions" }[IMPORT_KIND[kind]];
     let total = 0;
     let stalled = 0;
+    let lastProgress = Date.now();
     // How it ended, which the studio needs: only "end_of_list" means the whole
     // history was read, and leads are judged "not on your posts" on that alone.
     // Running out of rounds is not the end.
@@ -1634,11 +1661,26 @@
       if (stopRequested) { outcome = "stopped"; break; }
       if (pageKind() !== kind) { outcome = "left_page"; break; }
       // A hidden tab does not scroll, so the import waits. The studio is told,
-      // so Setup says it is paused and why instead of SCROLLING NOW.
+      // so Setup says it is paused and why instead of SCROLLING NOW. Hidden
+      // past the limit, the tab gives its claim back, so a tab in front can
+      // take the import over; this tab asks again when it is shown.
       if (document.visibilityState !== "visible" && !stopRequested) {
         await studio("/api/v1/self/imports/event", { id: request.id, event: "paused", items_seen: total });
-        await whileHidden();
-        await studio("/api/v1/self/imports/event", { id: request.id, event: "resumed", items_seen: total });
+        if ((await whileHidden(HIDDEN_RELEASE_MS)) === false) {
+          await studio("/api/v1/self/imports/event", { id: request.id, event: "released", items_seen: total });
+          outcome = "released";
+          break;
+        }
+        const resumed = await studio("/api/v1/self/imports/event", { id: request.id, event: "resumed", items_seen: total });
+        if (claimedElsewhere(resumed)) { outcome = "claimed_elsewhere"; break; }
+      }
+      // The claim is renewed while the tab scrolls; a tab whose claim went
+      // quiet and was taken over stops here.
+      if (Date.now() - lastProgress >= IMPORT_PROGRESS_MS) {
+        lastProgress = Date.now();
+        const progress = await studio("/api/v1/self/imports/event",
+          { id: request.id, event: "progress", items_seen: total });
+        if (claimedElsewhere(progress)) { outcome = "claimed_elsewhere"; break; }
       }
 
       const added = await sendActivity(kind, me);
@@ -1662,8 +1704,20 @@
       await humanPause();
     }
 
+    if (outcome === "released" || outcome === "claimed_elsewhere") {
+      // Not finished: the import is still open, for whichever tab holds it.
+      importRunning = false;
+      currentImport = null;
+      banner(outcome === "released"
+        ? `Paused after ${total} ${noun}: this tab was in the background. Bring it to the front to go on.`
+        : `Another tab is importing your ${noun}; this one stopped after ${total}.`, false);
+      clearBanner(8000);
+      return;
+    }
+
     const finishRes = await studio("/api/v1/self/imports/event", { id: request.id, event: "finished", items_seen: total, outcome });
     importRunning = false;
+    currentImport = null;
 
     if (outcome === "stopped") {
       banner(`Stopped. ${total} ${noun} imported.`, false);
@@ -1709,42 +1763,52 @@
   }
 
   // ---------------------------------------------------------------
-  // Heartbeat, so the studio can say the bridge is running
+  // What this tab tells the worker about itself
   // ---------------------------------------------------------------
 
-  // From a hidden tab too. The launcher opens LinkedIn with the studio in a
-  // second tab, so while the creator reads Setup the LinkedIn tab is hidden,
-  // and a heartbeat sent only from a visible tab made Setup say the bridge was
-  // gone while its tab sat open.
-  // The heartbeat is also the version handshake. The studio answers which
-  // ingest contract it speaks and whether this extension is older than it, so
-  // a creator who pulled a new studio is told once to press Reload instead of
-  // watching captures fail on a field name that moved. Said once per browser
-  // session, by the service worker's own record of it.
-  // It also carries the state of network reading as this page sees it
-  // (content.js keeps it: the switch, whether the interceptor answered, the count of
-  // LinkedIn's data calls by path and query name), so the studio can tell
-  // "off" from "on and matching nothing". Nothing is sent about it while the
-  // switch has not been read, which the studio shows as not measured.
-  let reloadNoticeShown = false;
-  async function heartbeat() {
-    const body = {
-      extension_version: EXTENSION_VERSION,
+  // Every tab used to send the studio a heartbeat a minute of its own, so
+  // ten tabs wrote ten rows a minute. The worker now beats once for the
+  // browser (cycle 4, track 1, phase 2) and carries what each tab tells it
+  // here: the kind of page, whether the tab is visible, and network reading
+  // as this page sees it (content.js keeps it: the switch, whether the
+  // interceptor answered, the count of LinkedIn's data calls by path and
+  // query name), so the studio can tell "off" from "on and matching
+  // nothing". From a hidden tab too: the launcher opens LinkedIn behind the
+  // studio's tab. A message to the worker, never a request to the studio,
+  // and nothing about network reading while the switch has not been read,
+  // which the studio shows as not measured. The worker answers the
+  // studio's handshake, and says once when the extension needs reloading.
+  function pageState() {
+    const state = {
+      action: "PAGE_STATE",
       page_kind: pageKind(),
+      visible: document.visibilityState === "visible",
+      extension_version: EXTENSION_VERSION,
     };
     const reading = typeof window.__inoxNetworkReading === "function" ? window.__inoxNetworkReading() : null;
     if (reading) {
-      body.network_reading = reading;
+      state.network_reading = reading;
       const calls = reading.switch && typeof window.__inoxVoyagerCalls === "function" ? window.__inoxVoyagerCalls() : null;
-      if (calls) body.voyager_calls = calls;
+      if (calls) state.voyager_calls = calls;
     }
-    const answer = await studio("/api/v1/bridge/heartbeat", body);
-    const shake = answer && answer.handshake;
-    if (shake && shake.reload_required && shake.message && !reloadNoticeShown) {
-      reloadNoticeShown = true;
-      notice("Inox Hydra: " + shake.message, "warning");
+    try {
+      chrome.runtime.sendMessage(state, () => { void chrome.runtime.lastError; });
+    } catch (err) {
+      // Cut off from the extension by an update: the new readers report.
     }
   }
+
+  // Leaving the page gives the import's claim back at once, rather than
+  // after it has gone quiet.
+  window.addEventListener("pagehide", () => {
+    if (!currentImport) return;
+    try {
+      chrome.runtime.sendMessage({ action: "STUDIO_API", path: "/api/v1/self/imports/event", method: "POST",
+        body: { id: currentImport.id, event: "released" } }, () => { void chrome.runtime.lastError; });
+    } catch (err) {
+      // Cut off from the extension: the claim goes quiet and is taken over.
+    }
+  });
 
   // ---------------------------------------------------------------
   // Wiring
@@ -1753,6 +1817,7 @@
   let settleTimer = null;
   function onRoute() {
     noteMeRedirect();
+    pageState();
     if (settleTimer) clearTimeout(settleTimer);
     // LinkedIn renders sections after the route changes. Waiting lets them
     // arrive, and collapses a burst of route events into one read.
@@ -1784,20 +1849,20 @@
   window.addEventListener("popstate", onRoute);
   onRoute();
 
-  heartbeat();
-  setInterval(heartbeat, HEARTBEAT_MS);
-  // The first heartbeat leaves before content.js has read the network
-  // reading switch (both scripts run in one task; the storage read answers
-  // after), so it carries no state. content.js says when the switch is
-  // known, when it changes and when the page has said whether it carries
-  // the reader, and the page reports at once rather than a minute later. A
-  // function call in this world: an event on LinkedIn's window would be
-  // heard by LinkedIn's own scripts.
+  pageState();
+  setInterval(pageState, HEARTBEAT_MS);
+  // The first report leaves before content.js has read the network reading
+  // switch (both scripts run in one task; the storage read answers after),
+  // so it carries no state. content.js says when the switch is known, when
+  // it changes and when the page has said whether it carries the reader,
+  // and the page reports at once rather than a minute later. A function
+  // call in this world: an event on LinkedIn's window would be heard by
+  // LinkedIn's own scripts.
   if (typeof window.__inoxOnNetworkReading === "function") {
-    window.__inoxOnNetworkReading(() => { heartbeat(); });
+    window.__inoxOnNetworkReading(() => { pageState(); });
   }
   document.addEventListener("visibilitychange", () => {
-    heartbeat();
+    pageState();
     if (document.visibilityState === "visible") onRoute();
   });
 
