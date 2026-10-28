@@ -182,8 +182,11 @@ def _old_import():
 
 def test_setup_does_not_say_reload_once_the_bridge_needs_none(studio):
     import onboarding
+    from studio.__version__ import __version__
     _old_import()
-    _beat(extension_version="2.10.0", files_version="2.10.0", files_readable=True,
+    # The extension is the studio's own version: current is a comparison with
+    # the running studio, so a written-in number goes stale at every release.
+    _beat(extension_version=__version__, files_version=__version__, files_readable=True,
           files_checked_at=_after_start())
     state = onboarding.onboarding_state()
     assert state["extension_current"] is True
