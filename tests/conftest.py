@@ -125,6 +125,21 @@ def no_network(request):
         )
 
 
+@pytest.fixture(autouse=True)
+def fresh_recent_captures():
+    """
+    The studio keeps the captures it took in the last ten minutes
+    (ingest_contract.RECENT) for the whole process, so one test's capture
+    would answer another test's identical one already_seen. Each test starts
+    with the set empty, as a studio does when it starts.
+    """
+    for name in ("ingest_contract", "studio.backend.ingest_contract"):
+        module = sys.modules.get(name)
+        if module is not None and hasattr(module, "RECENT"):
+            module.RECENT.clear()
+    yield
+
+
 # Track the sandboxed home created for the pytest session
 _SESSION_TEST_HOME = None
 

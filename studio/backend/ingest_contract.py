@@ -103,8 +103,11 @@ not been told yet. When it has not been told, the count is None and the
 screen says so, rather than showing a zero that means "not measured".
 """
 
+import hashlib
 import logging
 import threading
+import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
@@ -406,6 +409,78 @@ def forget() -> None:
         _client.clear()
         _refusals.clear()
         _waiting.clear()
+
+
+# ---------------------------------------------------------------------------
+# What the studio has just taken: a replay is answered before the writer
+# ---------------------------------------------------------------------------
+#
+# Ten tabs open on one post each sent every person on it, and a reloaded tab
+# or a second browser sends them again: one fact, ten turns of the single
+# writer, and seen_count 10. The routes keep the key of each capture they
+# accepted, by the studio's own grain (grain_key), and answer the same key
+# within the horizon nothing_new / already_seen without the writer. The
+# tables' own unique keys stay the durable backstop: a key that has left the
+# set is written as a later sighting, as it always was.
+RECENT_LIMIT = 10_000
+RECENT_HORIZON_SECONDS = 600.0
+ALREADY_SEEN = "already_seen"
+
+
+class RecentKeys:
+    """A bounded set of keys with the moment each was taken, oldest first."""
+
+    def __init__(self, limit: int = RECENT_LIMIT):
+        self._limit = limit
+        self._keys: "OrderedDict[str, float]" = OrderedDict()
+        self._lock = threading.Lock()
+
+    def _drop_expired(self, now: float) -> None:
+        while self._keys:
+            key, taken = next(iter(self._keys.items()))
+            if now - taken < RECENT_HORIZON_SECONDS:
+                break
+            self._keys.popitem(last=False)
+
+    def seen(self, key: Optional[str]) -> bool:
+        if not key:
+            return False
+        now = time.monotonic()
+        with self._lock:
+            self._drop_expired(now)
+            taken = self._keys.get(key)
+            return taken is not None and now - taken < RECENT_HORIZON_SECONDS
+
+    def remember(self, key: Optional[str]) -> None:
+        if not key:
+            return
+        now = time.monotonic()
+        with self._lock:
+            self._keys[key] = now
+            self._keys.move_to_end(key)
+            while len(self._keys) > self._limit:
+                self._keys.popitem(last=False)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._keys.clear()
+
+
+RECENT = RecentKeys()
+
+
+def grain_key(*parts: Any) -> str:
+    """One capture's key: its grain's parts, joined and hashed, so no part is kept as written."""
+    joined = "|".join("" if part is None else str(part) for part in parts)
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+
+
+def already_seen(**counts: Any) -> Dict[str, Any]:
+    """The answer to a replay of a capture the studio has just taken. Not a refusal, so not counted as one."""
+    answer = {"status": "skipped", "outcome": NOTHING_NEW, "reason": ALREADY_SEEN,
+              "message": "This was taken a moment ago.", "show": False, "contract_version": CONTRACT_VERSION}
+    answer.update(counts)
+    return answer
 
 
 # ---------------------------------------------------------------------------

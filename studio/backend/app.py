@@ -1748,10 +1748,25 @@ class PostAnalyticsIngest(BaseModel):
 
 @app.post("/api/v1/self/posts/analytics", tags=["Onboarding"])
 def post_own_post_analytics(payload: PostAnalyticsIngest):
+    """
+    One post's analytics page, read. A reading is kept one per post, source
+    and hour (ON CONFLICT(activity_urn, source, observed_hour)), so the same
+    page read again in the same hour with the same figures, by a second tab
+    or a reloaded one, is answered already_seen before the writer
+    (ingest_contract.RECENT). A read whose figures differ refreshes the
+    hour's reading, as it always did.
+    """
+    key = ingest_contract.grain_key("post_analytics", onboarding.normalise_vanity(payload.author),
+                                    payload.activity_urn, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H"),
+                                    json.dumps(payload.metrics, sort_keys=True, default=str))
+    if ingest_contract.RECENT.seen(key):
+        return ingest_contract.already_seen()
     try:
-        return onboarding.ingest_post_analytics(payload.author, payload.activity_urn, payload.metrics)
+        answer = onboarding.ingest_post_analytics(payload.author, payload.activity_urn, payload.metrics)
     except onboarding.RefusedCapture as error:
         _refusal(error)
+    ingest_contract.RECENT.remember(key)
+    return answer
 
 
 @app.post("/api/v1/self/outbound/ingest", tags=["Onboarding"])
