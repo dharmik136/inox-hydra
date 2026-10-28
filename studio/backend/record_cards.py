@@ -1080,6 +1080,34 @@ def verify(conn, card: Dict[str, Any]) -> Dict[str, Any]:
 # The Monday card: counts only, no comparison (decision 4)
 # ---------------------------------------------------------------------------
 
+def record_week(conn, first_day: str, end_day: str) -> Dict[str, Any]:
+    """
+    The weekly summary of the section itself: last week's cards and the
+    creator's marks on them, as counts the rows support and nothing else (no
+    rate, no comparison: decision 4 keeps Review deferred). A week with no
+    card shown says so in words rather than counting nothing.
+    """
+    shown = int(_scalar(conn, "SELECT COUNT(*) FROM daily_view WHERE day >= ? AND day < ? AND status = 'shown' "
+                              "AND kind != 'monday'", (first_day, end_day)) or 0)
+    marks = {row[0]: int(row[1]) for row in _rows(
+        conn, "SELECT mark, COUNT(DISTINCT day || ':' || card_id) FROM card_marks WHERE day >= ? AND day < ? "
+              "GROUP BY mark", (first_day, end_day))}
+    week = {"shown": shown, "kept": marks.get("keep", 0), "skipped": marks.get("skip", 0),
+            "hidden": marks.get("hide", 0), "drafted": marks.get("used", 0), "posted": marks.get("posted", 0),
+            "first_day": first_day, "end_day": end_day}
+
+    def n(count: int) -> str:
+        return "none" if count == 0 else str(count)
+
+    if shown == 0:
+        week["sentence"] = "From your record last week: no cards were shown, so there is no week of them to count."
+    else:
+        week["sentence"] = (f"From your record last week: {shown} {'card' if shown == 1 else 'cards'} shown; "
+                            f"{n(week['kept'])} kept, {n(week['skipped'])} skipped, {n(week['hidden'])} hidden; "
+                            f"{n(week['drafted'])} drafted from, {n(week['posted'])} posted.")
+    return week
+
+
 def monday_card(conn, day: date) -> Optional[Dict[str, Any]]:
     if day.weekday() != 0:
         return None
@@ -1112,6 +1140,14 @@ def monday_card(conn, day: date) -> Optional[Dict[str, Any]]:
                for name, value in counts.items() if value is not None]
     sentence = ", ".join(f"{value} {said[name][0] if value == 1 else said[name][1]}" if value is not None
                          else f"{said[name][1]} not measured" for name, value in counts.items())
+    # The section's own week, beside the creator's: its cards and the marks on them.
+    week = record_week(conn, (day - timedelta(days=7)).isoformat(), day.isoformat())
+    if week["shown"]:
+        for name, table in (("shown", "daily_view"), ("kept", "card_marks"), ("skipped", "card_marks"),
+                            ("hidden", "card_marks"), ("drafted", "card_marks"), ("posted", "card_marks")):
+            figures.append({"name": f"record_cards_{name}", "value": week[name], "table": table, "id": None,
+                            "observed_at": end, "source": f"count of rows for the days {week['first_day']} to "
+                                                          f"{(day - timedelta(days=1)).isoformat()}"})
     payload = {
         "title": "Your week",
         "badge": "measured counts",
@@ -1125,6 +1161,7 @@ def monday_card(conn, day: date) -> Optional[Dict[str, Any]]:
         "method_sentence": rule,
         "draft_text": "",
         "counts": counts,
+        "record_week": week,
         "block_label": BLOCKS["monday"],
     }
     # A count over a week cites no single row: its figures name the tables they count.

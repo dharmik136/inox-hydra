@@ -18,7 +18,7 @@ When nothing the cards are made from has changed since the last day (your posts 
 
 - **Suggest new** draws today's cards again, once a day. Your marks on the earlier cards still count, and a card you kept stays in **Kept**.
 - **Day**, once there is more than one, shows the cards of each of the last 14 days that had them, as they were. On an earlier day you can keep a card or open its post, nothing else.
-- Each Monday, **Your week** above the cards counts what the studio recorded in the seven days before: posts published, comments and reactions you gave, pages the bridge read and replies answered. Counts only, compared with nothing. A count the studio does not record reads "not measured", never 0.
+- Each Monday, **Your week** above the cards counts what the studio recorded in the seven days before: posts published, comments and reactions you gave, pages the bridge read and replies answered. A second line counts the section's own week: how many of last week's cards were shown, and how many you kept, skipped, hid, drafted from and posted; a week with no card shown says so instead. Counts only, compared with nothing. A count the studio does not record reads "not measured", never 0.
 
 ## The five cards
 

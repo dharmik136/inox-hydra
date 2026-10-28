@@ -3379,6 +3379,8 @@ export interface RecordCardPayload {
   quote?: string;
   /** The section of the studio's playbook that shares an ask's words: its heading and its document in Docs. */
   playbook?: { document_id: string; section: string } | null;
+  /** On the Monday card: last week's cards and the marks on them, as counts, in a sentence. */
+  record_week?: { shown: number; kept: number; skipped: number; hidden: number; drafted: number; posted: number; sentence: string };
 }
 
 export interface RecordCard {

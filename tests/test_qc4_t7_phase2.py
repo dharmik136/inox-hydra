@@ -274,3 +274,57 @@ def test_the_library_card_takes_a_topic_the_day_has_not_shown(conn):
     for seed in SEEDS:
         card = library_bundle.match_card(conn, DAY, seed, avoid={hiring})
         assert card is not None and card["provenance"]["source_rows"] == [{"table": "library_entries", "id": "form-pricing"}]
+
+
+# ---------------------------------------------------------------------------
+# 5. The weekly summary: counts the marks support, on the Monday card
+# ---------------------------------------------------------------------------
+
+def add_view(conn, day, card_id, kind="opener", status="shown"):
+    conn.execute("INSERT INTO daily_view (day, card_id, slot, block, kind, label, method, payload_json, provenance_json, "
+                 "status, created_at) VALUES (?, ?, 2, 'working_for_you', ?, 'typed', 'r', '{}', '{}', ?, ?)",
+                 (day, card_id, kind, status, day))
+
+
+def add_mark(conn, day, card_id, mark):
+    conn.execute("INSERT INTO card_marks (day, card_id, mark, at) VALUES (?, ?, ?, ?)", (day, card_id, mark, day + "T10:00:00+00:00"))
+
+
+def test_the_monday_card_counts_last_weeks_cards_and_marks(conn):
+    import record_cards
+
+    for n in range(6):
+        add_view(conn, f"2026-10-{19 + n:02d}", f"c{n}")
+    add_view(conn, "2026-10-19", "monday:2026-W43", kind="monday")       # the Monday line is no card
+    add_view(conn, "2026-10-20", "x", status="abstained")                # an abstention is no card shown
+    add_view(conn, "2026-10-12", "older")                                # the week before is not last week
+    add_view(conn, "2026-10-26", "today")                                # nor is today
+    for card_id, mark, day in (("c0", "keep", "2026-10-19"), ("c1", "keep", "2026-10-20"), ("c2", "skip", "2026-10-21"),
+                               ("c3", "used", "2026-10-22"), ("c3", "posted", "2026-10-22"),
+                               ("older", "keep", "2026-10-12"), ("today", "keep", "2026-10-26")):
+        add_mark(conn, day, card_id, mark)
+    conn.commit()
+    card = record_cards.monday_card(conn, MONDAY)
+    week = card["payload"]["record_week"]
+    assert {k: week[k] for k in ("shown", "kept", "skipped", "hidden", "drafted", "posted")} == {
+        "shown": 6, "kept": 2, "skipped": 1, "hidden": 0, "drafted": 1, "posted": 1}
+    assert week["sentence"] == ("From your record last week: 6 cards shown; 2 kept, 1 skipped, none hidden; "
+                                "1 drafted from, 1 posted.")
+    # Counts, each with the table it was counted from, and nothing compared with anything.
+    names = {f["name"]: f for f in card["provenance"]["figures"]}
+    assert names["record_cards_shown"]["table"] == "daily_view" and names["record_cards_kept"]["table"] == "card_marks"
+    assert "%" not in week["sentence"] and "than" not in week["sentence"]
+
+
+def test_a_week_without_cards_is_said_not_counted(conn):
+    import record_cards
+
+    card = record_cards.monday_card(conn, MONDAY)
+    week = card["payload"]["record_week"]
+    assert week["shown"] == 0
+    assert week["sentence"] == "From your record last week: no cards were shown, so there is no week of them to count."
+
+
+def test_the_monday_strip_says_the_summary():
+    surface = io.open(os.path.join(UI, "components", "RecordSurface.tsx"), encoding="utf-8").read()
+    assert "record_week" in surface
