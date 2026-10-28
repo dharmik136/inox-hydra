@@ -89,6 +89,13 @@ def test_the_extension_cannot_reach_these_routes():
     # refuses unless the author is the confirmed creator, keeps only the pages
     # and figures it names (counts with their windows, never a name), and
     # executes, fetches and reads nothing.
+    #
+    # /api/v1/desk-requests/landed (2.10.1, track 6) was reviewed on adding: a
+    # POST of a request id and an activity URN, validated by shape, that
+    # attaches the post only to an open request from the phone still waiting
+    # for its post, and only when it is one of the creator's recorded posts
+    # (anyone else's refuses the request). It executes, fetches and reads
+    # nothing beyond that request and own_posts.
     relayed = set(re.findall(r'"(/api/[^"]+)"', block))
     assert relayed == {
         "/api/analytics/ingest",
@@ -106,6 +113,7 @@ def test_the_extension_cannot_reach_these_routes():
         "/api/v1/self/outbound/ingest",
         "/api/v1/self/imports/pending",
         "/api/v1/self/imports/event",
+        "/api/v1/desk-requests/landed",
     }, (
         "the relay allowlist changed; every entry on it is reachable from a "
         f"LinkedIn page and needs to be looked at: {sorted(relayed)}"
