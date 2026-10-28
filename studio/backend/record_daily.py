@@ -56,7 +56,8 @@ logger = logging.getLogger("studio.record")
 
 # The card format. A change to what a card carries is a change the signature
 # must see, or a carried-forward batch would keep yesterday's shape.
-CARD_FORMAT = 1
+# 2: slot 3 may draw an unused idea from the collection (phase 3).
+CARD_FORMAT = 2
 
 # How long a dated batch is kept: the creator's choice on the section's
 # "What the studio knows" page. A batch a mark or a draft refers to is kept.
@@ -110,12 +111,13 @@ def signature(conn) -> str:
         "SELECT COUNT(*), MAX(at) FROM card_marks",
         "SELECT COUNT(*), MAX(imported_at) FROM archive_records",
         "SELECT COUNT(*), MAX(bundle_version), MAX(fetched_at) FROM library_entries",
+        "SELECT COUNT(*), MAX(updated_at) FROM collection_items WHERE status = 'new'",
     ):
         try:
             parts.append(list(conn.execute(sql).fetchone()))
         except sqlite3.OperationalError:
             parts.append(None)
-    for key in ("ai_provider", "ai_model", "record_model_stage"):
+    for key in ("ai_provider", "ai_model", "record_model_stage", "writing_preferences"):
         parts.append(_setting(conn, key))
     return hashlib.sha256(json.dumps(parts, default=str).encode("utf-8")).hexdigest()[:32]
 

@@ -106,7 +106,7 @@ Every choice the writing features make is one of these. They are read through on
 | How many angles | 3, from 2 to 5 | Brand, Writing; shown in the box and on the Telegram panel | Angles, and the bot's "<n> angles" button |
 | Things to remember | all of them; or chosen ones; or none | Brand, Writing, beside the list | every writing request |
 | Ideas draw on | your collection, your posts and your asks | From your record, What the studio knows; shown beside the morning idea | the daily cards, the daily idea, the morning idea |
-| Ideas a day | 3, from 1 to 5 | What the studio knows, beside the model stage | the daily idea |
+| Ideas asked for each day | 3, from 1 to 5 (it was a fixed three); the first that passes every check is shown | What the studio knows, beside the model stage | the daily idea |
 | Morning idea | off; Monday to Friday; 08:00 | the Telegram panel | the bot |
 | The bot carries what it writes | off | the Telegram panel | Write it up, angles, the morning idea, `/recall` |
 | Provider and model | as connected on the Composer's Prompt tab | the Prompt tab, as now: the product connects one provider for every task | every request; named beside each feature |

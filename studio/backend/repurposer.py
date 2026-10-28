@@ -257,7 +257,9 @@ def command_ai_engine(command: Optional[str], context: Optional[str] = None) -> 
     if context_clean:
         full_prompt += f"Context/Draft:\n{context_clean}\n\n"
     full_prompt += "Generate the optimized response. Remember: NEVER use em-dashes."
-    full_prompt += _voice()
+    # The things to remember the creator allows (phase 3), then the voice pack.
+    facts = _writing.memory_for()
+    full_prompt += _writing.memory_block(facts) + _voice()
 
     ai_out = None
     engine_name = "Antigravity Local Engine"
@@ -293,7 +295,10 @@ def command_ai_engine(command: Optional[str], context: Optional[str] = None) -> 
             "output": cleaned,
             # What went to the provider with this instruction, so the answer
             # carries its own record of what left the machine.
-            "sent": ["your instruction"] + (["your Composer draft"] if context_clean else []) + _voice_sent(),
+            "sent": ["your instruction"] + (["your Composer draft"] if context_clean else []) + _voice_sent()
+            # Which things to remember went, by their words, not only how many.
+            + ([f"{len(facts)} {'thing' if len(facts) == 1 else 'things'} to remember: "
+                + "; ".join(fact["text"] for fact in facts)] if facts else []),
         }
 
     # No model, so nothing is written.
@@ -344,7 +349,7 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
                 + _writing.hook_rules() +
                 "- First line must be under 120 characters so it does not truncate before the 'see more' button on mobile.\n"
                 "- Return strictly a valid JSON array of objects with keys: 'archetype', 'hook'. Do not enclose in markdown code blocks."
-            ) + _voice()
+            ) + _writing.memory_block(_writing.memory_for()) + _voice()
             resp = _ask_provider(cfg, prompt, "You output ONLY raw JSON.", 1000)
 
     # No silent fallback to Google. See the note in repurpose_content: the

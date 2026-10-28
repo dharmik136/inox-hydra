@@ -110,7 +110,7 @@ LABELS = ("measured", "derived", "typed", "suggested", "retrieved", "curated", "
 # for good, skip for SKIP_HOLD_DAYS. A model's idea or the Monday card is
 # never shown twice in any case.
 DRAWN_KINDS = ("opener", "article", "ask", "theme", "comment", "vote", "follow", "reaction", "saved", "repost",
-               "library")
+               "library", "collected")
 CHOSEN_KINDS = ("what_worked", "on_this_day")
 BLOCKS = {"working_for_you": "Working for you", "you_asked": "You asked", "you_engaged_with": "You engaged with",
           "monday": "This week", "model": "Suggested by your model", "library": "From the Inox library"}
@@ -653,6 +653,33 @@ def _open_asks(conn) -> List[Dict[str, Any]]:
               "AND (field IS NULL OR field = 'topics') ORDER BY created_at DESC")]
 
 
+def _idea_sources(conn) -> List[str]:
+    """What the creator lets ideas draw on (writing.py's "sources", phase 3); every source if it cannot be read."""
+    try:
+        try:
+            from . import writing
+        except ImportError:
+            import writing
+        return writing.preferences(conn)["sources"]
+    except Exception:
+        return ["collection", "posts", "asks"]
+
+
+def _collected_ideas(conn) -> List[Dict[str, Any]]:
+    """
+    The collection's unused material (phase 3 of the Telegram bot): new
+    items with the creator's words, newest first. A card drawn from one
+    cites its row, so removing the item drops the card.
+    """
+    try:
+        return [dict(r) for r in _rows(
+            conn, "SELECT id, text, received_at FROM collection_items WHERE status = 'new' "
+                  "AND kind IN ('note', 'idea', 'forward', 'bookmark', 'photo', 'voice') AND TRIM(text) != '' "
+                  "ORDER BY received_at DESC")]
+    except sqlite3.OperationalError:
+        return []
+
+
 def matches_in_own_posts(conn, text: str, limit: int = 3) -> List[Dict[str, Any]]:
     """
     The creator's own posts that share words with a text, best match first.
@@ -726,12 +753,17 @@ def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], h
     says what to type.
     """
     block = "you_asked"
-    asks = _open_asks(conn)
-    if asks:
-        drawn = _draw([(f"ask:{a['id']}", a) for a in asks], history, day, seed + 1, avoid,
-                      lambda ask: _topical(ask["text"], vocabulary or []))
+    sources = _idea_sources(conn)
+    asks = _open_asks(conn) if "asks" in sources else []
+    ideas = _collected_ideas(conn) if "collection" in sources else []
+    if asks or ideas:
+        pool = ([(f"ask:{a['id']}", ("ask", a)) for a in asks]
+                + [(f"collected:{i['id']}", ("collected", i)) for i in ideas])
+        drawn = _draw(pool, history, day, seed + 1, avoid, lambda entry: _topical(entry[1]["text"], vocabulary or []))
+        if drawn and drawn[1][0] == "collected":
+            return _collected_card(conn, drawn[0], drawn[1][1], block, vocabulary)
         if drawn:
-            card_id, ask = drawn
+            card_id, (_kind, ask) = drawn
             matches = matches_in_own_posts(conn, ask["text"])
             playbook = playbook_section(conn, ask["text"])
             where = {"setup": "at Setup", "ask_box": "on this section", "composer": "in the Composer",
@@ -799,6 +831,39 @@ def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], h
                          [{"table": "own_posts", "id": m["activity_urn"]} for m in matches])
     return _abstained(3, block, "ask", "Nothing asked yet, and too few posts to find your recurring words. Type what "
                       "you want to write about in the ask box, or at Setup.", "your own asks and your recurring words")
+
+
+def _collected_card(conn, card_id: str, item: Dict[str, Any], block: str,
+                    vocabulary: Optional[List[Tuple[str, str]]]) -> Dict[str, Any]:
+    """An unused idea the creator sent their bot, with the posts of theirs that share its words."""
+    matches = matches_in_own_posts(conn, item["text"])
+    playbook = playbook_section(conn, item["text"])
+    rule = ("your own collection, in turn with your asks: the ideas you sent your bot and have not used yet, each "
+            "matched to your own posts by the words they share (the studio's search index, bm25); nothing is read "
+            "from anywhere else")
+    payload = {
+        "title": "Something you sent your bot",
+        "badge": "typed",
+        "excerpt": _excerpt(item["text"]),
+        "date": item.get("received_at"),
+        "url": None,
+        "figures": [],
+        "figure_sentence": (f"{len(matches)} of your own posts share its words" if matches
+                            else "none of your own posts shares its words yet"),
+        "matches": matches,
+        "playbook": playbook,
+        "because": (f"Because you sent “{_excerpt(item['text'], 80)}” to your collection on "
+                    f"{_said_weekday(item.get('received_at'))} and have not used it yet · rule: You asked"),
+        "source_sentence": f"from what you sent your bot on {_said_weekday(item.get('received_at'))}",
+        "method_sentence": rule,
+        "draft_text": item["text"],
+        "item_id": item["id"],
+        "topic": _topical(item["text"], vocabulary or []),
+        "block_label": BLOCKS[block],
+    }
+    rows = ([{"table": "collection_items", "id": item["id"]}]
+            + [{"table": "own_posts", "id": m["activity_urn"]} for m in matches])
+    return _card(card_id, 3, block, "collected", "typed", rule, payload, rows)
 
 
 # ---------------------------------------------------------------------------
@@ -1046,6 +1111,8 @@ ROW_KEYS = {
     "asks": "id",
     "archive_records": "id",
     "library_entries": "entry_id",
+    # Phase 3 of the Telegram bot: an idea the creator sent their bot.
+    "collection_items": "id",
 }
 
 

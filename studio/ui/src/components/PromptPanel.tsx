@@ -133,6 +133,29 @@ function WhatTheModelIsTold() {
       )}
       {!voice.sent && <p className="mt-1 text-[12px] text-ink-muted">Nothing from your profile or posts is held yet, so nothing goes.</p>}
 
+      {told.remembered && (
+        <>
+          <p className="mt-3 text-[12px] leading-snug text-ink-secondary">
+            Things to remember, set in Brand, under Writing (
+            {told.remembered.mode === "off"
+              ? "none go"
+              : told.remembered.mode === "chosen"
+                ? "only the ticked ones go"
+                : "all of them go"}
+            ){told.remembered.sent.length ? `, with ${inWords(told.remembered.sent_with)}:` : "."}
+          </p>
+          {told.remembered.sent.length > 0 ? (
+            <ul className="mt-1 flex flex-col gap-0.5 text-[12px] leading-snug text-ink-primary">
+              {told.remembered.sent.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-[12px] text-ink-muted">None go with a writing request now.</p>
+          )}
+        </>
+      )}
+
       <p className="mt-3 text-[12px] leading-snug text-ink-secondary">
         Phrases the studio will not let a model write: {told.scar_tissue.phrases.join(", ")}. An image description a
         model writes is refused when it holds one, and the studio writes the scene itself instead. Command&apos;s
@@ -407,7 +430,7 @@ function HowTheyWrite() {
     <section>
       <WritingSummary
         described={described}
-        fields={["tone", "language", "opening", "line_breaks", "ending", "emojis", "hashtags", "avoid"]}
+        fields={["tone", "language", "opening", "line_breaks", "ending", "emojis", "hashtags", "avoid", "memory"]}
         title="How Command and Re-Hook write"
       />
     </section>

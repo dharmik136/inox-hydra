@@ -43,7 +43,7 @@ import re
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 try:
-    from . import changes, collection, voice_pack
+    from . import changes, collection, remembered, voice_pack
     from . import egress as _egress
     from .agno_agentos import model_gateway
     from .agno_agentos.model_gateway import ProviderError
@@ -53,6 +53,7 @@ except ImportError:
     import changes
     import collection
     import egress as _egress
+    import remembered
     import voice_pack
     from agno_agentos import model_gateway
     from agno_agentos.model_gateway import ProviderError
@@ -71,6 +72,9 @@ DEFAULT_AVOID = ("In today's fast-paced world", "game-changer", "delve", "testam
 
 LENGTHS = (60, 100, 150, 200, 300)
 ANGLE_COUNTS = (2, 3, 4, 5)
+# How many ideas the daily model stage asks for: the first that passes every
+# check is shown, the rest are kept as spares (record_model.py).
+IDEA_COUNTS = (1, 2, 3, 4, 5)
 EMOJIS = {"none": "no emojis", "few": "at most two emojis, only where one helps",
           "as_posts": "emojis as their own posts use them"}
 HASHTAGS = {"from_note": "only the hashtags already in what they wrote", "none": "no hashtags",
@@ -97,8 +101,17 @@ DEFAULTS: Dict[str, Any] = {
     # What ideas may draw on: the morning idea (its item from the collection,
     # its angle from the creator's posts) and the daily cards.
     "sources": ["collection", "posts", "asks"],
+    # Which things to remember go with writing: all of them, only the ones
+    # ticked, or none (remembered.py).
+    "memory": "all",
+    # How many ideas the daily model stage asks your provider for (it was a
+    # fixed three until phase 3).
+    "ideas": 3,
 }
 SOURCES = ("collection", "posts", "asks")
+MEMORY = ("all", "chosen", "off")
+# Every writing request the things to remember go with.
+MEMORY_SENT_WITH = ["Make a post", "Combine", "Angles", "Write it up", "Command", "Re-Hook", "the daily idea"]
 DEFAULT_LANGUAGE_WORDS = "the same language as what they wrote"
 DEFAULT_OPENING_WORDS = "a first line that stops the scroll"
 
@@ -147,6 +160,10 @@ def _valid(field: str, value: Any) -> bool:
                 and all(isinstance(p, str) and 0 < len(p.strip()) <= AVOID_PHRASE_MAX for p in value))
     if field == "sources":
         return isinstance(value, list) and all(v in SOURCES for v in value) and len(set(value)) == len(value)
+    if field == "memory":
+        return value in MEMORY
+    if field == "ideas":
+        return value in IDEA_COUNTS and not isinstance(value, bool)
     return False
 
 
@@ -213,6 +230,9 @@ _REFUSALS = {
     "avoid": (f"Words to avoid are at most {AVOID_MAX} phrases of up to {AVOID_PHRASE_MAX} characters each. "
               "Nothing was saved."),
     "sources": "Ideas draw on your collection, your posts and your asks, or some of them. Nothing was saved.",
+    "memory": "Things to remember go with all writing, only the ones ticked, or none. Nothing was saved.",
+    "ideas": (f"The daily idea asks for {', '.join(str(n) for n in IDEA_COUNTS[:-1])} or {IDEA_COUNTS[-1]} ideas. "
+              "Nothing was saved."),
 }
 
 
@@ -245,6 +265,8 @@ def described() -> Dict[str, Any]:
             "length_words": list(LENGTHS), "angles": list(ANGLE_COUNTS), "opening": [""] + list(HOOK_FORMS),
             "emojis": EMOJIS, "hashtags": HASHTAGS, "line_breaks": LINE_BREAKS, "ending": ENDINGS,
             "sources": list(SOURCES),
+            "memory": list(MEMORY),
+            "ideas": list(IDEA_COUNTS),
         },
         # Each choice as the creator reads it, beside the feature it shapes.
         "labels": {
@@ -256,6 +278,7 @@ def described() -> Dict[str, Any]:
             "ending": {"question_or_takeaway": "A thoughtful question or takeaway", "question": "A question to the reader",
                        "takeaway": "One clear takeaway", "none": "Nothing set: stop when the point is made"},
             "sources": {"collection": "Your collection", "posts": "Your posts", "asks": "Your asks"},
+            "memory": {"all": "All of them", "chosen": "Only the ones ticked", "off": "None"},
             "language": "The language of what you wrote",
             "opening": "A first line that stops the scroll",
         },
@@ -284,6 +307,36 @@ def command_system(prefs: Optional[Dict[str, Any]] = None) -> str:
         f"5. Conclude with {w['ending']}.\n"
         f"6. {w['language']}. Use {w['emojis']}, and {w['hashtags']}."
     )
+
+
+def memory_for(conn=None, prefs: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """The things to remember a writing request carries, as the creator chose."""
+    own = conn is None
+    conn = conn or get_db()
+    try:
+        return remembered.for_writing(conn, (prefs or preferences(conn))["memory"])
+    finally:
+        if own:
+            conn.close()
+
+
+def memory_block(facts: List[Dict[str, Any]]) -> str:
+    """The facts as a request carries them, and they are counted as used."""
+    if facts:
+        conn = get_db()
+        try:
+            with conn:
+                remembered.mark_used(conn, [f["id"] for f in facts])
+        finally:
+            conn.close()
+    return remembered.block(facts)
+
+
+def memory_told() -> Dict[str, Any]:
+    """What "What the model is told" shows of the things to remember: which go, and with what."""
+    prefs = preferences()
+    return {"mode": prefs["memory"], "sent": [f["text"] for f in memory_for(prefs=prefs)],
+            "sent_with": list(MEMORY_SENT_WITH)}
 
 
 def hook_rules(prefs: Optional[Dict[str, Any]] = None) -> str:
@@ -316,8 +369,8 @@ def _notes(items: List[Dict[str, Any]]) -> str:
     return "THEIR NOTES:\n" + "\n".join(f"{n}. {item['text'].strip()}" for n, item in enumerate(items, 1))
 
 
-def _context() -> str:
-    """What is said about the creator beyond their notes: the voice pack, as Command sends it."""
+def _voice() -> str:
+    """What is said about how the creator writes: the voice pack, as Command sends it."""
     try:
         return voice_pack.prompt_block()
     except Exception:
@@ -325,7 +378,7 @@ def _context() -> str:
 
 
 def _post_request(items: List[Dict[str, Any]], angle: Optional[str], prefs: Dict[str, Any],
-                  form: Optional[str] = None) -> str:
+                  form: Optional[str] = None, facts: Optional[List[Dict[str, Any]]] = None) -> str:
     w = words_for(prefs)
     asked = "one post that brings these notes together" if len(items) > 1 else "one post from this note"
     lines = [_notes(items), "", f"WRITE: {asked}. {w['length_words']}. End with {w['ending']}."]
@@ -333,16 +386,16 @@ def _post_request(items: List[Dict[str, Any]], angle: Optional[str], prefs: Dict
         lines.append(f"Open with this line, or close to it: {angle.strip()}")
     elif form in FORMS:
         lines.append(f"For this post, {FORMS[form]}, as the posts of theirs that did best did.")
-    return "\n".join(lines) + _context()
+    return "\n".join(lines) + remembered.block(facts or []) + _voice()
 
 
-def _angles_request(item: Dict[str, Any], prefs: Dict[str, Any]) -> str:
+def _angles_request(item: Dict[str, Any], prefs: Dict[str, Any], facts: Optional[List[Dict[str, Any]]] = None) -> str:
     w = words_for(prefs)
     return "\n".join((
         _notes([item]), "",
         f"WRITE: {w['angles']} for a post from this note, each a different angle on it, each one line of at most "
         f"{ANGLE_CHARS} characters.",
-    )) + _context()
+    )) + remembered.block(facts or []) + _voice()
 
 
 # ---------------------------------------------------------------------------
@@ -450,9 +503,10 @@ def make_post(item_ids: Iterable[Any], angle: Optional[str] = None, form: Option
         if not config.is_configured:
             return {"status": "no_provider", "said": NO_PROVIDER}
         prefs = preferences(conn)
+        facts = memory_for(conn, prefs)
         schema = {"type": "object", "additionalProperties": False, "required": ["draft"],
                   "properties": {"draft": {"type": "string"}}}
-        answer = _ask(config, _post_request(items, angle, prefs, form), _system(prefs), schema, "collection_post",
+        answer = _ask(config, _post_request(items, angle, prefs, form, facts), _system(prefs), schema, "collection_post",
                       max_tokens=max(400, prefs["length_words"] * 3))
         if answer is None:
             return {"status": "no_provider", "said": NO_PROVIDER}
@@ -461,15 +515,22 @@ def make_post(item_ids: Iterable[Any], angle: Optional[str] = None, form: Option
         if not draft:
             raise ProviderError(f"{config.provider} ({config.model}) answered, but not with a draft the studio "
                                 "could read. Nothing was changed.")
-        problem = check(draft, [item["text"] for item in items] + [angle or ""], conn)
+        problem = check(draft, [item["text"] for item in items] + [angle or ""] + [f["text"] for f in facts], conn)
         if problem:
             return {"status": "refused", "said": _refusal(problem)}
         tags: List[str] = []
         for item in items:
             tags += [t for t in item.get("tags") or [] if t not in tags]
+        # What the draft was written from, and with which things to remember,
+        # by id: the Composer says so beside it.
+        made_with = {"items": [item["id"] for item in items], "remembered": [f["id"] for f in facts],
+                     "angle": bool(angle), "provider": config.provider, "model": config.model,
+                     "at": collection._now()}
         with conn:
             post_id = collection.new_draft(conn, draft, tags)
+            conn.execute("UPDATE posts SET made_with = ? WHERE id = ?", (json.dumps(made_with), post_id))
             collection.mark_used(conn, [item["id"] for item in items], post_id)
+            remembered.mark_used(conn, [f["id"] for f in facts])
     finally:
         conn.close()
     changes.publish("collection")
@@ -490,9 +551,10 @@ def angles(item_id: Any) -> Dict[str, Any]:
         if not config.is_configured:
             return {"status": "no_provider", "said": NO_PROVIDER}
         prefs = preferences(conn)
+        facts = memory_for(conn, prefs)
         schema = {"type": "object", "additionalProperties": False, "required": ["angles"],
                   "properties": {"angles": {"type": "array", "items": {"type": "string"}}}}
-        answer = _ask(config, _angles_request(item, prefs), _system(prefs), schema, "collection_angles",
+        answer = _ask(config, _angles_request(item, prefs, facts), _system(prefs), schema, "collection_angles",
                       max_tokens=600)
         if answer is None:
             return {"status": "no_provider", "said": NO_PROVIDER}
@@ -500,7 +562,8 @@ def angles(item_id: Any) -> Dict[str, Any]:
         offered = []
         for line in data.get("angles") or []:
             cleaned = " ".join(clean_text_formatting(str(line or "")).split())
-            if cleaned and len(cleaned) <= ANGLE_CHARS and not check(cleaned, [item["text"]], conn):
+            if cleaned and len(cleaned) <= ANGLE_CHARS and not check(cleaned, [item["text"]] + [f["text"] for f in facts],
+                                                                         conn):
                 offered.append(cleaned)
             if len(offered) == prefs["angles"]:
                 break
@@ -509,6 +572,7 @@ def angles(item_id: Any) -> Dict[str, Any]:
         with conn:
             conn.execute("UPDATE collection_items SET angles = ?, updated_at = ? WHERE id = ?",
                          (json.dumps(offered), collection._now(), item["id"]))
+            remembered.mark_used(conn, [f["id"] for f in facts])
     finally:
         conn.close()
     changes.publish("collection")

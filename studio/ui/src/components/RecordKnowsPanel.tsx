@@ -10,7 +10,7 @@ import {
 } from "@/lib/api";
 import { formatLocal, formatLocalDay } from "@/lib/time";
 import { RecordSetupFields } from "./RecordSetupFields";
-import { RecordModelSettings } from "./RecordModelSettings";
+import { IdeasDrawOn, RecordModelSettings } from "./RecordModelSettings";
 import { RecordLibraryPanel } from "./RecordLibraryPanel";
 
 /**
@@ -184,6 +184,8 @@ export function RecordKnowsPanel() {
               : "Nothing is old enough to go yet."}
           </p>
         </section>
+
+        <IdeasDrawOn />
 
         <RecordModelSettings state={knows.model} settings={knows.settings} onChanged={load} />
 

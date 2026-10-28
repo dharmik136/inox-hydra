@@ -72,6 +72,24 @@ How the studio writes for you. Every writing request reads these: **Make a post*
 
 The defaults are what Command was told until now. Press **Save** under them to keep your changes, or **Back to the defaults**. The rules that keep writing honest are not choices: only what you sent is used, no figure, person, date or quote is invented, and no em dash. The provider every request goes to is the one connected on the Composer's **Prompt** tab, named at the top.
 
+Two more choices are set beside the feature they shape: **Ideas draw on** (your collection, your posts and your asks, all three by default) and **Ideas asked for each day** (3, from 1 to 5), both under **From your record**, then **What the studio knows**.
+
+### Things to remember
+
+Under the preferences, **Things to remember** holds facts about you that the studio should know when it writes: about you, your audience, an offer, or a date, such as "My course opens on 1 March" or "I write for founders of small studios". Type one into **A thing to remember**, pick what it is about, and press **Remember this**, or send `/remember` and the sentence to your Telegram bot. Each one lists where it came from and how many writing requests it went with.
+
+| Control | What it does |
+| --- | --- |
+| **Which go with writing** | **All of them** (the default), **Only the ones ticked**, or **None** |
+| **Ticked** | Whether this one goes while **Only the ones ticked** is chosen |
+| The kind beside it | What it is about: about you, your audience, an offer, or a date |
+| **Edit** | Change its words, then **Save** or **Cancel** |
+| **Remove** | Takes it out for good, once you press **Remove for good** |
+
+They go with every writing request, as you chose: **Command** and **Re-Hook** in the Composer, the daily idea in **From your record**, and **Make a post**, **Combine**, **Angles** and **Write it up** from your collection. Never with an image prompt. Command's answer names the ones that went, the Composer's **Prompt** tab lists them under **What the model is told**, and a draft written from your collection says above it in the Composer which ones went with it. A figure in one of them may appear in a draft; a figure from nowhere is still refused.
+
+They are kept on this computer, counted in **Storage and privacy** as "Things to remember about you", exported with your data, kept in backups, and deleted when you delete everything the studio holds about you.
+
 ## Settings: Overview
 
 **Overview** shows six values, each with a link to the place one level down where it can be changed:

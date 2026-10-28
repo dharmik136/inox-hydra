@@ -96,3 +96,16 @@ def test_the_weekly_summary_it_names_is_the_panels_and_the_bots():
 def test_the_drafts_answer_it_quotes_is_the_bots():
     """Phase 2: /drafts, in the later, optional check."""
     assert telegram_bot.SENTENCES["drafts"].format(count=2) in _article()
+
+
+def test_the_memory_steps_quote_the_bot_and_the_studio():
+    """Phase 3, item 3: /remember, /forget and /recall, and the words of Brand's list and the Composer."""
+    article = _article()
+    assert telegram_bot.SENTENCES["remembered"].split(" Your studio")[0] in article
+    assert telegram_bot.SENTENCES["forgot"] in article
+    ui = os.path.join(REPO_ROOT, "studio", "ui", "src", "components")
+    remember = open(os.path.join(ui, "ThingsToRemember.tsx"), encoding="utf-8").read()
+    composer = open(os.path.join(ui, "ComposerCollection.tsx"), encoding="utf-8").read()
+    assert "Things to remember" in article and "Things to remember" in remember
+    for words in ("What this draft was written from", "From your collection", "Add to the draft"):
+        assert words in article and words in composer, words

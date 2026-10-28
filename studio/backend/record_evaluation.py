@@ -64,7 +64,7 @@ KIND_WORDS = {
     "ask": "Your asks", "theme": "Your recurring words", "comment": "Your comments",
     "reaction": "Your reactions", "saved": "Your saved posts", "repost": "Your reposts", "idea": "Your model's ideas",
     "library": "The Inox library", "article": "Your articles", "vote": "Polls you voted in",
-    "follow": "Accounts you follow",
+    "follow": "Accounts you follow", "collected": "What you sent your bot",
 }
 
 

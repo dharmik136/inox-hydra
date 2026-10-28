@@ -1065,6 +1065,7 @@ export default function App() {
                   onReHook={onReHook}
                   swapKey={swapKey}
                   onSave={() => (holdsPosted ? onCorrectPosted() : void onSave())}
+                  postId={draftId}
                 />
               )}
               {active === "setup" && (

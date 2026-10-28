@@ -41,12 +41,13 @@ import time
 
 try:
     from .database import get_db, create_draft, get_draft
-    from . import collection, desk_requests, paths, post_identity, secret_settings, telegram_bot
+    from . import collection, desk_requests, paths, post_identity, remembered, secret_settings, telegram_bot
 except ImportError:
     from database import get_db, create_draft, get_draft
     import collection
     import desk_requests
     import paths
+    import remembered
     import post_identity
     import secret_settings
     import telegram_bot
@@ -422,7 +423,8 @@ class TelegramIngressDaemon:
         return nullcontext()
 
     def _reply(self, chat_id: str, text: Optional[str], always: bool = False,
-               draft_id: Optional[int] = None, item: Optional[Dict[str, Any]] = None) -> None:
+               draft_id: Optional[int] = None, item: Optional[Dict[str, Any]] = None,
+               fact_id: Optional[int] = None) -> None:
         """
         Queues one of the bot's fixed sentences for a chat: a confirmation when
         the bot confirms messages, and an answer to a question (always) in any
@@ -440,6 +442,8 @@ class TelegramIngressDaemon:
                 return
         if draft_id is not None:
             keyboard = self._buttons(chat_id, text, "undo", draft=draft_id)
+        elif fact_id is not None:
+            keyboard = self._buttons(chat_id, text, "fact", fact=fact_id)
         elif item is not None:
             # Something to write from: Write it up and the angles; a link alone: Undo only.
             kind = "item" if (item.get("text") or "").strip() else "item_bare"
@@ -674,7 +678,8 @@ class TelegramIngressDaemon:
                 _note_heard()
         if from_telegram:
             self._reply(chat_id, answer, always=question, draft_id=telegram_bot.draft_of(stored),
-                        item=telegram_bot.item_of(stored))
+                        item=telegram_bot.item_of(stored),
+                        fact_id=stored.get("id") if isinstance(stored, dict) and stored.get("kind") == "fact" else None)
         return stored
 
     def _press(self, callback: Dict[str, Any]) -> None:
@@ -738,6 +743,27 @@ class TelegramIngressDaemon:
             stored = self._store("Idea: " + argument, links=False, origin=_origin(update, from_telegram),
                                  from_telegram=from_telegram)
             return stored, telegram_bot.answer_for(stored), False
+        if name == "remember":
+            # A thing to remember (phase 3): the creator's own fact, kept
+            # for every writing request as they allow, with Undo.
+            about, fact = remembered.parse_phone(argument)
+            if not fact.strip():
+                return done, telegram_bot.SENTENCES["empty_remember"], False
+            try:
+                kept = remembered.add(fact, about, "telegram", origin_ref=_origin(update, from_telegram))
+            except remembered.Refused:
+                too_long = len(" ".join(fact.split())) > remembered.TEXT_MAX
+                return done, telegram_bot.SENTENCES["remember_long" if too_long else "empty_remember"], False
+            return {"kind": "fact", "id": kept["id"]}, telegram_bot.SENTENCES["remembered"], False
+        if name == "forget":
+            if not argument.strip():
+                return done, telegram_bot.SENTENCES["empty_forget"], True
+            key, count = remembered.forget_matching(argument)
+            return done, telegram_bot.SENTENCES[key].format(count=count), True
+        if name == "recall":
+            if not argument.strip():
+                return done, telegram_bot.SENTENCES["empty_recall"], True
+            return done, telegram_bot.recall_answer(argument), True
         if name == "ask":
             # An explicit act of the creator's, so it goes through the asks
             # store's own rule (record_store.py), from the paired chat only.

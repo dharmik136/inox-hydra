@@ -412,9 +412,10 @@ def test_every_tray_destination_can_be_reached_in_a_short_window(studio, width, 
 @pytest.mark.parametrize("scheme", ["dark", "light"])
 def test_brand_studio_tabs_are_all_on_a_phone_screen(studio, scheme):
     # Brand Studio's six tabs are Brand's three views and Settings' five now
-    # (cycle 4, track 4, phase b); every one still fits a phone's width.
+    # (cycle 4, track 4, phase b), and Brand's fourth, Writing, since phase 3
+    # of the Telegram bot; every one still fits a phone's width.
     session = studio(375, 812, scheme)
-    for section, label, count in (("Settings", "Settings views", 5), ("Brand", "Brand views", 3)):
+    for section, label, count in (("Settings", "Settings views", 5), ("Brand", "Brand views", 4)):
         page = session.open(section)
         tabs = page.get_by_role("tablist", name=label).get_by_role("tab")
         assert tabs.count() == count

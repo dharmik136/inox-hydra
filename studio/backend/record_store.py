@@ -332,6 +332,11 @@ def draft_from(day: Any, card_id: str) -> Dict[str, Any]:
             ask_id = card["payload"].get("ask_id")
             if ask_id:
                 conn.execute("UPDATE asks SET last_used_at = ? WHERE id = ?", (_now(), ask_id))
+            item_id = card["payload"].get("item_id")
+            if item_id:
+                # An idea from the collection (phase 3): used, and what it became is this draft.
+                conn.execute("UPDATE collection_items SET status = 'used', post_id = ?, used_at = ?, updated_at = ? "
+                             "WHERE id = ?", (post_id, _now(), _now(), item_id))
         return {"status": "drafted", "id": post_id, "content": content}
     finally:
         conn.close()

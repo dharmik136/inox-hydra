@@ -491,6 +491,8 @@ export interface ModelTold {
   scar_tissue: { phrases: string[]; checked_on: string[]; named_in_command: string[] };
   grounding: { sources: number; sources_on: number; sent_with: string[] };
   images: { model_writes: string | null; studio_adds: string[]; refused_when: string };
+  /** The things to remember that go with writing, as you chose: all, the ticked ones, or none. */
+  remembered?: { mode: "all" | "chosen" | "off"; sent: string[]; sent_with: string[] };
 }
 
 export async function fetchModelTold(): Promise<ModelTold> {
@@ -3833,6 +3835,10 @@ export interface WritingPreferences {
   avoid: string[];
   angles: number;
   sources: IdeaSource[];
+  /** Which things to remember go with writing: all, chosen (the ticked ones) or off. */
+  memory: "all" | "chosen" | "off";
+  /** How many ideas the daily model stage asks your provider for. */
+  ideas: number;
 }
 
 export interface WritingDescribed {
@@ -3847,6 +3853,8 @@ export interface WritingDescribed {
     line_breaks: Record<string, string>;
     ending: Record<string, string>;
     sources: IdeaSource[];
+    memory: string[];
+    ideas: number[];
   };
   labels: {
     emojis: Record<string, string>;
@@ -3854,6 +3862,7 @@ export interface WritingDescribed {
     line_breaks: Record<string, string>;
     ending: Record<string, string>;
     sources: Record<IdeaSource, string>;
+    memory: Record<string, string>;
     language: string;
     opening: string;
   };
@@ -3864,6 +3873,80 @@ export interface WritingDescribed {
 
 export async function fetchWritingPreferences(): Promise<WritingDescribed> {
   return call<WritingDescribed>("/api/v1/writing/preferences");
+}
+
+/** The Composer's "From your collection": new items whose words the draft shares, matched locally. */
+export async function fetchRelatedFromCollection(text: string): Promise<CollectionItem[]> {
+  const data = await call<{ items?: CollectionItem[] }>("/api/v1/collection/related", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+  return data.items ?? [];
+}
+
+/** Add to the draft: the item's words went into this draft, so it is used. */
+export async function markCollectionUsed(id: number, postId: string): Promise<void> {
+  await call(`/api/v1/collection/${id}/used`, { method: "POST", body: JSON.stringify({ post_id: postId }) });
+}
+
+/** What a draft the studio wrote was written from, and with which things to remember, by id. */
+export interface MadeWith {
+  items: number[];
+  remembered: number[];
+  angle?: boolean;
+  provider?: string;
+  model?: string;
+  at?: string;
+}
+
+/** A draft's own record of how it was made, or null for one written by hand. */
+export async function fetchMadeWith(postId: string): Promise<MadeWith | null> {
+  const data = await call<{ post?: { made_with?: string | null } }>(`/api/posts/${encodeURIComponent(postId)}`);
+  const raw = data.post?.made_with;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as MadeWith;
+  } catch {
+    return null;
+  }
+}
+
+export type RememberedAbout = "you" | "audience" | "offer" | "date";
+
+/** A thing to remember: a fact the creator told the studio. */
+export interface RememberedFact {
+  id: number;
+  text: string;
+  about: RememberedAbout;
+  about_said: string;
+  /** Goes with writing while only the ticked ones go. */
+  in_use: boolean;
+  source: "studio" | "telegram";
+  used_count: number;
+  last_used_at: string | null;
+}
+
+export async function fetchRemembered(): Promise<{ facts: RememberedFact[]; mode: string; about: Record<RememberedAbout, string> }> {
+  return call("/api/v1/remembered");
+}
+
+export async function addRemembered(text: string, about: RememberedAbout): Promise<RememberedFact> {
+  const data = await call<{ fact: RememberedFact }>("/api/v1/remembered", {
+    method: "POST",
+    body: JSON.stringify({ text, about }),
+  });
+  return data.fact;
+}
+
+export async function updateRemembered(
+  id: number,
+  change: { text?: string; about?: RememberedAbout; in_use?: boolean },
+): Promise<void> {
+  await call(`/api/v1/remembered/${id}`, { method: "PUT", body: JSON.stringify(change) });
+}
+
+export async function removeRemembered(id: number): Promise<void> {
+  await call(`/api/v1/remembered/${id}`, { method: "DELETE" });
 }
 
 /** Saves the preferences sent; one left out keeps its value. Outside its choices, nothing is saved. */

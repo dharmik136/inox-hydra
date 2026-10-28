@@ -267,6 +267,7 @@ CATEGORIES = (
      ("asks", "daily_view", "daily_run", "card_marks", "record_notes")),
     # Phase 3 of the Telegram bot: everything sent to the bot.
     ("collection", "Your collection: what you sent your bot", ("collection_items",)),
+    ("remembered", "Things to remember about you", ("remembered",)),
     ("archive_records", "What your LinkedIn archive says you saved, followed, voted on, reposted and searched for",
      ("archive_records",)),
     ("analytics", "Daily analytics", ("analytics_daily", "audience_demographics", "analytics_windows",

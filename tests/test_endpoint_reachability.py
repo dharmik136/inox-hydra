@@ -445,8 +445,14 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Writing view reads and saves and each feature's summary reads.
 # Total 232 -> 235, reached 184 -> 187, unreachable stays 48.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 235
-REACHED_BY_INTERFACE = 187
+# Item 3: things to remember (/api/v1/remembered and
+# /api/v1/remembered/{fact_id}), which Brand's Writing view reads, adds,
+# changes and removes, and the Composer's From your collection, which reads
+# /api/v1/collection/related and presses /api/v1/collection/{item_id}/used.
+# Total 235 -> 239, reached 187 -> 191, unreachable stays 48.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 239
+REACHED_BY_INTERFACE = 191
 UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

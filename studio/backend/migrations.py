@@ -2226,6 +2226,45 @@ def _migrate_collection_box(cursor: sqlite3.Cursor) -> None:
              when if status == "used" else None))
 
 
+def _migrate_things_to_remember(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 39 (phase 3 of the Telegram bot):
+    Things to remember about the creator, and what each draft the studio
+    writes was written from.
+
+    remembered: the facts the creator tells the studio about themselves,
+    their audience, their offers and dates, typed in Brand (Writing) or sent
+    with /remember. `in_use` is whether a fact goes with writing while the
+    creator uses only the ones they tick; `used_count` and `last_used_at`
+    say how often one went. `origin_ref` keys a Telegram message so it is
+    kept once.
+
+    posts.made_with: for a draft the studio wrote (Make a post, Combine,
+    Write it up), JSON naming the collection items it came from and the
+    things to remember that went with it, by id, never their words, so the
+    Composer can say which were used. NULL for every other post, as for
+    every row before this one.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS remembered (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            about TEXT NOT NULL DEFAULT 'you' CHECK (about IN ('you', 'audience', 'offer', 'date')),
+            in_use INTEGER NOT NULL DEFAULT 1,
+            source TEXT NOT NULL DEFAULT 'studio' CHECK (source IN ('studio', 'telegram')),
+            origin_ref TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_used_at TEXT,
+            used_count INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_remembered_origin ON remembered(origin_ref)")
+    cursor.execute("PRAGMA table_info(posts)")
+    if "made_with" not in {row[1] for row in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE posts ADD COLUMN made_with TEXT")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -2279,6 +2318,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
      _migrate_desk_request_short_links),
     (38, "Everything sent to the bot from the phone lands in one collection, with what each item became",
      _migrate_collection_box),
+    (39, "Things to remember about the creator, and what each draft the studio writes was written from",
+     _migrate_things_to_remember),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

@@ -69,6 +69,8 @@ Everything you send your bot lands in **From your record**, on its **Your collec
 
 A link to one of your posts, and a short link, are also requests on Today, and the item says what became of the request. A link to someone else's post is a bookmark, which the studio never opens; your own browser does, if you click it. What you sent before this version is listed too, as used: each message the bot saved as a draft, and each link it asked Today to open.
 
+Your unused items come back while you write. In the Composer, **From your collection**, folded above the editor beside **What worked, from your own posts**, lists up to three new items whose words your draft shares, matched on this computer as you type, and says how many on its folded line. **Add to the draft** puts an item's words at the end of your draft, and the item is then used, with your draft as what it became; on a post you have not saved yet, that happens when you save it, if its words are still there. **UNDO** beside it takes the words back out, and the item is new again. The **You asked** card in **From your record** may draw an unused idea too, and the weekly summary counts them.
+
 Your collection is counted in **Storage and privacy** as "Your collection: what you sent your bot", is in the data export and in backups like everything else, and is deleted when you delete everything the studio holds about you. A message is kept once, even if Telegram sends it again after a restart.
 
 ## Make something out of it
@@ -81,9 +83,9 @@ In the studio, on an item of **Your collection**:
 
 On your bot, under "Saved to your collection.", **Write it up** and the **Angles** button do the same. The bot answers at once ("Writing it up in your studio.") and keeps answering everything else while your provider writes; when it is done it sends a new message, which your phone notifies.
 
-What is sent to your provider, and nothing else: the words of the items you pressed it on, what the studio knows about how you write (as for Re-Hook and Command), and your writing preferences. Every choice it makes is yours: how long a draft is, its tone, its language, its opening line, emojis, hashtags, line breaks, how it ends, words it never writes, and how many angles. Each has a default you can see, under **Brand**, then **Writing**, and each feature shows the ones it reads beside it. See [Set up your Brand and your Settings](set-up-brand-studio.md#brand-writing).
+What is sent to your provider, and nothing else: the words of the items you pressed it on, what the studio knows about how you write (as for Re-Hook and Command), your writing preferences, and your [things to remember](#things-to-remember), as you chose. Every choice it makes is yours: how long a draft is, its tone, its language, its opening line, emojis, hashtags, line breaks, how it ends, words it never writes, and how many angles. Each has a default you can see, under **Brand**, then **Writing**, and each feature shows the ones it reads beside it. See [Set up your Brand and your Settings](set-up-brand-studio.md#brand-writing).
 
-What is kept is only what you sent: a draft or an angle that carries a figure, or the name of a person the studio knows of, that is not in your words is refused and said, never repaired, and nothing is kept. With no AI provider set up, each says so plainly, and **Use as a draft** gives you the item's words as they are.
+What is kept is only what you sent: a draft or an angle that carries a figure, or the name of a person the studio knows of, that is not in your words or your things to remember is refused and said, never repaired, and nothing is kept. A draft written from your collection says, above it in the Composer under **What this draft was written from**, which provider wrote it and when, from how many items, and which of your things to remember went with it. With no AI provider set up, each says so plainly, and **Use as a draft** gives you the item's words as they are.
 
 **The bot may send me what it writes from my collection**, in the panel, is off until you tick it. Off, the bot says only "Draft ready in your studio." or that the angles are ready in your studio. On, its message carries what was written: a draft's first line, or the angles, each with a **Write up** button. Those words of yours then sit on Telegram's servers, as everything in the chat does.
 
@@ -105,6 +107,16 @@ Tick **Send me an idea from my collection each morning** in the panel, and pick 
 
 It carries your words, so it comes only while **The bot may send me what it writes from my collection** is on, and it waits through quiet hours like every notification. **Ideas draw on**, beside it, says whether the idea comes from your collection and whether its angle comes from your posts. A day with nothing new to offer sends nothing.
 
+## Things to remember
+
+Tell the studio facts about you that every writing request should know: about you, your audience, an offer, or a date. Send `/remember` and a sentence, for example `/remember I write for founders of small design studios`. Start it with `audience:`, `offer:` or `date:` to say what it is about, as in `/remember offer: a workshop for small studios`; without one, it is about you. The bot answers "Kept in your things to remember.", with **Undo** under it.
+
+`/forget` and words from one of them removes it: "Forgotten: one thing you asked me to remember." If the words match several, nothing is removed and the bot says how many, so you can say more of it, or remove it in your studio. It never guesses.
+
+In the studio they are listed under **Brand**, then **Writing**, under **Things to remember**, where you can add, edit, tick, untick and remove them, and choose which go with writing: all of them (the default), only the ones ticked, or none. See [Set up your Brand and your Settings](set-up-brand-studio.md#things-to-remember).
+
+`/recall` and a word answers with how many items in your collection hold it, for example "2 items in your collection hold that word.", and only with **The bot may send me what it writes from my collection** on, their first lines, up to five.
+
 ## Commands
 
 Send a command as a message on its own, as Telegram's menu does. Letter case does not matter, and `/help@YourBot` is read as `/help`.
@@ -117,9 +129,12 @@ Send a command as a message on its own, as Telegram's menu does. Letter case doe
 | `/status` | Whether your studio is running, and whether the bridge in your browser is connected. No figures |
 | `/today` | Your latest post's figures, how many replies are waiting and when your next post is scheduled, only if you turned on **The bot may answer with your figures**. Otherwise it says your figures stay in the studio |
 | `/drafts` | How many drafts were made from what you sent in the last seven days: "Drafts made from what you sent, in the last seven days: 5." A `Draft:` message, or an item you used as a draft. A count, never their words |
+| `/remember something` | It is kept in your things to remember, with **Undo** under the answer. See [Things to remember](#things-to-remember) |
+| `/forget words` | The one thing to remember that holds those words is removed; with several, nothing is, and the bot says how many |
+| `/recall word` | How many items in your collection hold the word, and their first lines only with **The bot may send me what it writes from my collection** on |
 | Any other command | "I do not know that command. Send /help to see what I do." |
 
-`/start`, `/help`, `/status`, `/today` and `/drafts` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
+`/start`, `/help`, `/status`, `/today`, `/drafts`, `/forget` and `/recall` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
 
 ## Your figures on Telegram, only if you allow it
 
@@ -177,6 +192,7 @@ These messages carry buttons, which you press in Telegram:
 | The same | The **Angles** button | Finds your number of opening lines for a post from it |
 | The same | **Undo** | Takes it out of your collection, while it is still new there: never used as a draft and never set aside |
 | "An idea from your collection:" | **Write it up** and **Not today** | See [A morning idea](#a-morning-idea) |
+| "Kept in your things to remember." | **Undo** | Removes it from your things to remember: "Undone: it is no longer kept." |
 | "Saved as a draft in your studio." | **Undo** | Removes that draft from your studio, and its line in your collection, while it is untouched there: still a draft, with the words, tags and media the bot saved, never queued or published. A draft you changed is kept |
 | "A post in your queue is due now." | **Remind me in an hour** | The bot tells you again in an hour, if the post is still due then, with the same two buttons |
 | The same | **Done** | Clears the reminder, and that is all: nothing is marked as posted, and nothing is done on LinkedIn. The post stays due in your studio until you post it |
@@ -217,7 +233,13 @@ Each message gets one short sentence back, the same words every time. None carri
 | A message before any chat is paired | Not paired yet. In your studio, open Settings, then Local security, and press This is me beside chat 487215963. (Your own chat's number.) |
 | A message from a chat that is not the paired one | This bot takes messages only from the chat its owner paired. |
 | `/ask` | Remembered. Your studio uses it when it picks what to write about, from tomorrow's cards. |
-| `/idea` or `/ask` with nothing after it | How to send one, with an example |
+| `/remember` | Kept in your things to remember. Your studio's writing reads it, as you chose in Brand, under Writing. (With **Undo** under it.) |
+| `/remember` with more than 300 characters | A thing to remember is at most 300 characters. Send it shorter, or as two. |
+| `/forget`, with one match | Forgotten: one thing you asked me to remember. |
+| `/forget`, with several matches | 2 things to remember hold those words. Say more of it, or remove it in your studio. |
+| `/forget`, with none | Nothing you asked me to remember holds those words. |
+| `/recall` | 2 items in your collection hold that word. (Or "One item in your collection holds that word.", or "Nothing in your collection holds that word.") |
+| `/idea`, `/ask`, `/remember`, `/forget` or `/recall` with nothing after it | How to send one, with an example |
 
 A chat that is refused is answered at most once in ten minutes. The answers are on by default; to stop them, untick **The bot confirms each message** in the panel. Your messages are still saved. If a sentence cannot be sent, the panel says why under **Last message the bot could not send**, and the studio tries again after a network fault or when Telegram asks it to wait.
 

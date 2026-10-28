@@ -261,11 +261,17 @@ def set_status(item_id: int, status: str) -> Dict[str, Any]:
                       "from it.")
     conn = get_db()
     try:
-        if not get(conn, item_id):
+        held = get(conn, item_id)
+        if not held:
             raise LookupError("That item is no longer in your collection.")
         with conn:
             conn.execute("UPDATE collection_items SET status = ?, updated_at = ? WHERE id = ?",
                          (status, _now(), int(item_id)))
+            if held["status"] == "used" and status == "new" and held.get("post_id"):
+                # The Composer's Undo after Add to the draft: the words came
+                # back out of the draft, so the item became nothing.
+                conn.execute("UPDATE collection_items SET post_id = NULL, used_at = NULL WHERE id = ?",
+                             (int(item_id),))
         item = get(conn, item_id)
     finally:
         conn.close()
@@ -343,6 +349,83 @@ def undo(item_id: Any) -> str:
     if gone:
         changes.publish("collection")
     return "undone_item" if gone else "undo_item_kept"
+
+
+_STOPWORDS = frozenset((
+    "about", "after", "again", "being", "could", "every", "first", "from", "have", "into", "just", "like", "more",
+    "most", "much", "only", "other", "over", "should", "some", "than", "that", "their", "them", "then", "there",
+    "these", "they", "this", "those", "very", "what", "when", "where", "which", "while", "will", "with", "would",
+    "your", "yours", "were", "been", "also", "because", "does", "doing"))
+
+
+def _keywords(text: str) -> set:
+    """A text's words that carry meaning, read locally: four letters or more, not the common ones."""
+    return {w for w in re.findall(r"[^\W\d_]{4,}", (text or "").lower()) if w not in _STOPWORDS}
+
+
+def related(text: str, limit: int = 3) -> Dict[str, Any]:
+    """
+    The Composer's "From your collection": the new items whose words the
+    draft shares, most shared first, then newest. Matched locally; nothing
+    leaves the machine.
+    """
+    wanted = _keywords(text)
+    if not wanted:
+        return {"status": "success", "items": []}
+    conn = get_db()
+    try:
+        marks = ", ".join("?" for _ in MATERIAL)
+        scored = []
+        for row in conn.execute(f"SELECT * FROM collection_items WHERE status = 'new' AND kind IN ({marks}) "
+                                "AND TRIM(text) != ''", MATERIAL):
+            shared = len(wanted & (_keywords(row["text"]) | set(json.loads(row["tags"] or "[]"))))
+            if shared:
+                scored.append((shared, row["received_at"], row))
+        scored.sort(key=lambda found: (found[0], found[1]), reverse=True)
+        return {"status": "success", "items": [_row(conn, row) for _shared, _at, row in scored[:max(1, int(limit))]]}
+    finally:
+        conn.close()
+
+
+def used_in(item_id: int, post_id: str) -> Dict[str, Any]:
+    """The Composer's Add to the draft: the item is used, and what it became is that draft."""
+    if not post_id or len(str(post_id)) > 80:
+        raise Refused("Name the draft it went into.")
+    conn = get_db()
+    try:
+        if not get(conn, item_id):
+            raise LookupError("That item is no longer in your collection.")
+        with conn:
+            mark_used(conn, [item_id], str(post_id))
+        item = get(conn, item_id)
+    finally:
+        conn.close()
+    changes.publish("collection")
+    return item
+
+
+def waiting(conn) -> int:
+    """How many items with words are new: ideas not used yet."""
+    marks = ", ".join("?" for _ in MATERIAL)
+    return conn.execute(f"SELECT COUNT(*) FROM collection_items WHERE status = 'new' AND kind IN ({marks}) "
+                        "AND TRIM(text) != ''", MATERIAL).fetchone()[0]
+
+
+def matching(word: str) -> List[Dict[str, Any]]:
+    """/recall: the items whose words hold a word, newest first."""
+    words = re.findall(r"\w+", (word or "").lower())
+    if not words:
+        return []
+    conn = get_db()
+    try:
+        found = []
+        for row in conn.execute("SELECT * FROM collection_items WHERE TRIM(text) != '' ORDER BY received_at DESC, id DESC"):
+            held = set(re.findall(r"\w+", row["text"].lower()))
+            if all(w in held for w in words):
+                found.append(_row(conn, row))
+        return found
+    finally:
+        conn.close()
 
 
 def least_offered(conn) -> Optional[Dict[str, Any]]:

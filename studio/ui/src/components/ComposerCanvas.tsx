@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { SelectionToolbar, type ToolbarPosition } from "./SelectionToolbar";
+import { FromYourCollection, MadeWithNote } from "./ComposerCollection";
 import { fetchEvidenceBrief, formatText, type EvidenceExemplar, type FormatKind, type RetrievalEvidenceBrief } from "@/lib/api";
 import { measurableLength, openingEnd, rawIndexAtMeasurableOffset, swapOpening } from "@/lib/text";
 
@@ -40,6 +41,8 @@ interface ComposerCanvasProps {
   swapKey: number;
   /** Ctrl+S or Cmd+S in the editor: the same as the Save button. */
   onSave?: () => void;
+  /** The saved draft the editor holds, if any: what it was written from, and where an added item went. */
+  postId?: string | null;
 }
 
 /** Ctrl or Cmd with these letters formats the selection, as the toolbar's buttons do. */
@@ -54,7 +57,7 @@ const FORMAT_KEYS: Record<string, FormatKind> = { b: "bold", i: "italic", u: "un
  * mechanism serves three jobs: where the fold falls, where a selection is on
  * screen, and how tall the textarea has to be.
  */
-export function ComposerCanvas({ value, onChange, onReHook, swapKey, onSave }: ComposerCanvasProps) {
+export function ComposerCanvas({ value, onChange, onReHook, swapKey, onSave, postId = null }: ComposerCanvasProps) {
   const mirrorRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Whether the whole text is selected, so a keystroke or paste that replaces
@@ -275,7 +278,9 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey, onSave }: C
 
   return (
     <div className="mx-auto w-full max-w-[68ch] px-10 py-12">
+      <MadeWithNote postId={postId} />
       <WhatWorkedForYou value={value} onChange={onChange} />
+      <FromYourCollection value={value} onChange={onChange} postId={postId} />
       {formatNote && (
         <p role="status" className="mb-3 text-[12px] leading-snug text-signal-orange-text">
           {formatNote}

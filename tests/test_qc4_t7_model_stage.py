@@ -546,6 +546,36 @@ def test_a_carried_forward_day_keeps_yesterdays_idea_and_asks_nothing(provider):
 # The policy and the help say it before it ships
 # ---------------------------------------------------------------------------
 
+def _system_sent(request):
+    return next(m["content"] for m in request["messages"] if m["role"] == "system")
+
+
+def test_a_fresh_profile_asks_for_three_ideas(provider):
+    """Phase 3: how many ideas a call asks for is the creator's preference, three until they change it."""
+    seed()
+    provider.answer = {"ideas": [good_idea()]}
+    run_model()
+    assert "at most three ideas" in _system_sent(provider.requests[0])
+    assert "up to three ideas" in json.dumps(provider.requests[0])
+
+
+def test_how_many_ideas_is_the_creators_preference(provider):
+    import writing
+
+    writing.save({"ideas": 1})
+    seed()
+    provider.answer = {"ideas": [good_idea(), good_idea(hook="Write the job post before anyone applies")]}
+    run_model()
+    assert "at most one idea" in _system_sent(provider.requests[0])
+    assert "up to one idea" in json.dumps(provider.requests[0])
+    conn = db()
+    try:
+        kept = conn.execute("SELECT COUNT(*) FROM daily_view WHERE kind = 'idea' AND label = 'suggested'").fetchone()[0]
+    finally:
+        conn.close()
+    assert kept == 1, "an idea past the number asked for was read"
+
+
 def test_the_policy_and_the_help_name_the_model_stage():
     policy = io.open(os.path.join(REPO_ROOT, "docs", "PRIVACY_POLICY.md"), encoding="utf-8").read()
     assert "only at the moment you use the feature that needs it" in policy

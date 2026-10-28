@@ -30,6 +30,14 @@ class StatusPayload(BaseModel):
     status: str = Field(..., max_length=20, description="new, or not_now to set the item aside")
 
 
+class RelatedPayload(BaseModel):
+    text: str = Field("", max_length=20000, description="The draft being written")
+
+
+class UsedPayload(BaseModel):
+    post_id: str = Field(..., max_length=80, description="The draft the item's words went into")
+
+
 class WritePayload(BaseModel):
     items: List[int] = Field(..., description="One item for Make a post, two or more to Combine")
     angle: Optional[str] = Field(None, max_length=400, description="An opening line Angles offered, to start from")
@@ -62,6 +70,18 @@ def post_collection_status(item_id: int, payload: StatusPayload):
 def post_collection_draft(item_id: int):
     """Use as a draft: the item's words, as they are, become a Composer draft, and the item is used."""
     return _answer(lambda: collection.use_as_draft(item_id))
+
+
+@router.post("/api/v1/collection/related", tags=["Collection"])
+def post_collection_related(payload: RelatedPayload):
+    """The Composer's "From your collection": new items whose words the draft shares, matched locally."""
+    return collection.related(payload.text)
+
+
+@router.post("/api/v1/collection/{item_id}/used", tags=["Collection"])
+def post_collection_used(item_id: int, payload: UsedPayload):
+    """Add to the draft: the item's words went into this draft, so it is used."""
+    return _answer(lambda: {"status": "success", "item": collection.used_in(item_id, payload.post_id)})
 
 
 @router.post("/api/v1/collection/write", tags=["Collection"])

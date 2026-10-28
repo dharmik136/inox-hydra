@@ -229,7 +229,7 @@ export function CollectionPanel({
 
       <WritingSummary
         described={described}
-        fields={["length_words", "tone", "language", "opening", "emojis", "hashtags", "line_breaks", "ending", "avoid", "angles"]}
+        fields={["length_words", "tone", "language", "opening", "emojis", "hashtags", "line_breaks", "ending", "avoid", "angles", "memory"]}
         title="How Make a post, Combine and Angles write"
       />
 

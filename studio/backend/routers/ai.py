@@ -62,6 +62,8 @@ def get_what_the_model_is_told() -> Dict[str, Any]:
         "provider": {"configured": bool(config.is_configured), "provider": config.provider if config.is_configured else None,
                      "model": config.model if config.is_configured else None},
         "voice": voice_pack.told(),
+        # The things to remember the creator allows, and every request they go with (phase 3).
+        "remembered": writing.memory_told(),
         "scar_tissue": {
             "phrases": list(BANNED_TROPES),
             # A model's image description is refused when it holds one, and

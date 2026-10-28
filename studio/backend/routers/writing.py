@@ -17,8 +17,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 try:
-    from .. import writing
+    from .. import remembered, writing
 except (ImportError, ValueError):
+    import remembered
     import writing
 
 router = APIRouter()
@@ -37,12 +38,62 @@ class PreferencesPayload(BaseModel):
     avoid: Optional[List[str]] = Field(None, description="Words and phrases never to write")
     angles: Optional[int] = Field(None, description="How many opening lines Angles offers")
     sources: Optional[List[str]] = Field(None, description="What ideas may draw on: collection, posts, asks")
+    memory: Optional[str] = Field(None, max_length=10, description="Things to remember: all, chosen or off")
+    ideas: Optional[int] = Field(None, description="How many ideas the daily model stage asks for, 1 to 5")
 
 
 @router.get("/api/v1/writing/preferences", tags=["Writing"])
 def get_writing_preferences():
     """Each writing preference with its value, its default and its choices, and the provider every request uses."""
     return writing.described()
+
+
+class FactPayload(BaseModel):
+    text: str = Field(..., max_length=remembered.TEXT_MAX + 50, description="The thing to remember, in a sentence")
+    about: str = Field("you", max_length=20, description="you, audience, offer or date")
+
+
+class FactChange(BaseModel):
+    text: Optional[str] = Field(None, max_length=remembered.TEXT_MAX + 50)
+    about: Optional[str] = Field(None, max_length=20)
+    in_use: Optional[bool] = Field(None, description="Used in writing while only the ticked ones go")
+
+
+def _fact(work):
+    try:
+        return work()
+    except remembered.Refused as refused:
+        raise HTTPException(status_code=400, detail=str(refused))
+    except LookupError as gone:
+        raise HTTPException(status_code=404, detail=str(gone))
+
+
+@router.get("/api/v1/remembered", tags=["Writing"])
+def get_remembered():
+    """Things to remember: every fact, what each is about, whether it is ticked, and which go with writing."""
+    return {"status": "success", "facts": remembered.listing(), "mode": writing.preferences()["memory"],
+            "about": remembered.ABOUT}
+
+
+@router.post("/api/v1/remembered", tags=["Writing"])
+def post_remembered(payload: FactPayload):
+    """Keeps a thing to remember; the same words again are kept once."""
+    return _fact(lambda: {"status": "success", "fact": remembered.add(payload.text, payload.about, "studio")})
+
+
+@router.put("/api/v1/remembered/{fact_id}", tags=["Writing"])
+def put_remembered(fact_id: int, payload: FactChange):
+    """Changes a fact's words, what it is about, or whether it is ticked."""
+    return _fact(lambda: {"status": "success",
+                          "fact": remembered.update(fact_id, payload.text, payload.about, payload.in_use)})
+
+
+@router.delete("/api/v1/remembered/{fact_id}", tags=["Writing"])
+def delete_remembered(fact_id: int):
+    """Removes a thing to remember for good."""
+    if not remembered.remove(fact_id):
+        raise HTTPException(status_code=404, detail="That thing to remember is no longer kept.")
+    return {"status": "success", "removed": True}
 
 
 @router.put("/api/v1/writing/preferences", tags=["Writing"])

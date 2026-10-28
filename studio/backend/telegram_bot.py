@@ -52,12 +52,14 @@ try:
     from . import changes
     from . import collection
     from . import egress as _egress
+    from . import remembered
     from . import writing
     from .database import get_db
 except ImportError:
     import changes
     import collection
     import egress as _egress
+    import remembered
     import writing
     from database import get_db
 
@@ -101,9 +103,11 @@ WEEKLY_POSTS_SHOWN = 7
 BUTTON_LABELS = {"u": "Undo", "r": "Remind me in an hour", "d": "Done", "w": "Write it up", "a": "Angles",
                  "n": "Not today"}
 BUTTON_ROWS = {"undo": (("u",),), "item": (("w", "a"), ("u",)), "item_bare": (("u",),),
-               "due": (("r",), ("d",)), "morning": (("w", "n"),)}
+               "due": (("r",), ("d",)), "morning": (("w", "n"),), "fact": (("u",),)}
 # The bot may send what it writes from the collection (its words): off unless "on".
 COLLECTION_WORDS_KEY = "telegram_collection_words"
+# /recall lists at most this many first lines, newest first.
+RECALL_LINES = 5
 # The morning idea, off by default: {on, days (0 is Monday), hour, since}.
 MORNING_KEY = "telegram_morning"
 MORNING_DAYS, MORNING_HOUR = (0, 1, 2, 3, 4), 8
@@ -181,6 +185,20 @@ SENTENCES = {
     "angle_story": "Angle: open with something that happened to you, as the posts of yours that did best did.",
     "angle_short": "Angle: open with one short line, as the posts of yours that did best did.",
     "angle_statement": "Angle: open with a plain, bold statement, as the posts of yours that did best did.",
+    # Phase 3, item 3: things to remember, and what comes back.
+    "remembered": ("Kept in your things to remember. Your studio's writing reads it, as you chose in Brand, under "
+                   "Writing."),
+    "forgot_it": "Undone: it is no longer kept.",
+    "empty_remember": "Send /remember with what to keep, for example /remember offer: a workshop for small studios.",
+    "remember_long": "A thing to remember is at most 300 characters. Send it shorter, or as two.",
+    "forgot": "Forgotten: one thing you asked me to remember.",
+    "forget_many": "{count} things to remember hold those words. Say more of it, or remove it in your studio.",
+    "forget_none": "Nothing you asked me to remember holds those words.",
+    "empty_forget": "Send /forget with words from the thing to forget, for example /forget my old offer.",
+    "recall": "{count} items in your collection hold that word.",
+    "recall_one": "One item in your collection holds that word.",
+    "recall_none": "Nothing in your collection holds that word.",
+    "empty_recall": "Send /recall with a word, for example /recall pricing.",
 }
 
 # Where a figure was read, as /today says it.
@@ -210,6 +228,9 @@ HELP = "\n".join((
     "- /today: your latest post's figures, replies waiting and your next scheduled post, only if you allow "
     "figures in your studio",
     "- /drafts: how many drafts were made from what you sent in the last seven days",
+    "- /remember and a fact about you, your audience, an offer or a date: your studio's writing reads it",
+    "- /forget and words from something you asked me to remember",
+    "- /recall and a word: how many items in your collection hold it",
     "",
     "Press Undo under my answer to take it back, while it is still new in your studio.",
     "",
@@ -219,7 +240,7 @@ HELP = "\n".join((
 ))
 
 # Commands answered whatever the confirmations switch says: they are questions.
-QUESTIONS = ("start", "help", "status", "today", "drafts")
+QUESTIONS = ("start", "help", "status", "today", "drafts", "forget", "recall")
 _COMMAND = re.compile(r"^/([A-Za-z][A-Za-z0-9_]{0,31})(?:@[A-Za-z0-9_]{1,64})?(?:\s+(.*))?$", re.DOTALL)
 
 
@@ -531,6 +552,21 @@ def next_scheduled(conn) -> str:
     return f"Next scheduled post: {when.astimezone().strftime('%a %d %b, %H:%M')} (your computer's time)."
 
 
+def recall_answer(word: str) -> str:
+    """
+    /recall: how many items of the collection hold a word; their first lines
+    too, only with the switch that lets the bot send what is in the
+    collection. Never another person's words: the items are the creator's.
+    """
+    found = collection.matching(word)
+    if not found:
+        return SENTENCES["recall_none"]
+    said = SENTENCES["recall_one"] if len(found) == 1 else SENTENCES["recall"].format(count=len(found))
+    if not collection_words_on():
+        return said
+    return said + "\n\n" + "\n".join(f"- {_first_line(item['text'])}" for item in found[:RECALL_LINES])
+
+
 def drafts_answer() -> str:
     """/drafts: how many drafts were made from what was sent in the last seven days. A count, never words."""
     now = datetime.now(timezone.utc)
@@ -569,6 +605,7 @@ def weekly_summary(conn, moment: datetime) -> str:
     lines = [f"Your week, the seven days to {moment.strftime('%a %d %b, %H:%M')} on your computer's clock:",
              f"Posts published, as your studio recorded them: {len(published)}",
              f"Drafts made from what you sent: {drafts}",
+             f"Ideas waiting in your collection, not used yet: {collection.waiting(conn)}",
              f"Replies waiting: {replies.waiting_count(conn)}",
              next_scheduled(conn)]
     if published and figures_on():
@@ -1142,6 +1179,8 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 key = "not_today"
             elif letter == "u" and record.get("kind") in ("item", "item_bare"):
                 key = collection.undo(record.get("item"))
+            elif letter == "u" and record.get("kind") == "fact":
+                key = "forgot_it" if remembered.remove(record.get("fact")) else "button_old"
             elif letter == "u":
                 key = _undo(conn, record.get("draft"))
             elif letter == "r":

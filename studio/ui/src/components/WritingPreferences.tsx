@@ -6,6 +6,7 @@ import {
   type WritingPreferences,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { ThingsToRemember } from "./ThingsToRemember";
 
 /**
  * How the studio writes for you (phase 3, and the owner's direction of
@@ -30,7 +31,27 @@ const LABELS: Record<PreferenceField, string> = {
   avoid: "Words to avoid",
   angles: "Angles",
   sources: "Ideas draw on",
+  memory: "Things to remember",
+  ideas: "Ideas asked for each day",
 };
+
+/** The preferences this view edits with its Save; the others are set beside their own feature. */
+const EDITED_HERE: PreferenceField[] = [
+  "length_words",
+  "tone",
+  "language",
+  "opening",
+  "emojis",
+  "hashtags",
+  "line_breaks",
+  "ending",
+  "avoid",
+  "angles",
+];
+
+function only(values: Partial<WritingPreferences>): Partial<WritingPreferences> {
+  return Object.fromEntries(EDITED_HERE.map((field) => [field, values[field]])) as Partial<WritingPreferences>;
+}
 
 /** A preference's value as the creator reads it. */
 export function preferenceWords(field: PreferenceField, values: WritingPreferences, described: WritingDescribed): string {
@@ -58,6 +79,10 @@ export function preferenceWords(field: PreferenceField, values: WritingPreferenc
       return `${values.angles} opening lines`;
     case "sources":
       return values.sources.length ? values.sources.map((s) => labels.sources[s]).join(", ") : "nothing";
+    case "memory":
+      return (labels.memory[values.memory] ?? values.memory).toLowerCase();
+    case "ideas":
+      return values.ideas === 1 ? "one idea" : `${values.ideas} ideas`;
   }
 }
 
@@ -271,7 +296,7 @@ export function WritingPreferencesPanel({ children }: { children?: ReactNode } =
         <button
           type="button"
           disabled={busy}
-          onClick={() => void save({ ...draft, avoid }, "Saved. Every writing request reads these from now on.")}
+          onClick={() => void save(only({ ...draft, avoid }), "Saved. Every writing request reads these from now on.")}
           className="rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
         >
           Save
@@ -279,7 +304,7 @@ export function WritingPreferencesPanel({ children }: { children?: ReactNode } =
         <button
           type="button"
           disabled={busy}
-          onClick={() => void save({ ...defaults, sources: draft.sources }, "Back to the defaults.")}
+          onClick={() => void save(only(defaults), "Back to the defaults.")}
           className="rounded-md px-2 py-1 text-[12px] text-ink-secondary underline underline-offset-2 hover:text-ink-primary disabled:opacity-40"
         >
           Back to the defaults
@@ -290,6 +315,7 @@ export function WritingPreferencesPanel({ children }: { children?: ReactNode } =
           {note.text}
         </p>
       )}
+      <ThingsToRemember />
       {children}
     </section>
   );

@@ -6,7 +6,8 @@ in, text out, with no tool use and no search. What it can honestly do is
 find ideas inside the creator's own record. So once a day, the first time
 the creator opens From your record (decision 7), and only with their own
 key, the studio sends a redacted set of their own rows and asks for at most
-three ideas, in a shape it can check:
+the number of ideas the creator chose (three until they change it, one to
+five, writing.py's "ideas"), in a shape it can check:
 
   sent      the first 300 characters of up to ten of their own posts with
             each post's id, its topic label and the studio's own word for
@@ -79,7 +80,9 @@ SCHEMA_VERSION = 1
 SCHEMA_NAME = "record_ideas"
 MAX_CALLS_PER_DAY = 2
 MAX_OUTPUT_TOKENS = 1200
-MAX_IDEAS = 3
+# How many ideas a call asks for is the creator's "ideas" preference
+# (writing.py, 3 by default); a call never reads more than the most it allows.
+MAX_IDEAS = 5
 POSTS_SENT = 10
 RANKED_SENT = 7
 EXCERPT_CHARS = 300
@@ -286,8 +289,14 @@ def build_bundle(conn) -> Dict[str, Any]:
             "text": scrub(" ".join(text.split())[:EXCERPT_CHARS], names),
         })
     asks, audience, avoid = [], [], []
+    try:
+        from . import writing
+    except ImportError:
+        import writing
+    prefs = writing.preferences(conn)
     # A search imported from the archive is often a person's name, so it is
-    # never sent, whatever the creator ticked; their typed asks are.
+    # never sent, whatever the creator ticked; their typed asks are, while
+    # ideas may draw on them (the creator's "Ideas draw on", phase 3).
     for row in conn.execute("SELECT id, text, field FROM asks WHERE status != 'retired' AND hidden_at IS NULL "
                             "AND source != 'archive_search' "
                             "ORDER BY updated_at DESC LIMIT 12"):
@@ -296,8 +305,10 @@ def build_bundle(conn) -> Dict[str, Any]:
             audience.append(cleaned)
         elif row["field"] == "avoid":
             avoid.append(cleaned)
-        else:
+        elif "asks" in prefs["sources"]:
             asks.append({"id": f"ask-{row['id']}", "text": cleaned})
+    # The things to remember the creator allows (phase 3), as every writing request carries them.
+    remembered = [scrub(fact["text"], names) for fact in writing.memory_for(conn, prefs)]
     texts = [p["text"] for p in posts.values()]
     return {
         "posts": sent_posts,
@@ -306,23 +317,36 @@ def build_bundle(conn) -> Dict[str, Any]:
         "avoid": avoid,
         "habits": habits_in_words(texts),
         "who": [scrub(line, names) for line in who_lines(conn)],
+        "remembered": remembered,
+        "ideas": prefs["ideas"],
         "_full_text": {urn: posts[urn]["text"] for urn in chosen},
         "_names": names,
     }
 
 
-SYSTEM_PROMPT = (
-    "You suggest LinkedIn post ideas for one creator, built only from their own posts and the asks they made, "
-    "which are listed below with ids.\n"
-    "Rules you must follow on every response:\n"
-    "- Cite only ids that appear below. Suggest at most three ideas.\n"
-    "- Each hook, angle and why is one short phrase of at most 160 characters.\n"
-    "- Never write a number, a percentage, a count or a statistic, in digits or in words.\n"
-    "- Never name a person, a client or a company the posts do not name.\n"
-    "- quote is a few words copied exactly from the post the idea builds on, or empty.\n"
-    "- Never suggest anything listed under NEVER SUGGEST. Never use an em dash.\n"
-    "Return only the JSON the schema describes."
-)
+_COUNT_WORDS = {1: "one idea", 2: "two ideas", 3: "three ideas", 4: "four ideas", 5: "five ideas"}
+
+
+def _ideas_asked(bundle: Dict[str, Any]) -> int:
+    """How many ideas this call asks for: the creator's preference, within what a call reads."""
+    asked = bundle.get("ideas", 3)
+    return asked if isinstance(asked, int) and 1 <= asked <= MAX_IDEAS else 3
+
+
+def system_prompt(bundle: Dict[str, Any]) -> str:
+    """The rules every answer is held to; how many ideas it asks for is the creator's preference."""
+    return (
+        "You suggest LinkedIn post ideas for one creator, built only from their own posts and the asks they made, "
+        "which are listed below with ids.\n"
+        "Rules you must follow on every response:\n"
+        f"- Cite only ids that appear below. Suggest at most {_COUNT_WORDS[_ideas_asked(bundle)]}.\n"
+        "- Each hook, angle and why is one short phrase of at most 160 characters.\n"
+        "- Never write a number, a percentage, a count or a statistic, in digits or in words.\n"
+        "- Never name a person, a client or a company the posts do not name.\n"
+        "- quote is a few words copied exactly from the post the idea builds on, or empty.\n"
+        "- Never suggest anything listed under NEVER SUGGEST. Never use an em dash.\n"
+        "Return only the JSON the schema describes."
+    )
 
 
 def render_prompt(bundle: Dict[str, Any]) -> str:
@@ -341,8 +365,10 @@ def render_prompt(bundle: Dict[str, Any]) -> str:
         lines.extend(["", "HOW THEY WRITE: " + "; ".join(bundle["habits"])])
     if bundle["who"]:
         lines.extend(["", "WHO THEY ARE:"] + [f"- {line}" for line in bundle["who"]])
-    lines.extend(["", "OUTPUT: up to three ideas, each built on one or more of their posts and, where it fits, one "
-                      "of their asks; ask is \"none\" when no ask fits."])
+    if bundle.get("remembered"):
+        lines.extend(["", "THINGS THEY ASKED TO BE REMEMBERED:"] + [f"- {line}" for line in bundle["remembered"]])
+    lines.extend(["", f"OUTPUT: up to {_COUNT_WORDS[_ideas_asked(bundle)]}, each built on one or more of their posts "
+                      "and, where it fits, one of their asks; ask is \"none\" when no ask fits."])
     return scrub_em_dashes("\n".join(lines))
 
 
@@ -384,7 +410,8 @@ def preview() -> Dict[str, Any]:
     finally:
         conn.close()
     config = model_gateway.get_current_ai_config()
-    return {"provider": config.provider, "model": config.model, "system": SYSTEM_PROMPT, "prompt": render_prompt(bundle),
+    return {"provider": config.provider, "model": config.model, "system": system_prompt(bundle),
+            "prompt": render_prompt(bundle),
             "posts": len(bundle["posts"]), "asks": len(bundle["asks"])}
 
 
@@ -577,12 +604,13 @@ def _run(day: date) -> None:
         _finish(day, "off", "No posts of yours with text yet, so there is nothing to ask the model about.")
         return
     prompt = render_prompt(bundle)
+    system = system_prompt(bundle)
     schema = schema_for(bundle)
     price, basis = price_of(config)
     if price is None:
         _finish(day, "capped", f"Not sent: {basis}.")
         return
-    tokens_in_estimate = (len(SYSTEM_PROMPT) + len(prompt) + len(json.dumps(schema))) // CHARS_PER_TOKEN
+    tokens_in_estimate = (len(system) + len(prompt) + len(json.dumps(schema))) // CHARS_PER_TOKEN
     bound = estimate(price, tokens_in_estimate, MAX_OUTPUT_TOKENS)
     spent = run.get("estimated_cost_usd") or 0.0
     if spent + bound > settings["cost_ceiling_usd"]:
@@ -591,7 +619,7 @@ def _run(day: date) -> None:
         return
     call_id = uuid.uuid4().hex
     try:
-        answer = model_gateway.execute_structured_completion(config, prompt, SYSTEM_PROMPT, schema, SCHEMA_NAME,
+        answer = model_gateway.execute_structured_completion(config, prompt, system, schema, SCHEMA_NAME,
                                                              max_tokens=MAX_OUTPUT_TOKENS, temperature=0.4)
     except egress.EgressRefused as refused:
         _finish(day, "failed: refused", "Not sent: " + egress.redact(str(refused)))
@@ -607,7 +635,7 @@ def _run(day: date) -> None:
     tokens_out = usage.get("output") if usage.get("output") is not None else MAX_OUTPUT_TOKENS
     cost = estimate(price, tokens_in, tokens_out)
     meta = {"provider": config.provider, "model": config.model, "call_id": call_id,
-            "prompt_hash": hashlib.sha256((SYSTEM_PROMPT + prompt).encode("utf-8")).hexdigest()[:32],
+            "prompt_hash": hashlib.sha256((system + prompt).encode("utf-8")).hexdigest()[:32],
             "schema_version": SCHEMA_VERSION}
     conn = get_db()
     try:
@@ -648,7 +676,7 @@ def verify_ideas(conn, data: Any, bundle: Dict[str, Any], meta: Dict[str, Any], 
     if not isinstance(ideas, list):
         return cards, 0, []
     shown_one = False
-    for index, idea in enumerate(ideas[:MAX_IDEAS]):
+    for index, idea in enumerate(ideas[:_ideas_asked(bundle)]):
         reason = None
         fields = {}
         if not isinstance(idea, dict):
