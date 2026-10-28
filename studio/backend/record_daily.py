@@ -485,6 +485,37 @@ def read_today(day: Optional[date] = None) -> Dict[str, Any]:
         conn.close()
 
 
+def lines_today(day: Optional[date] = None) -> Dict[str, Any]:
+    """
+    For Today: today's cards, one line each, in slot order, and how many slots
+    are waiting on something. Only today's batch: before it is built there is
+    nothing of today's, and the answer says so rather than showing an earlier
+    day's. A SELECT: nothing is built here.
+    """
+    day = day or local_today()
+    conn = get_db()
+    try:
+        run = _today_run(conn, day)
+        if not run or not run["local_ok"]:
+            return {"day": day.isoformat(), "built": False, "lines": [], "not_yet": 0}
+        lines, not_yet = [], 0
+        for card in record_cards.read_batch(conn, day):
+            if card["slot"] < 1:
+                continue
+            if card["status"] == "abstained":
+                not_yet += 1
+            if card["status"] != "shown":
+                continue
+            payload = card["payload"]
+            lines.append({"slot": card["slot"], "card_id": card["card_id"], "label": card["label"],
+                          "block_label": payload.get("block_label"), "title": payload.get("title"),
+                          "line": payload.get("excerpt") or ""})
+        return {"day": day.isoformat(), "built": True, "computed_at": run.get("finished_at"),
+                "lines": sorted(lines, key=lambda line: line["slot"]), "not_yet": not_yet}
+    finally:
+        conn.close()
+
+
 def read_day(day: date) -> Dict[str, Any]:
     """An earlier day's batch, as it was, with the marks made on it."""
     conn = get_db()

@@ -3623,6 +3623,19 @@ export async function fetchRecordEvaluation(): Promise<RecordEvaluation> {
   return call<RecordEvaluation>("/api/v1/record/evaluation");
 }
 
+/** From your record on Today: today's cards, one line each, once today's batch exists. */
+export interface RecordLines {
+  day: string;
+  built: boolean;
+  computed_at?: string | null;
+  not_yet: number;
+  lines: { slot: number; card_id: string; label: string; block_label: string | null; title: string | null; line: string }[];
+}
+
+export async function fetchRecordLines(): Promise<RecordLines> {
+  return call<RecordLines>("/api/v1/record/lines");
+}
+
 /** From your record on Health: each part as the studio holds it, with its sentence. */
 export interface RecordHealth {
   job: { today_built: boolean; carried_from: string | null; sentence: string; checked: string };

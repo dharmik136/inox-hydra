@@ -158,6 +158,12 @@ def get_record_knows():
             "library": library_bundle.status()}
 
 
+@router.get("/api/v1/record/lines")
+def get_record_lines():
+    """For Today: today's cards, one line each, only once today's batch exists. A read: nothing is built."""
+    return record_daily.lines_today()
+
+
 @router.get("/api/v1/record/health")
 def get_record_health():
     """For Health: the daily job's last run and carry-forward, the model stage's spend, the library's signature."""

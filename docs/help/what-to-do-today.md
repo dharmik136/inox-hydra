@@ -57,3 +57,7 @@ Each time your posts are imported or re-read, the counts LinkedIn shows on them 
 ## Queue
 
 The next post scheduled to go out, with its date and time, and the next open slot in your weekly posting schedule. Both times use your computer's clock format.
+
+## From your record, today
+
+Once today's cards from **From your record** are built, a strip under the three columns lists them, one line each: which block it is, what it is and the start of its words. Every line, and **OPEN THE CARDS**, opens the section, where a card can be kept, drafted from or opened on LinkedIn; how many slots are waiting on something is counted beside it. Before today's cards are built the strip is not drawn: Today shows no earlier day's cards, and opening Today builds nothing. It appears by itself when the daily job builds them, the first time the studio runs each day. See [Find what to write from your own record](find-what-to-write-from-your-own-record.md).

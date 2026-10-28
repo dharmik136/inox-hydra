@@ -392,3 +392,54 @@ def test_health_draws_the_daily_job_block():
     assert "fetchRecordHealth" in surface and 'title="From your record, the daily cards"' in surface
     api = io.open(os.path.join(UI, "lib", "api.ts"), encoding="utf-8").read()
     assert '"/api/v1/record/health"' in api
+
+
+# ---------------------------------------------------------------------------
+# 2. The Today block
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def client(conn):
+    from fastapi.testclient import TestClient
+
+    import app as app_module
+    return TestClient(app_module.app)
+
+
+def test_today_has_lines_only_once_todays_batch_exists(conn, client):
+    import record_daily
+
+    add_posts(conn)
+    add_comment(conn, "We did the same with our onboarding checklist and it took a quarter.")
+    today = record_daily.local_today()
+    empty = client.get("/api/v1/record/lines").json()
+    assert empty == {"day": today.isoformat(), "built": False, "lines": [], "not_yet": 0}
+    # Yesterday's batch is not today's: Today draws nothing until today's is built.
+    record_daily.run_today(today - timedelta(days=1))
+    assert client.get("/api/v1/record/lines").json()["built"] is False
+    record_daily.run_today(today)
+    answer = client.get("/api/v1/record/lines").json()
+    assert answer["built"] is True and answer["lines"]
+    shown = {c["card_id"] for c in client.get("/api/v1/record").json()["cards"]
+             if c["status"] == "shown" and c["slot"] >= 1}
+    assert {line["card_id"] for line in answer["lines"]} == shown
+    for line in answer["lines"]:
+        assert line["block_label"] and line["title"] and line["slot"] >= 1
+    assert [line["slot"] for line in answer["lines"]] == sorted(line["slot"] for line in answer["lines"])
+
+
+def test_reading_the_lines_builds_nothing(conn, client):
+    before = conn.execute("SELECT COUNT(*) FROM daily_run").fetchone()[0]
+    for _ in range(3):
+        assert client.get("/api/v1/record/lines").status_code == 200
+    assert conn.execute("SELECT COUNT(*) FROM daily_run").fetchone()[0] == before == 0
+    assert conn.execute("SELECT COUNT(*) FROM daily_view").fetchone()[0] == 0
+
+
+def test_today_draws_one_block_that_links_into_the_section():
+    today = io.open(os.path.join(UI, "components", "TodaySurface.tsx"), encoding="utf-8").read()
+    assert today.count("<RecordTodayBlock />") == 1 and 'from "./RecordTodayBlock"' in today
+    block = io.open(os.path.join(UI, "components", "RecordTodayBlock.tsx"), encoding="utf-8").read()
+    assert 'href="#/record"' in block and "fetchRecordLines" in block
+    assert "!lines.built" in block, "the block is drawn before today's batch exists"
+    assert '["ideas"]' in block, "the block does not read again when the day's cards are built"
