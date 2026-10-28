@@ -43,7 +43,7 @@ import sqlite3
 import urllib.error
 import urllib.request
 from datetime import date, datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 from urllib.parse import urlsplit
 
 try:
@@ -341,7 +341,7 @@ def status() -> Dict[str, Any]:
 # Matching, on this machine
 # ---------------------------------------------------------------------------
 
-def match_card(conn, day: date, seed: int) -> Optional[Dict[str, Any]]:
+def match_card(conn, day: date, seed: int, avoid: Optional[Set[str]] = None) -> Optional[Dict[str, Any]]:
     """
     The open slot's card from the library: an entry whose tags and title go
     under one of the creator's own recurring words, drawn by the same rule as
@@ -373,7 +373,7 @@ def match_card(conn, day: date, seed: int) -> Optional[Dict[str, Any]]:
         if topic == evidence_briefing.OTHER_TOPIC:
             continue
         items.append((f"lib:{row['entry_id']}", (row, topic), counts.get(topic, 1) / total))
-    drawn = record_cards._draw(items, record_cards._history(conn, day), day, seed + 5)
+    drawn = record_cards._draw(items, record_cards._history(conn, day), day, seed + 5, avoid, lambda item: item[1])
     if not drawn:
         return None
     card_id, (row, topic) = drawn

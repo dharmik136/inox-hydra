@@ -38,7 +38,7 @@ import logging
 import os
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 try:
     from . import changes, paths, record_cards, support
@@ -195,7 +195,7 @@ def _model_configured(conn) -> bool:
     return bool(provider) and provider != "local_deterministic" and (_setting(conn, "record_model_stage") or "on") == "on"
 
 
-def open_slot_card(conn, day: date, seed: int) -> Dict[str, Any]:
+def open_slot_card(conn, day: date, seed: int, avoid: Optional[Set[str]] = None) -> Dict[str, Any]:
     """
     Slot 5 at the time the job runs. The library's curated match when a
     signed bundle is stored and one of its entries matches the creator's
@@ -206,7 +206,7 @@ def open_slot_card(conn, day: date, seed: int) -> Dict[str, Any]:
         from . import library_bundle
     except ImportError:
         import library_bundle
-    card = library_bundle.match_card(conn, day, seed)
+    card = library_bundle.match_card(conn, day, seed, avoid)
     if card is not None:
         return card
     if _model_configured(conn):
@@ -251,7 +251,8 @@ def _carry_forward(conn, last: Dict[str, Any], day: date, seed: int) -> List[Dic
         carried.append({"card_id": card["card_id"], "slot": card["slot"], "block": card["block"], "kind": card["kind"],
                         "label": card["label"], "method": card["method"], "status": card["status"],
                         "payload": card["payload"], "provenance": card["provenance"]})
-    fresh = record_cards.compute_local(conn, day, seed)
+    # The date's own card is drawn for today away from the topics the carried cards show.
+    fresh = record_cards.compute_local(conn, day, seed, avoid={record_cards.card_topic(c) for c in carried} - {None})
     for card in fresh["cards"]:
         if card["kind"] in DATED_KINDS or (card["slot"] == 2 and not any(c["slot"] == 2 for c in carried)):
             carried.append(card)
@@ -296,8 +297,9 @@ def run_today(day: Optional[date] = None, conn=None, reroll: bool = False) -> Di
             carried_from = last["day"]
             note = f"nothing new since {carried_from}"
         else:
-            cards = record_cards.compute_local(conn, day, seed)["cards"]
-            cards.append(record_cards.verify(conn, open_slot_card(conn, day, seed)))
+            batch = record_cards.compute_local(conn, day, seed)
+            cards = batch["cards"]
+            cards.append(record_cards.verify(conn, open_slot_card(conn, day, seed, set(batch["topics_shown"]))))
             note = "built from your record" if not reroll else "drawn again at your request"
         dropped = sum(1 for card in cards if card["status"] == "dropped")
         # Then one short write. A run that landed meanwhile, from another

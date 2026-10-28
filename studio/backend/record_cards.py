@@ -56,7 +56,7 @@ import random
 import re
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 try:
     from . import evidence_briefing, post_identity, results, universal_search
@@ -93,6 +93,10 @@ ENGAGED_RECENT_DAYS = 90
 # their own articles.
 ENGAGED_KIND_WEIGHTS = (("comment", 2.0), ("vote", 1.0), ("follow", 1.0), ("link", 1.0))
 WORKING_KIND_WEIGHTS = (("opener", 1.0), ("article", 1.0))
+# Said on a drawn card's rule, so the creator can read why it is not on the
+# topic they half expected.
+TOPIC_DIVERSITY = ("drawn on a topic no earlier card of the day shows, when one is free; a repeat only when every "
+                   "card the slot could show goes under a topic already there")
 # The studio's own playbook, in Docs under Write and publish, which an ask is
 # matched to beside the creator's posts (the report's batch 6).
 PLAYBOOK_FILE = "strategy_playbook.md"
@@ -280,7 +284,9 @@ def _set_aside(card_id: str, history: Optional[Dict[str, Any]], day: Optional[da
     return "skip" in marks and (day - marks["skip"]).days < SKIP_HOLD_DAYS
 
 
-def _draw(items: List[Tuple[Any, ...]], history: Dict[str, Any], day: date, seed: int) -> Optional[Tuple[str, Any]]:
+def _draw(items: List[Tuple[Any, ...]], history: Dict[str, Any], day: date, seed: int,
+          avoid: Optional[Set[str]] = None,
+          topic_of: Optional[Callable[[Any], Optional[str]]] = None) -> Optional[Tuple[str, Any]]:
     """
     One weighted draw with a seed that is stored on the run, so the day can be
     reproduced. Each item is (card id, item) or (card id, item, base weight);
@@ -295,6 +301,13 @@ def _draw(items: List[Tuple[Any, ...]], history: Dict[str, Any], day: date, seed
     weighted = [w for w in weighted if w[2] > 0]
     if not weighted:
         return None
+    # Topic diversity: an item on a topic an earlier card of the day already
+    # shows is drawn only when nothing else in the pool is free.
+    if avoid and topic_of is not None:
+        avoided = {_folded(topic) for topic in avoid}
+        fresh = [w for w in weighted if _folded(topic_of(w[1])) not in avoided]
+        if fresh:
+            weighted = fresh
     picker = random.Random(seed)
     total = sum(w for _, _, w in weighted)
     point = picker.random() * total
@@ -318,13 +331,30 @@ def _topical(text: Optional[str], vocabulary: List[Tuple[str, str]]) -> Optional
     return None if label == evidence_briefing.OTHER_TOPIC else label
 
 
+def _folded(topic: Optional[str]) -> Optional[str]:
+    return topic.casefold() if topic else None
+
+
+def card_topic(card: Dict[str, Any]) -> Optional[str]:
+    """The creator's recurring topic a card goes under, folded, or None when it has none."""
+    topic = (card.get("payload") or {}).get("topic")
+    return None if not topic or topic == evidence_briefing.OTHER_TOPIC else topic.casefold()
+
+
 def _choose_kind(candidates: List[Tuple[str, Optional[Dict[str, Any]]]], weights: Tuple[Tuple[str, float], ...],
-                 seed: int) -> Optional[Dict[str, Any]]:
-    """One of the kinds that has a card today, by its stated weight, with the stored seed."""
+                 seed: int, avoid: Optional[Set[str]] = None) -> Optional[Dict[str, Any]]:
+    """
+    One of the kinds that has a card today, by its stated weight, with the
+    stored seed; a card on a topic the day already shows only when no other
+    kind's card is free of it.
+    """
     weight = dict(weights)
     present = [(kind, card) for kind, card in candidates if card is not None]
     if not present:
         return None
+    if avoid:
+        avoided = {_folded(topic) for topic in avoid}
+        present = [(kind, card) for kind, card in present if card_topic(card) not in avoided] or present
     point = random.Random(seed).random() * sum(weight[kind] for kind, _ in present)
     running = 0.0
     for kind, card in present:
@@ -511,7 +541,7 @@ def on_this_day(conn, posts: List[Dict[str, Any]], day: date,
 
 
 def resurfaced_opener(conn, posts: List[Dict[str, Any]], topics_of: Dict[str, str], history: Dict[str, Any],
-                      day: date, seed: int) -> Optional[Dict[str, Any]]:
+                      day: date, seed: int, avoid: Optional[Set[str]] = None) -> Optional[Dict[str, Any]]:
     """
     One of the creator's own first lines, drawn by a stated and reproducible rule.
 
@@ -534,7 +564,7 @@ def resurfaced_opener(conn, posts: List[Dict[str, Any]], topics_of: Dict[str, st
         if _opener_is_worth_it(line):
             topic = topics_of.get(urn, evidence_briefing.OTHER_TOPIC)
             items.append((f"opener:{urn}", (urn, line), share.get(topic, 1) / total))
-    drawn = _draw(items, history, day, seed)
+    drawn = _draw(items, history, day, seed, avoid, lambda item: topics_of.get(item[0]))
     if not drawn:
         return None
     card_id, (urn, line) = drawn
@@ -563,13 +593,14 @@ def resurfaced_opener(conn, posts: List[Dict[str, Any]], topics_of: Dict[str, st
         "method_sentence": rule,
         "draft_text": line,
         "seed": seed,
+        "topic": topics_of.get(urn),
         "block_label": BLOCKS["working_for_you"],
     }
     return _card(card_id, 2, "working_for_you", "opener", label, rule, payload, [{"table": "own_posts", "id": urn}])
 
 
 def your_article(conn, vocabulary: List[Tuple[str, str]], topic_counts: Dict[str, int], history: Dict[str, Any],
-                 day: date, seed: int) -> Optional[Dict[str, Any]]:
+                 day: date, seed: int, avoid: Optional[Set[str]] = None) -> Optional[Dict[str, Any]]:
     """
     An article of the creator's own, from their LinkedIn archive, whose title
     goes under one of their recurring topics: its title, link and date. An
@@ -584,7 +615,7 @@ def your_article(conn, vocabulary: List[Tuple[str, str]], topic_counts: Dict[str
         topic = _topical(row["title"], vocabulary)
         if topic:
             items.append((f"article:{row['id']}", dict(row, topic=topic), topic_counts.get(topic, 1) / max(1, total)))
-    drawn = _draw(items, history, day, seed + 6) if items else None
+    drawn = _draw(items, history, day, seed + 6, avoid, lambda row: row["topic"]) if items else None
     if not drawn:
         return None
     card_id, row = drawn
@@ -685,7 +716,8 @@ def playbook_section(conn, text: str) -> Optional[Dict[str, str]]:
 
 
 def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], history: Dict[str, Any],
-              day: date, seed: int) -> Dict[str, Any]:
+              day: date, seed: int, vocabulary: Optional[List[Tuple[str, str]]] = None,
+              avoid: Optional[Set[str]] = None) -> Dict[str, Any]:
     """
     An ask of theirs with the posts of theirs that share its words, or a
     recurring topic of theirs when nothing was asked, or the sentence that
@@ -694,7 +726,8 @@ def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], h
     block = "you_asked"
     asks = _open_asks(conn)
     if asks:
-        drawn = _draw([(f"ask:{a['id']}", a) for a in asks], history, day, seed + 1)
+        drawn = _draw([(f"ask:{a['id']}", a) for a in asks], history, day, seed + 1, avoid,
+                      lambda ask: _topical(ask["text"], vocabulary or []))
         if drawn:
             card_id, ask = drawn
             matches = matches_in_own_posts(conn, ask["text"])
@@ -724,6 +757,7 @@ def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], h
                 "method_sentence": rule,
                 "draft_text": ask["text"],
                 "ask_id": ask["id"],
+                "topic": _topical(ask["text"], vocabulary or []),
                 "block_label": BLOCKS[block],
             }
             rows = [{"table": "asks", "id": ask["id"]}] + [{"table": "own_posts", "id": m["activity_urn"]} for m in matches]
@@ -732,7 +766,7 @@ def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], h
         total_posts = max(1, sum(topic_counts.values()))
         named = [(f"theme:{label.casefold()}", (label, count), count / total_posts)
                  for label, count in topic_counts.items() if label != evidence_briefing.OTHER_TOPIC]
-        drawn = _draw(named, history, day, seed + 2)
+        drawn = _draw(named, history, day, seed + 2, avoid, lambda item: item[0])
         if drawn:
             card_id, (label, count) = drawn
             matches = matches_in_own_posts(conn, label)
@@ -770,7 +804,8 @@ def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], h
 # ---------------------------------------------------------------------------
 
 def you_engaged_with(conn, vocabulary: List[Tuple[str, str]], history: Dict[str, Any], day: date,
-                     seed: int, topic_counts: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
+                     seed: int, topic_counts: Optional[Dict[str, int]] = None,
+                     avoid: Optional[Set[str]] = None) -> Dict[str, Any]:
     """
     The creator's own activity on what somebody else wrote or runs: a post they
     commented on, as the link, the date and their own words; a poll they voted
@@ -801,7 +836,8 @@ def you_engaged_with(conn, vocabulary: List[Tuple[str, str]], history: Dict[str,
                   " ORDER BY first_seen_at DESC LIMIT 200", params)]
 
     def comment_card() -> Optional[Dict[str, Any]]:
-        drawn = _draw([(f"eng:{c['id']}", c) for c in pool], history, day, seed + 3) if pool else None
+        drawn = _draw([(f"eng:{c['id']}", c) for c in pool], history, day, seed + 3, avoid,
+                      lambda comment: _topical(comment["my_text"], vocabulary)) if pool else None
         if not drawn:
             return None
         card_id, comment = drawn
@@ -853,7 +889,7 @@ def you_engaged_with(conn, vocabulary: List[Tuple[str, str]], history: Dict[str,
 
     def vote_card() -> Optional[Dict[str, Any]]:
         drawn = _draw([(f"vote:{v['id']}", v, topic_counts.get(v["topic"], 1) / max(1, total_posts)) for v in votes],
-                      history, day, seed + 8) if votes else None
+                      history, day, seed + 8, avoid, lambda vote: vote["topic"]) if votes else None
         if not drawn:
             return None
         card_id, vote = drawn
@@ -880,7 +916,7 @@ def you_engaged_with(conn, vocabulary: List[Tuple[str, str]], history: Dict[str,
 
     def follow_card() -> Optional[Dict[str, Any]]:
         drawn = _draw([(f"follow:{f['id']}", f, topic_counts.get(f["topic"], 1) / max(1, total_posts)) for f in follows],
-                      history, day, seed + 9) if follows else None
+                      history, day, seed + 9, avoid, lambda follow: follow["topic"]) if follows else None
         if not drawn:
             return None
         card_id, follow = drawn
@@ -982,7 +1018,7 @@ def you_engaged_with(conn, vocabulary: List[Tuple[str, str]], history: Dict[str,
         others.append((f"repost:{row['id']}", {"what": "reposted", **dict(row)}))
 
     chosen = _choose_kind([("comment", comment_card()), ("vote", vote_card()), ("follow", follow_card()),
-                           ("link", link_card())], ENGAGED_KIND_WEIGHTS, seed + 10)
+                           ("link", link_card())], ENGAGED_KIND_WEIGHTS, seed + 10, avoid)
     if chosen is not None:
         return chosen
     if pool or others or votes or follows:
@@ -1100,29 +1136,49 @@ def monday_card(conn, day: date) -> Optional[Dict[str, Any]]:
 # The batch
 # ---------------------------------------------------------------------------
 
-def compute_local(conn, day: date, seed: int) -> Dict[str, Any]:
+def compute_local(conn, day: date, seed: int, avoid: Optional[Set[str]] = None) -> Dict[str, Any]:
     """
     Stage 1 for one day: the slots this module can fill, the abstentions it
     cannot, and what it rested on. Nothing here opens a socket.
+
+    Topic diversity (the rule TOPIC_DIVERSITY says): the slots are filled in
+    order, and each drawn slot takes a card on a topic no earlier card of the
+    day shows, when its pool has one; What worked and On this day are the
+    record's, so their topics count and are never changed. `avoid` names
+    topics shown already by cards carried from another day.
     """
     posts = _posts(conn)
     _vocabulary, topics_of, topic_counts = _topics(posts) if posts else ([], {}, {})
+    topics_of = {urn: (None if label == evidence_briefing.OTHER_TOPIC else label) for urn, label in topics_of.items()}
     history = _history(conn, day)
+    seen_topics = set(avoid or ())
+
+    def noted(card: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if card is not None and card["status"] == "shown":
+            if card["kind"] in CHOSEN_KINDS:
+                card["payload"]["topic"] = topics_of.get(card["provenance"]["source_rows"][0]["id"])
+            elif card["kind"] in DRAWN_KINDS:
+                card["payload"]["method_sentence"] = f"{card['payload'].get('method_sentence') or card['method']}; {TOPIC_DIVERSITY}"
+            if card_topic(card):
+                seen_topics.add(card_topic(card))
+        return card
+
     cards: List[Dict[str, Any]] = []
-    cards.append(what_worked(conn, posts, history, day))
-    second = on_this_day(conn, posts, day, history)
+    cards.append(noted(what_worked(conn, posts, history, day)))
+    second = noted(on_this_day(conn, posts, day, history))
     if second is None:
-        second = _choose_kind([("opener", resurfaced_opener(conn, posts, topics_of, history, day, seed)),
-                               ("article", your_article(conn, _vocabulary, topic_counts, history, day, seed))],
-                              WORKING_KIND_WEIGHTS, seed + 7)
+        second = noted(_choose_kind(
+            [("opener", resurfaced_opener(conn, posts, topics_of, history, day, seed, seen_topics)),
+             ("article", your_article(conn, _vocabulary, topic_counts, history, day, seed, seen_topics))],
+            WORKING_KIND_WEIGHTS, seed + 7, seen_topics))
     if second is None and posts:
         second = _abstained(2, "working_for_you", "opener", "No opener of yours, nor an article of yours on one of "
                             "your topics, is free to resurface today: every one is held back after a showing, or was "
                             "hidden. Unhide all on What the studio knows brings them back.", "the resurfacing rule")
     if second is not None:
         cards.append(second)
-    cards.append(you_asked(conn, posts, topic_counts, history, day, seed))
-    cards.append(you_engaged_with(conn, _vocabulary, history, day, seed, topic_counts))
+    cards.append(noted(you_asked(conn, posts, topic_counts, history, day, seed, _vocabulary, seen_topics)))
+    cards.append(noted(you_engaged_with(conn, _vocabulary, history, day, seed, topic_counts, seen_topics)))
     monday = monday_card(conn, day)
     if monday is not None:
         cards.append(monday)
@@ -1135,6 +1191,7 @@ def compute_local(conn, day: date, seed: int) -> Dict[str, Any]:
         "filled_slots": sorted({c["slot"] for c in shown if 1 <= c["slot"] <= SLOTS}),
         "dropped": sum(1 for c in cards if c["status"] == "dropped"),
         "inputs": {"posts": len(posts), "topics": len(topic_counts), "asks": len(_open_asks(conn))},
+        "topics_shown": sorted(seen_topics),
     }
 
 

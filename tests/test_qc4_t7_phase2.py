@@ -172,3 +172,105 @@ def test_without_a_comment_the_other_activity_still_fills_the_slot(conn):
                detail="Onboarding first")
     kinds = {slot(record_cards.compute_local(conn, DAY, seed), 4)["kind"] for seed in SEEDS}
     assert kinds == {"vote"}, kinds
+
+
+# ---------------------------------------------------------------------------
+# 3. Topic diversity across the day's slots
+# ---------------------------------------------------------------------------
+#
+# Four recurring topics, each with posts, an ask and a comment: every drawn
+# slot has a card on a topic no earlier card of the day shows, so the four
+# local cards are four topics, whatever the seed. Without the rule the draws
+# are independent and repeat (falsified by switching it off: see the record).
+
+FOUR_TOPICS = [
+    ("Hiring loops that respect candidates take longer to design than to run.", "2025-01-06T09:00:00+00:00"),
+    ("Three things I learned hiring our first five engineers without help.", "2025-02-03T09:00:00+00:00"),
+    ("We changed our hiring rubric and the offers got better, not slower.", "2025-03-03T09:00:00+00:00"),
+    ("Pricing is a design decision. Most teams treat it as a spreadsheet.", "2025-05-05T09:00:00+00:00"),
+    ("Pricing pages lie less when the founder writes them herself.", "2025-06-02T09:00:00+00:00"),
+    ("Raising our pricing lost two customers and kept the good ones.", "2025-07-07T09:00:00+00:00"),
+    ("Onboarding is the product for the first week, whatever the roadmap says.", "2025-09-01T09:00:00+00:00"),
+    ("Our onboarding checklist got shorter every time a customer finished it.", "2025-09-29T09:00:00+00:00"),
+    ("Writing every morning before the inbox opens changed my week.", "2025-10-06T09:00:00+00:00"),
+    ("Writing short paragraphs is a kindness to the reader on a phone.", "2025-11-03T09:00:00+00:00"),
+]
+
+
+def add_ask(conn, text):
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("INSERT INTO asks (text, source, status, created_at, updated_at) VALUES (?, 'ask_box', 'open', ?, ?)",
+                 (text, now, now))
+    conn.commit()
+
+
+def add_reading(conn, n, reactions, days_ago=40):
+    observed = datetime.now(timezone.utc) - timedelta(days=1)
+    published = (datetime.now(timezone.utc) - timedelta(days=days_ago + n)).isoformat()
+    conn.execute("UPDATE own_posts SET published_at = ? WHERE activity_urn = ?", (published, urn(n)))
+    conn.execute(
+        "INSERT INTO post_metric_observations (activity_urn, observed_at, observed_hour, age_hours, source, "
+        "impressions, reactions, comments, reposts) VALUES (?, ?, ?, ?, 'post_analytics', ?, ?, 2, 0)",
+        (urn(n), observed.isoformat(), observed.strftime("%Y-%m-%dT%H"), (days_ago + n - 1) * 24.0, reactions * 40,
+         reactions))
+    conn.commit()
+
+
+def four_topic_history(conn):
+    add_posts(conn, FOUR_TOPICS)
+    # The best post is about hiring; three others make the median.
+    for n, reactions in ((0, 90), (3, 20), (6, 15), (8, 10)):
+        add_reading(conn, n, reactions)
+    for text in ("hiring rubrics for a small team", "pricing pages that say the price",
+                 "onboarding emails nobody reads", "writing habits that survive a busy week"):
+        add_ask(conn, text)
+    for days_ago, text in enumerate(("Our hiring rubric did the same for us.", "Pricing in public is braver than it looks.",
+                                     "Onboarding is where we lost most of them too.",
+                                     "Writing first thing is the only way it happens for me."), start=2):
+        add_comment(conn, text, days_ago=days_ago)
+
+
+def topics_of_batch(batch):
+    return [c["payload"].get("topic") for c in batch["cards"] if 1 <= c["slot"] <= 4 and c["status"] == "shown"]
+
+
+def test_the_days_cards_are_four_topics_when_four_are_there(conn):
+    import record_cards
+
+    four_topic_history(conn)
+    for seed in SEEDS:
+        batch = record_cards.compute_local(conn, DAY, seed)
+        topics = topics_of_batch(batch)
+        assert len(topics) == 4 and all(topics), (seed, [(c["slot"], c["kind"], c["payload"].get("topic"))
+                                                           for c in batch["cards"]])
+        assert len({t.casefold() for t in topics}) == 4, (seed, topics)
+
+
+def test_a_slot_with_only_a_repeated_topic_still_fills(conn):
+    import record_cards
+
+    add_posts(conn, FOUR_TOPICS[:3] + FOUR_TOPICS[3:4] + FOUR_TOPICS[4:5])
+    add_ask(conn, "hiring rubrics for a small team")
+    add_comment(conn, "Our hiring rubric did the same for us.")
+    for seed in range(10):
+        batch = record_cards.compute_local(conn, DAY, seed)
+        assert slot(batch, 3)["status"] == "shown" and slot(batch, 3)["kind"] == "ask"
+        assert slot(batch, 4)["status"] == "shown" and slot(batch, 4)["kind"] == "comment"
+
+
+def test_the_library_card_takes_a_topic_the_day_has_not_shown(conn):
+    import library_bundle
+
+    add_posts(conn, FOUR_TOPICS)
+    now = datetime.now(timezone.utc).isoformat()
+    for entry_id, title, tags in (("form-hiring", "The hiring note", '["hiring"]'),
+                                  ("form-pricing", "The pricing note", '["pricing"]')):
+        conn.execute("INSERT INTO library_entries (entry_id, kind, title, text, tags_json, author, bundle_version, "
+                     "signed_at, key_id, fetched_at) VALUES (?, 'form', ?, 'Write about [it].', ?, 'Inox Hydra', "
+                     "'2026.10.1', '2026-10-26', 'inox-library-2026-10', ?)", (entry_id, title, tags, now))
+    conn.commit()
+    hiring = next(label for key, label in __import__("evidence_briefing").derive_topic_vocabulary(
+        [t for t, _ in FOUR_TOPICS]) if key == "hiring")
+    for seed in SEEDS:
+        card = library_bundle.match_card(conn, DAY, seed, avoid={hiring})
+        assert card is not None and card["provenance"]["source_rows"] == [{"table": "library_entries", "id": "form-pricing"}]

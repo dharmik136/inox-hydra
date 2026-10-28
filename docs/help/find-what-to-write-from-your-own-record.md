@@ -32,6 +32,8 @@ When nothing the cards are made from has changed since the last day (your posts 
 
 Every card shows, beside its title, how it was arrived at (for example "measured" or "resurfaced, not measured"), your own words in quotation marks where it has any, figures only where a page was read, and a line that starts "Because". **Why this?** opens the whole rule, the rows each figure was read from, and the card's label: MEASURED (read from a row, with when), DERIVED (worked out from measured rows by the stated rule), TYPED (sorted by a rule such as shared words, with nothing measured behind it), SUGGESTED (written by your model, then checked) or CURATED (from the Inox library). Before a card is shown, every row it cites is looked up; a card whose row is gone is dropped and counted under the title, never shown.
 
+The cards that are drawn keep to different topics. Each takes one of your recurring topics that no earlier card of the day shows, when it has one to take, so five cards are not five takes on one theme; a repeat comes only when everything a slot could show goes under a topic already there. **What worked** and **On this day** follow your record and are never changed for it, and **Why this?** says the rule.
+
 A card that cannot be filled yet is dashed and reads NOT YET, with a sentence saying what is missing and what fills it. It is never padded with another card.
 
 ## Act on a card
