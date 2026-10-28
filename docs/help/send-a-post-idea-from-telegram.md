@@ -152,6 +152,8 @@ The panel under **Your phone, through Telegram** reads:
 
 **Send a test message** sends one fixed sentence to your paired chat at once: "This is a test message from your Inox Hydra studio. If you can read it, the bot can reach you." The panel then says whether Telegram took it, or why not. Telegram taking it means your chat received it; whether your phone showed it, only your phone can say.
 
+For a five-minute check of the whole path on your real bot, follow [Test your Telegram bot](test-your-telegram-bot.md).
+
 ## Turn it off
 
 Click **Remove the bot** in the panel. The token and chat id are removed from this profile and the studio stops asking Telegram. To block the connection without removing them, set `INOX_ALLOW_INGRESS_EGRESS=0` before you start the studio; `INOX_NO_EGRESS=1` refuses it along with every other outbound category. In both cases each attempt is counted as refused in the ledger.

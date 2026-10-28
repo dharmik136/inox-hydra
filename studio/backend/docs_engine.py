@@ -630,6 +630,8 @@ HELP_SECTIONS = [
             "help/publish-queue-or-send-to-linkedin.md",
             "help/how-the-queue-works.md",
             "help/send-a-post-idea-from-telegram.md",
+            # The owner's five-minute check of the bot on the real service (2.11.0).
+            "help/test-your-telegram-bot.md",
             "strategy_playbook.md",
         ],
     },
