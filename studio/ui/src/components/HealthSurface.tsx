@@ -671,7 +671,12 @@ function bridgeEntryLine(entry: BridgeEntry): string {
   const held = Object.entries(entry.held ?? {})
     .map(([vanity, count]) => ` ${count} capture${count === 1 ? "" : "s"} held: no creator profile here holds linkedin.com/in/${vanity}.`)
     .join("");
-  return `${who}: ${when}${pages}.${held}`;
+  // Its folder is gone (a portable upgrade deleted it): it runs from memory
+  // and will not load at the browser's next start, which no reload mends.
+  const folder = entry.files_readable === false
+    ? " The folder it was loaded from is no longer there: load the extension again from the studio's folder."
+    : "";
+  return `${who}: ${when}${pages}.${held}${folder}`;
 }
 
 function bridgeSentence(bridge: ExtensionHealth["bridge"]): string {

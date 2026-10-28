@@ -344,12 +344,27 @@ def _counts_by_name(raw: Any, name_limit: int = 60, limit: int = 40) -> Optional
     return clean
 
 
+def _utc_moment(raw: Any) -> Optional[str]:
+    """A moment the browser stated (toISOString), as UTC ISO text, or None for anything else."""
+    text = _text(raw, 40)
+    if not text:
+        return None
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        return None
+    return moment.astimezone(timezone.utc).isoformat()
+
+
 def record_heartbeat(extension_version: Any = None, page_kind: Any = None,
                      network_reading: Any = None, voyager_calls: Any = None,
                      browser_instance_id: Any = None, browser: Any = None, signed_in_vanity: Any = None,
                      contract_version: Any = None, open_pages: Any = None, held: Any = None,
                      tabs_needing_reload: Any = None, self_reload: Any = None,
-                     files_version: Any = None) -> Dict[str, Any]:
+                     files_version: Any = None, files_readable: Any = None,
+                     files_checked_at: Any = None) -> Dict[str, Any]:
     """
     One heartbeat. From a worker that names its browser, one row per browser
     per minute, the newest beat replacing the minute's earlier one: ten tabs,
@@ -378,6 +393,8 @@ def record_heartbeat(extension_version: Any = None, page_kind: Any = None,
         "tabs_needing_reload": _count(tabs_needing_reload),
         "self_reload": (1 if self_reload else 0) if isinstance(self_reload, bool) else None,
         "files_version": _text(files_version, 40),
+        "files_readable": (1 if files_readable else 0) if isinstance(files_readable, bool) else None,
+        "files_checked_at": _utc_moment(files_checked_at),
     }
     names = list(values)
     sql = (f"INSERT INTO bridge_heartbeats ({', '.join(names)}) VALUES ({', '.join('?' for _ in names)})")
@@ -505,9 +522,10 @@ def bridges() -> List[Dict[str, Any]]:
     Each browser the bridge runs in, newest first, from its own latest
     heartbeat: which browser, which LinkedIn account it is signed in to, when
     it was last heard from, the LinkedIn pages it has open, the captures it
-    is holding for an account no profile here holds, and the tabs that still
-    carry an older copy of its readers. An extension from before the stamp
-    is one bridge whose browser is not known.
+    is holding for an account no profile here holds, the tabs that still
+    carry an older copy of its readers, and what it last found in its own
+    folder. An extension from before the stamp is one bridge whose browser
+    is not known.
     """
     conn = get_db()
     try:
@@ -538,6 +556,8 @@ def bridges() -> List[Dict[str, Any]]:
             "tabs_needing_reload": row.get("tabs_needing_reload"),
             "self_reload": None if row.get("self_reload") is None else bool(row["self_reload"]),
             "files_version": row.get("files_version"),
+            "files_readable": None if row.get("files_readable") is None else bool(row["files_readable"]),
+            "files_checked_at": row.get("files_checked_at"),
         })
     return found
 
@@ -2066,7 +2086,8 @@ def extension_outdated(conn) -> bool:
     """
     True when the latest finished posts import came from an older extension,
     which cannot say whether it reached the end of the list. The fix is to
-    reload the extension, not to import again.
+    reload the extension, not to import again, unless the bridge heard from
+    since needs no reload (state() asks ingest_contract.heard_current()).
     """
     row = conn.execute(
         "SELECT outcome FROM self_import_requests WHERE kind = 'posts' AND finished_at IS NOT NULL "
@@ -2545,6 +2566,13 @@ def onboarding_state() -> Dict[str, Any]:
             "FROM self_import_requests ORDER BY id DESC LIMIT 6")]
     finally:
         conn.close()
+    # The last posts import was read by an older extension. Reloading is the
+    # fix only while the browser still runs one: once the bridge heard from
+    # needs no reload (it reloaded itself, or was reloaded), the advice is to
+    # import again, and "reload" is not said.
+    current = ingest_contract.heard_current()
+    if outdated and current:
+        outdated = False
 
     confirmed = bool(row.get("confirmed_at"))
     candidate = None
@@ -2609,6 +2637,9 @@ def onboarding_state() -> Dict[str, Any]:
         "sync_chain": {"sequence": chain["sequence"], "current_kind": chain["current_kind"]} if chain else None,
         # The latest posts import came from an older extension: reload it.
         "extension_outdated": outdated,
+        # The bridge heard from needs no reload, so an import an older
+        # extension read is imported again, not preceded by a reload.
+        "extension_current": current,
         "steps": {
             "bridge": bool(bridge["last_seen_at"]),
             "identity": confirmed,

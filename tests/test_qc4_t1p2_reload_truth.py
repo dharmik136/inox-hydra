@@ -109,3 +109,101 @@ def test_the_heartbeat_is_judged_on_what_the_extension_just_said(studio):
     assert answer["reload_required"] is False
     answer = ingest_contract.handshake("2.9.0", 1, studio_version="2.10.0")
     assert answer["reload_required"] is True
+
+
+# ---------------------------------------------------------------------------
+# The two cases a reload of itself cannot mend, which are truly a reload
+# ---------------------------------------------------------------------------
+# A portable upgrade deletes the old folder and extracts a new one: the
+# extension runs on from memory, cannot read its own files, cannot update
+# itself, and will not load at the next browser start. One loaded from a
+# folder the studio was not updated in reads its own old version there for
+# ever. Both are said, and only on the evidence of the extension's own check.
+
+def _after_start(seconds=5):
+    import ingest_contract
+    return (ingest_contract.STARTED_AT + timedelta(seconds=seconds)).isoformat().replace("+00:00", "Z")
+
+
+def test_an_extension_whose_folder_is_gone_is_told_to_load_it_again(studio):
+    _beat(files_version=None, files_readable=False, files_checked_at=_after_start())
+    contract = _health_contract()
+    assert contract["reload_required"] is True
+    assert "no longer there" in contract["message"]
+    assert "load it again" in contract["message"]
+
+
+def test_an_older_extension_reading_its_own_version_after_the_studio_started_is_on_another_folder(studio):
+    _beat(extension_version="2.10.0", files_version="2.10.0", files_readable=True,
+          files_checked_at=_after_start())
+    contract = ingest_contract_handshake("2.11.0")
+    assert contract["reload_required"] is True
+    assert "not this studio's" in contract["message"] and "2.11.0" in contract["message"]
+
+
+def test_the_same_reading_from_before_the_studio_started_is_not_evidence(studio):
+    # An in-place update restarts the studio first; the extension's next look
+    # at its folder sees the new version and reloads itself. A look from
+    # before the restart says nothing about the folder the studio runs from.
+    _beat(extension_version="2.10.0", files_version="2.10.0", files_readable=True,
+          files_checked_at=_after_start(-60))
+    contract = ingest_contract_handshake("2.11.0")
+    assert contract["reload_required"] is False and contract["message"] is None
+
+
+def test_a_readable_folder_of_the_studios_version_is_no_reload(studio):
+    _beat(extension_version="2.10.0", files_version="2.10.0", files_readable=True,
+          files_checked_at=_after_start())
+    assert _health_contract()["reload_required"] is False
+
+
+def ingest_contract_handshake(studio_version):
+    import ingest_contract
+    return ingest_contract.handshake(studio_version=studio_version)
+
+
+# ---------------------------------------------------------------------------
+# Setup's advice after an import an older extension read
+# ---------------------------------------------------------------------------
+# The last posts import was read by an older extension, which cannot say
+# whether it reached the end. Setup and Today said to reload the extension,
+# then import again, and kept saying it after the extension had reloaded
+# itself. Reloading is said only while the bridge heard from needs it.
+
+def _old_import():
+    from database import get_db
+    moment = datetime.now(timezone.utc).isoformat()
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT INTO self_import_requests (kind, requested_at, started_at, finished_at, items_seen, "
+                     "outcome) VALUES ('posts', ?, ?, ?, 40, 'completed')", (moment,) * 3)
+    conn.close()
+
+
+def test_setup_does_not_say_reload_once_the_bridge_needs_none(studio):
+    import onboarding
+    _old_import()
+    _beat(extension_version="2.10.0", files_version="2.10.0", files_readable=True,
+          files_checked_at=_after_start())
+    state = onboarding.onboarding_state()
+    assert state["extension_current"] is True
+    assert state["extension_outdated"] is False, "Setup said reload to an extension that reloaded itself"
+
+
+def test_setup_still_says_reload_while_the_bridge_is_the_old_one(studio):
+    import onboarding
+    _old_import()
+    _beat(extension_version="2.7.0", self_reload=None, files_version=None)
+    state = onboarding.onboarding_state()
+    assert state["extension_current"] is False
+    assert state["extension_outdated"] is True
+
+
+def test_setup_keeps_the_import_evidence_when_nothing_has_been_heard(studio):
+    import ingest_contract
+    import onboarding
+    _old_import()
+    # A capture in memory is not a heartbeat: it does not say the extension is current.
+    ingest_contract.note_client("2.10.0", ingest_contract.CONTRACT_VERSION)
+    state = onboarding.onboarding_state()
+    assert state["extension_current"] is False and state["extension_outdated"] is True

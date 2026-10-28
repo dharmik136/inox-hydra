@@ -1719,6 +1719,9 @@ export interface BridgeEntry {
   tabs_needing_reload: number | null;
   self_reload: boolean | null;
   files_version: string | null;
+  /** Whether the extension could read its own folder at its last look; false when the folder is gone. */
+  files_readable?: boolean | null;
+  files_checked_at?: string | null;
 }
 
 export interface IdentityCandidate {

@@ -952,6 +952,8 @@ const TAB_REGISTRY_KEY = "tabRegistry";
 const NEEDS_RELOAD_KEY = "tabsNeedingReload";
 const PROFILE_VANITIES_KEY = "profileVanities";
 const FILES_VERSION_KEY = "filesVersion";
+// When the extension last read its own folder, and whether it could.
+const FILES_CHECK_KEY = "filesCheck";
 const PAGE_KIND = /^[a-z0-9_-]{1,40}$/;
 let heartbeatTimer = null;
 
@@ -1044,6 +1046,7 @@ async function sendWorkerHeartbeat() {
   // browser holds the reader registered; what a page sees (whether it
   // carries the reader, the calls it counted) from the newest visible page.
   const reading = await workerNetworkReading();
+  const filesCheck = await readLocal(FILES_CHECK_KEY);
   if (page) {
     for (const field of ["injected", "voyager_calls_seen", "matched", "captured"]) {
       if (reading[field] === null || reading[field] === undefined) {
@@ -1067,7 +1070,9 @@ async function sendWorkerHeartbeat() {
     held: heldCounts(kept),
     tabs_needing_reload: Object.keys(needs).filter((tabId) => live.has(String(tabId))).length,
     self_reload: true,
-    files_version: (await readLocal(FILES_VERSION_KEY)) || null
+    files_version: (await readLocal(FILES_VERSION_KEY)) || null,
+    files_readable: filesCheck && typeof filesCheck.readable === "boolean" ? filesCheck.readable : null,
+    files_checked_at: filesCheck && typeof filesCheck.at === "string" ? filesCheck.at : null
   };
   let answer = null;
   await takeSlot();
@@ -1080,9 +1085,12 @@ async function sendWorkerHeartbeat() {
     giveSlot();
   }
   const shake = answer && answer.handshake;
-  if (shake && shake.reload_required) {
-    noteReloadNeeded(shake);
-    // An unpacked install whose files are newer than it reloads now.
+  if (shake && shake.reload_required) noteReloadNeeded(shake);
+  // A studio of another version: an unpacked install whose files are newer
+  // than it reloads now rather than at the next check, and one whose files
+  // are not, or are gone, says so on the next beat.
+  if (shake && (shake.reload_required ||
+      (shake.studio_version && shake.studio_version !== chrome.runtime.getManifest().version))) {
     checkOwnFiles();
   }
   if (answer && Array.isArray(answer.profile_vanities)) {
@@ -1118,11 +1126,26 @@ const OWN_FILES_ALARM = "inox_own_files";
 const OWN_FILES_EVERY_MINUTES = 5;
 
 async function checkOwnFiles() {
+  let response = null;
   try {
-    const response = await fetch(chrome.runtime.getURL("manifest.json"), { cache: "no-store" });
+    response = await fetch(chrome.runtime.getURL("manifest.json"), { cache: "no-store" });
+  } catch (err) {
+    response = null;
+  }
+  // Its folder is gone: deleted, or replaced by an upgrade that extracts a
+  // new folder somewhere else. It runs on from memory but cannot update
+  // itself, and the browser will not load it at its next start; the
+  // heartbeat says so, which is the one case the studio says to load it again.
+  if (!response || !response.ok) {
+    await storeLocal({ [FILES_VERSION_KEY]: null,
+      [FILES_CHECK_KEY]: { at: new Date().toISOString(), readable: false } });
+    return false;
+  }
+  try {
     const disk = await response.json();
     const onDisk = disk && typeof disk.version === "string" ? disk.version : null;
-    await storeLocal({ [FILES_VERSION_KEY]: onDisk });
+    await storeLocal({ [FILES_VERSION_KEY]: onDisk,
+      [FILES_CHECK_KEY]: { at: new Date().toISOString(), readable: true } });
     if (onDisk && onDisk !== chrome.runtime.getManifest().version) {
       chrome.runtime.reload();
       return true;

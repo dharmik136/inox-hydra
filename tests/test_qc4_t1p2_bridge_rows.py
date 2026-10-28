@@ -76,7 +76,8 @@ def test_the_migration_is_named_for_what_it_records(studio):
 
 def test_the_migration_adds_the_browser_and_claim_columns(studio):
     for column in ("browser_instance_id", "minute", "browser", "signed_in_vanity", "contract_version",
-                   "open_pages", "held", "tabs_needing_reload", "self_reload", "files_version"):
+                   "open_pages", "held", "tabs_needing_reload", "self_reload", "files_version",
+                   "files_readable", "files_checked_at"):
         assert column in _columns("bridge_heartbeats"), column
     for column in ("browser_instance_id", "minute"):
         assert column in _columns("captures"), column
@@ -239,3 +240,16 @@ def test_a_tab_taking_over_a_paused_import_says_it_is_scrolling_again(studio):
     onboarding.update_import(request, "started", claimant="b1:12")
     assert _rows("SELECT outcome FROM self_import_requests WHERE id = ?", request) == [(None,)], (
         "the import still reads as paused while another tab scrolls it")
+
+
+def test_a_heartbeat_keeps_what_the_extension_found_in_its_folder(studio):
+    import onboarding
+    _beat(BRAVE, self_reload=True, files_version=None, files_readable=False,
+          files_checked_at="2026-10-28T09:15:00.000Z")
+    _beat(EDGE, self_reload=True, files_version="2.10.0", files_readable=True,
+          files_checked_at="not a moment")
+    found = {b["browser"]: b for b in onboarding.bridges()}
+    assert found["Brave"]["files_readable"] is False
+    assert found["Brave"]["files_checked_at"] == "2026-10-28T09:15:00+00:00"
+    assert found["Microsoft Edge"]["files_readable"] is True
+    assert found["Microsoft Edge"]["files_checked_at"] is None, "a moment that is not one was kept"

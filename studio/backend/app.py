@@ -1525,7 +1525,9 @@ class BridgeHeartbeat(BaseModel):
     # 1, phase 2): which browser, the LinkedIn account it is signed in to,
     # the LinkedIn pages it has open by kind, the captures it is holding for
     # an account no profile holds, the tabs still carrying an older copy of
-    # its readers, and whether it reloads itself when its files change.
+    # its readers, and whether it reloads itself when its files change; and
+    # what it last found in its own folder (the version there, when it
+    # looked, whether the folder could be read at all).
     browser_instance_id: Optional[str] = None
     browser: Optional[str] = None
     signed_in_vanity: Optional[str] = None
@@ -1534,6 +1536,8 @@ class BridgeHeartbeat(BaseModel):
     tabs_needing_reload: Optional[int] = None
     self_reload: Optional[bool] = None
     files_version: Optional[str] = None
+    files_readable: Optional[bool] = None
+    files_checked_at: Optional[str] = None
 
 
 class IdentityConfirm(BaseModel):
@@ -1624,12 +1628,14 @@ def post_bridge_heartbeat(payload: BridgeHeartbeat):
         browser_instance_id=payload.browser_instance_id, browser=payload.browser,
         signed_in_vanity=payload.signed_in_vanity, contract_version=payload.contract_version,
         open_pages=payload.open_pages, held=payload.held, tabs_needing_reload=payload.tabs_needing_reload,
-        self_reload=payload.self_reload, files_version=payload.files_version)
+        self_reload=payload.self_reload, files_version=payload.files_version,
+        files_readable=payload.files_readable, files_checked_at=payload.files_checked_at)
     ingest_contract.note_waiting(payload.waiting_captures, payload.oldest_waiting_at)
     changes.publish("heartbeat", waiting=payload.waiting_captures is not None)
     seen["handshake"] = ingest_contract.handshake(
         payload.extension_version, payload.contract_version, self_reload=payload.self_reload,
-        files_version=payload.files_version, tabs_needing_reload=payload.tabs_needing_reload)
+        files_version=payload.files_version, tabs_needing_reload=payload.tabs_needing_reload,
+        files_readable=payload.files_readable, files_checked_at=payload.files_checked_at)
     # The accounts a profile here has confirmed, so the worker sends what it
     # held for one of them as soon as it has a home.
     seen["profile_vanities"] = bridge_routing.profile_vanities()

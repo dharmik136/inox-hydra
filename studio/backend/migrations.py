@@ -1973,8 +1973,11 @@ def _migrate_bridge_coordination(cursor: sqlite3.Cursor) -> None:
     is, which LinkedIn account that browser is signed in to (the creator's
     own), which kinds of LinkedIn page are open, how many captures the
     browser is holding for an account no profile here holds, how many tabs
-    still carry an older copy of the readers, and whether the extension can
-    reload itself.
+    still carry an older copy of the readers, whether the extension can
+    reload itself, and what it last found in its own folder: the version
+    there, when it looked, and whether the folder could be read at all (an
+    upgrade that extracts a new folder leaves the old extension reading a
+    folder that is gone).
 
     Two visible tabs on one activity page both scrolled the same history
     import. The import is now claimed: by browser instance and tab, with the
@@ -1987,7 +1990,7 @@ def _migrate_bridge_coordination(cursor: sqlite3.Cursor) -> None:
     for column, kind in (("browser_instance_id", "TEXT"), ("minute", "TEXT"), ("browser", "TEXT"),
                          ("signed_in_vanity", "TEXT"), ("contract_version", "INTEGER"), ("open_pages", "TEXT"),
                          ("held", "TEXT"), ("tabs_needing_reload", "INTEGER"), ("self_reload", "INTEGER"),
-                         ("files_version", "TEXT")):
+                         ("files_version", "TEXT"), ("files_readable", "INTEGER"), ("files_checked_at", "TEXT")):
         if column not in heartbeats:
             cursor.execute(f"ALTER TABLE bridge_heartbeats ADD COLUMN {column} {kind}")
     cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_bridge_heartbeats_browser_minute "

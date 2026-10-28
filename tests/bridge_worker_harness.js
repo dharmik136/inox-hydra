@@ -85,6 +85,9 @@ function boot(sourcePath, options) {
   let maxInFlight = 0;
   const fakeFetch = async (url, opts) => {
     if (String(url).startsWith("chrome-extension://")) {
+      // A folder deleted or moved under the running extension: the browser
+      // cannot read the file, and fetch rejects as Chromium's does.
+      if (options.filesGone) throw new TypeError("Failed to fetch");
       return { ok: true, status: 200, headers: { get: () => null }, json: async () => JSON.parse(JSON.stringify(diskManifest)) };
     }
     const path = String(url).replace("http://127.0.0.1:8000", "");

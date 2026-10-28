@@ -268,3 +268,53 @@ def test_ten_tabs_reporting_one_readers_run_in_a_minute_send_one_report():
       process.stdout.write(JSON.stringify({ sent: w.sent.filter((s) => s.path === "/api/v1/bridge/capture").length }));
     """)
     assert out["sent"] == 2, f"{out['sent']} run reports for one reader in one minute, and a drifted one"
+
+
+def test_the_heartbeat_says_what_the_extension_found_in_its_own_folder():
+    """
+    A portable upgrade deletes the folder the extension was loaded from: the
+    extension runs on from memory, cannot update itself, and the browser will
+    not load it at its next start. Its own check is the only witness, so the
+    heartbeat carries it: readable or not, and when it looked.
+    """
+    out = run("""
+      const gone = boot(WORKER, { version: "2.10.0", filesGone: true });
+      gone.fire("alarm", { name: "inox_own_files" });
+      await gone.tick(80);
+      gone.fire("alarm", { name: "inox_bridge_heartbeat" });
+      await gone.tick(150);
+      const here = boot(WORKER, { version: "2.10.0", diskVersion: "2.10.0" });
+      here.fire("alarm", { name: "inox_own_files" });
+      await here.tick(80);
+      here.fire("alarm", { name: "inox_bridge_heartbeat" });
+      await here.tick(150);
+      const beat = (w) => w.sent.filter((r) => r.path === "/api/v1/bridge/heartbeat").pop().body;
+      process.stdout.write(JSON.stringify({ gone: beat(gone), here: beat(here), reloads: gone.reloads }));
+    """)
+    assert out["gone"]["files_readable"] is False and out["gone"]["files_version"] is None
+    assert out["reloads"] == 0, "an extension whose folder is gone reloaded into nothing"
+    assert out["here"]["files_readable"] is True and out["here"]["files_version"] == "2.10.0"
+    assert out["here"]["files_checked_at"].endswith("Z")
+
+
+def test_a_studio_of_another_version_has_the_worker_look_at_its_files_now():
+    """
+    After an in-place update the studio restarts first; the extension looks
+    at its folder when the studio's answer names another version, rather
+    than up to five minutes later, and reloads itself if the folder moved on.
+    """
+    out = run("""
+      const w = boot(WORKER, { version: "2.10.0", diskVersion: "2.10.1" });
+      w.recipes["/api/v1/bridge/heartbeat"] = [{ status: 200, body: { status: "success",
+        handshake: { reload_required: false, studio_version: "2.10.1", contract_version: 1 } } }];
+      w.fire("alarm", { name: "inox_bridge_heartbeat" });
+      await w.tick(200);
+      const same = boot(WORKER, { version: "2.10.1", diskVersion: "2.10.1" });
+      same.recipes["/api/v1/bridge/heartbeat"] = [{ status: 200, body: { status: "success",
+        handshake: { reload_required: false, studio_version: "2.10.1", contract_version: 1 } } }];
+      same.fire("alarm", { name: "inox_bridge_heartbeat" });
+      await same.tick(200);
+      process.stdout.write(JSON.stringify({ reloads: w.reloads, same: same.reloads, checked: !!same.storage.filesCheck }));
+    """)
+    assert out["reloads"] >= 1, "the worker waited for its own alarm while the studio had moved on"
+    assert out["same"] == 0 and out["checked"] is False, "a studio of the same version made the worker look"

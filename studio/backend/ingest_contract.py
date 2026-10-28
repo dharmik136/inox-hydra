@@ -137,6 +137,13 @@ RELOAD_MESSAGE = (
     "Open chrome://extensions and press Reload on Inox Hydra Bridge."
 )
 
+# What to do when the extension's folder is not the studio's: a reload reads
+# the same folder again, so it is loaded again from the studio's.
+LOAD_AGAIN = (
+    "If the studio opened this browser, close it and open it again from Setup; if you loaded the "
+    "extension by hand, remove it on chrome://extensions and load it again from the studio's extension folder."
+)
+
 # The reasons the engagement gate turns a capture away, as the one place they
 # are written. onboarding.engagement_gate returns one of these, and
 # classify() below decides which outcome each one is, so the reason a creator
@@ -358,6 +365,20 @@ def _version(text: Any) -> tuple:
     return tuple(parts + [0] * (4 - len(parts)))[:4]
 
 
+# When this studio started. An extension that read its own folder after this
+# and found its own older version there is loaded from a folder that is not
+# this studio's: an in-place update would have shown it the new version.
+STARTED_AT = datetime.now(timezone.utc)
+
+
+def _moment(text: Any) -> Optional[datetime]:
+    try:
+        moment = datetime.fromisoformat(str(text).replace("Z", "+00:00")) if text else None
+    except ValueError:
+        return None
+    return moment if moment is not None and moment.tzinfo is not None else None
+
+
 def _studio_version() -> Optional[str]:
     try:
         from ..__version__ import __version__
@@ -386,7 +407,8 @@ def _newest_fresh_bridge() -> Optional[Dict[str, Any]]:
 
 def handshake(extension_version: Any = None, contract_version: Any = None, self_reload: Any = None,
               files_version: Any = None, tabs_needing_reload: Any = None,
-              studio_version: Optional[str] = None) -> Dict[str, Any]:
+              studio_version: Optional[str] = None, files_readable: Any = None,
+              files_checked_at: Any = None) -> Dict[str, Any]:
     """
     What the studio is, what it needs, and whether this client truly needs
     reloading. Answered on the heartbeat and on extension health.
@@ -403,6 +425,12 @@ def handshake(extension_version: Any = None, contract_version: Any = None, self_
     An extension whose files are newer than it is updating itself. Tabs the
     worker could not give the new readers are their own sentence: those tabs
     need reloading, not the extension.
+
+    Two cases a reload of itself cannot mend are said too, as loading it
+    again: its folder is gone (an upgrade that extracts a new folder and
+    deletes the old one), and it is older than the studio while its folder,
+    read after the studio started, still holds its own version, so the
+    folder is not the one the studio was updated in.
     """
     note_client(extension_version, contract_version)
     studio_version = studio_version or _studio_version()
@@ -414,6 +442,8 @@ def handshake(extension_version: Any = None, contract_version: Any = None, self_
             "self_reload": self_reload is True,
             "files_version": str(files_version)[:40] if files_version else None,
             "tabs_needing_reload": tabs_needing_reload if isinstance(tabs_needing_reload, int) else None,
+            "files_readable": files_readable if isinstance(files_readable, bool) else None,
+            "files_checked_at": files_checked_at,
         }
     else:
         said = _newest_fresh_bridge()
@@ -429,7 +459,8 @@ def handshake(extension_version: Any = None, contract_version: Any = None, self_
         if seen.get("last_seen_at") and (said is None or seen["last_seen_at"] > (said.get("last_seen_at") or "")):
             said = {"extension_version": seen.get("extension_version"), "contract_version": seen.get("contract_version"),
                     "self_reload": None, "files_version": None, "last_seen_at": seen.get("last_seen_at"),
-                    "tabs_needing_reload": (said or {}).get("tabs_needing_reload")}
+                    "tabs_needing_reload": (said or {}).get("tabs_needing_reload"),
+                    "files_readable": None, "files_checked_at": None}
     base = {"contract_version": CONTRACT_VERSION, "studio_version": studio_version}
     if not said:
         with _lock:
@@ -437,6 +468,28 @@ def handshake(extension_version: Any = None, contract_version: Any = None, self_
         return dict(base, extension_contract_version=None, extension_version=seen.get("extension_version"),
                     last_seen_at=seen.get("last_seen_at"), reload_required=None, updating=False, message=None,
                     tabs_needing_reload=None, tabs_message=None, known=False)
+    judged = _judged(said, studio_version)
+    with _lock:
+        last_seen = _client.get("last_seen_at")
+    return dict(base, **judged, last_seen_at=said.get("last_seen_at") or last_seen, known=True)
+
+
+def heard_current() -> bool:
+    """
+    True when the newest bridge heard from inside the freshness window needs
+    no reload: Setup's advice to reload after an import from an older
+    extension stands only while that is not so. Judged on the heartbeat
+    alone, never on what an earlier capture left in memory.
+    """
+    said = _newest_fresh_bridge()
+    if said is None:
+        return False
+    said = dict(said, self_reload=said.get("self_reload") is True)
+    return _judged(said, _studio_version())["reload_required"] is False
+
+
+def _judged(said: Dict[str, Any], studio_version: Optional[str]) -> Dict[str, Any]:
+    """Whether what the extension said of itself needs a reload, and the sentences that say so."""
     running = said.get("extension_version")
     speaks = said.get("contract_version")
     reloads_itself = said.get("self_reload") is True
@@ -445,9 +498,21 @@ def handshake(extension_version: Any = None, contract_version: Any = None, self_
     stale_contract = speaks is None or speaks < CONTRACT_VERSION
     older = bool(running) and bool(studio_version) and _version(running) < _version(studio_version)
     cannot_reload_itself = said.get("self_reload") is False
-    required = not updating and (stale_contract or (older and cannot_reload_itself))
+    folder_gone = reloads_itself and said.get("files_readable") is False
+    checked = _moment(said.get("files_checked_at"))
+    folder_not_ours = (reloads_itself and older and not folder_gone and bool(on_disk) and on_disk == running
+                       and checked is not None and checked >= STARTED_AT)
+    required = not updating and (stale_contract or (older and cannot_reload_itself) or folder_gone
+                                 or folder_not_ours)
     if not required:
         message = None
+    elif folder_gone:
+        message = (f"The folder this browser loaded Inox Hydra Bridge{' ' + running if running else ''} from is "
+                   "no longer there, so it cannot update itself and the browser will not load it when it next "
+                   "starts. " + LOAD_AGAIN)
+    elif folder_not_ours:
+        message = (f"This browser loads Inox Hydra Bridge {running} from a folder that is not this studio's, "
+                   f"which runs {studio_version}, so it cannot update itself. " + LOAD_AGAIN)
     elif older and cannot_reload_itself and running:
         message = (f"This browser runs Inox Hydra Bridge {running}, older than the studio's {studio_version}, and "
                    "that version cannot reload itself. Open chrome://extensions and press Reload on Inox Hydra "
@@ -460,11 +525,8 @@ def handshake(extension_version: Any = None, contract_version: Any = None, self_
         tabs_message = (f"{tabs} LinkedIn tab{'s' if tabs != 1 else ''} still carr{'y' if tabs != 1 else 'ies'} "
                         "an older copy of the bridge's readers, which the update could not replace: reload "
                         f"{'them' if tabs != 1 else 'it'}.")
-    with _lock:
-        last_seen = _client.get("last_seen_at")
-    return dict(base, extension_contract_version=speaks, extension_version=running,
-                last_seen_at=said.get("last_seen_at") or last_seen, reload_required=required, updating=updating,
-                message=message, tabs_needing_reload=tabs, tabs_message=tabs_message, known=True)
+    return dict(extension_contract_version=speaks, extension_version=running, reload_required=required,
+                updating=updating, message=message, tabs_needing_reload=tabs, tabs_message=tabs_message)
 
 
 def refusal_counts() -> Dict[str, Any]:

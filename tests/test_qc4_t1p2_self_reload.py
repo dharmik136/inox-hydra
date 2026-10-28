@@ -133,3 +133,41 @@ def test_the_copy_under_test_cannot_reach_a_running_studio():
                     assert not re.search(r"https?://(127\.0\.0\.1|localhost):8000", handle.read()) or name != "background.js"
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_an_unpacked_install_whose_folder_is_gone_says_so_and_stays_up():
+    """
+    A portable upgrade deletes the folder the extension was loaded from. In
+    Chromium the extension's own fetch of its manifest then fails, which is
+    how the worker knows: it records the folder as unreadable for the
+    heartbeat, does not reload into nothing, and keeps running from memory.
+    """
+    scratch = tempfile.mkdtemp(prefix="inox_t1p2_gone_")
+    try:
+        extension = _copy_extension(scratch)
+        with sync_playwright() as pw:
+            try:
+                context = pw.chromium.launch_persistent_context(
+                    os.path.join(scratch, "profile"), channel="chromium", headless=True,
+                    args=[f"--disable-extensions-except={extension}", f"--load-extension={extension}",
+                          "--host-resolver-rules=MAP * ~NOTFOUND"])
+            except Exception as error:  # noqa: BLE001
+                pytest.skip(f"this Chromium cannot load an unpacked extension: {error}")
+            try:
+                context.route("**/*", lambda r: r.abort())
+                worker = (context.service_workers[0] if context.service_workers
+                          else context.wait_for_event("serviceworker", timeout=15000))
+                worker.evaluate("checkOwnFiles()")
+                here = worker.evaluate("chrome.storage.local.get('filesCheck')")
+                assert here["filesCheck"]["readable"] is True, here
+                shutil.rmtree(extension)
+                reloaded = worker.evaluate("checkOwnFiles()")
+                gone = worker.evaluate("chrome.storage.local.get(['filesCheck', 'filesVersion'])")
+                assert reloaded is False, "the extension reloaded with no folder to reload from"
+                assert gone["filesCheck"]["readable"] is False, gone
+                assert gone.get("filesVersion") is None, gone
+                assert worker.evaluate("chrome.runtime.getManifest().version"), "the worker did not stay up"
+            finally:
+                context.close()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
