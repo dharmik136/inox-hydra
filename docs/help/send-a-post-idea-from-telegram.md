@@ -101,7 +101,7 @@ Tick **Send me a weekly summary** and pick a day and a whole hour beside **On** 
 | --- | --- |
 | Your week, the seven days to Mon 02 Nov, 09:00 on your computer's clock: | The seven days it covers, ending at the moment you picked |
 | Posts published, as your studio recorded them: 3 | Your posts the studio holds as published in those days. A post the studio has not read yet is not counted |
-| Drafts saved from your phone: 5 | Drafts your bot saved in those days. One you took back with **Undo** is not counted |
+| Drafts saved from your phone: 5 | Drafts your bot saved in those days, even one you changed or deleted in the studio since. One you took back with **Undo** is not counted |
 | Replies waiting: 2 | Comments on your posts waiting for your reply, as Today counts them. A count, never who or what |
 | Next scheduled post: Thu 05 Nov, 09:00 (your computer's time). | Or "No post is scheduled." |
 

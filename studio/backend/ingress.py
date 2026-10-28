@@ -472,7 +472,8 @@ class TelegramIngressDaemon:
         """
         Between polls: what the creator asked to be told (telegram_bot's
         notifications, each opt-in), to the paired chat of a bot set up in a
-        profile. Never raises: a notification is never worth a lost poll.
+        profile, except during the creator's quiet hours, when they wait.
+        Never raises: a notification is never worth a lost poll.
         """
         if not (self.bot_token and self.authorized_chat_id and self.configured_from == "settings"):
             return

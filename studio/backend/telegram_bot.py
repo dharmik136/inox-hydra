@@ -584,7 +584,7 @@ def notify_24h_on() -> bool:
 
 
 def local_now() -> datetime:
-    """The computer's own clock, with its time zone: what quiet hours are read against."""
+    """The computer's own clock, with its time zone: what quiet hours and the weekly summary are read against."""
     return datetime.now().astimezone()
 
 
