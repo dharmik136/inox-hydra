@@ -177,9 +177,9 @@ in Inox Hydra's own words, which the side panel shows instead of drawing it
 into LinkedIn's page; a list of the LinkedIn tabs open, each with the kind of
 page it shows, whether it is in view, the version of the extension's readers it
 carries and its network reading counts, and which tabs could not be given new
-readers after an update; and a one-way digest (SHA-256) of each capture sent in
-the last ten seconds, never the capture itself, so that the same capture read
-in two tabs is sent once; and the captures Inox Hydra did not take, so that
+readers after an update; and a one-way digest (SHA-256) of each capture it
+sent, never the capture itself, which it uses for ten seconds so that the same
+capture read in two tabs is sent once; and the captures Inox Hydra did not take, so that
 your own activity is not lost. A capture is held when Inox Hydra is
 not running, when its database is busy and it asks to be tried again, and when it
 refuses this browser because the browser has not been paired with it yet. A
@@ -242,7 +242,8 @@ account; a capture for an account no profile has confirmed is written into
 none of them and stays held in the browser, as described above.
 
 **The bridge's own record**, in the database of the creator profile that is
-open: for each browser the extension runs in, at most one check-in a minute,
+open, or, for a reader's run and a history import, of the profile that
+confirmed the account the browser is signed in to: for each browser the extension runs in, at most one check-in a minute,
 saying when, the extension's version and the version found in its files,
 whether it could read them and when it looked, which browser it is (as the
 browser names itself, such as Microsoft Edge or Brave), the random identifier
@@ -253,7 +254,8 @@ whether it reloads itself; with each run of a reader, which browser ran it; and
 with a history import, which browser and tab ran it, so that two tabs never
 both scroll. Every capture also says which tab, window and page it was read in,
 and Inox Hydra keeps no more of that than is listed here. Check-ins and runs
-are kept for seven days, except the latest run of each reader. Inox Hydra also
+are kept for seven days, except each reader's latest run and its latest run
+that worked. Inox Hydra also
 remembers, in memory only and for ten minutes, a one-way digest of each capture
 it took, so that the same capture sent twice is answered "already seen" and not
 written again; none of it is written to disk.

@@ -32,8 +32,8 @@ Health's line under the title says to act only when a reload, by itself, will no
 | Health says | What to do |
 | --- | --- |
 | "This browser runs Inox Hydra Bridge 2.9.0, older than the studio's 2.10.0, and that version cannot reload itself. ..." | A version from before 2.10. Reload it once by hand |
-| "The folder this browser loaded Inox Hydra Bridge from is no longer there, ..." | The folder was deleted or moved, as a portable upgrade does. The extension runs on from memory but cannot update itself, and the browser will not load it when it next starts. Load it again from the studio's folder |
-| "This browser loads Inox Hydra Bridge ... from a folder that is not this studio's, ..." | It is loaded from an older install's folder, which the update did not change. Load it again from the studio's folder |
+| "The folder this browser loaded Inox Hydra Bridge 2.10.0 from is no longer there, ..." | The folder was deleted or moved, as a portable upgrade does. The extension runs on from memory but cannot update itself, and the browser will not load it when it next starts. Load it again from the studio's folder |
+| "This browser loads Inox Hydra Bridge 2.10.0 from a folder that is not this studio's, which runs 2.11.0, ..." | It is loaded from an older install's folder, which the update did not change. Load it again from the studio's folder |
 | "N LinkedIn tabs still carry an older copy of the bridge's readers, ..." | Reload those tabs |
 | Nothing about the extension | Nothing to do |
 
