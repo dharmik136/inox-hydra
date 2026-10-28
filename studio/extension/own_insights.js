@@ -145,13 +145,14 @@
       taken.add(key);
       found.push({ key, figure, period });
     }
-    return found.concat(readLines(page, taken));
+    return CONTENT_PAGES.has(page) ? found : found.concat(readLines(page, taken));
   }
 
   // A label that is no element of its own: one line carries the figure, the
   // label and the window ("15 Search appearances 0% past 7 days"). The
   // figure is the count right before the label; the window is named after
-  // it. The smallest element holding such a line is read, once per label.
+  // it. The smallest element holding such a line is read, once per label,
+  // on the account pages, where the 2026 summary cards print it so.
   function readLines(page, taken) {
     const found = [];
     const root = document.querySelector("main") || document.body;

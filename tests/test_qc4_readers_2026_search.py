@@ -69,3 +69,15 @@ def test_search_appearances_in_one_line_are_read_too(pages):
     sent = pages.sent(page, "/api/analytics/page-figures")
     assert sent and sent[0]["readings"][0]["figures"] == {"search_appearances": 15}
     assert sent[0]["readings"][0]["period_label"] == "7d"
+
+
+def test_a_line_is_read_on_the_account_pages_only(pages):
+    # An article's own page keeps its labelled cards; a sentence that starts
+    # with a count is not one of its figures.
+    path = "/analytics/article/urn:li:linkedInArticle:7390000000000000001/"
+    body = ("<main><ul><li><p>900</p><p>Article views</p></li></ul>"
+            "<section><p>3 comments came in <b>overnight</b></p></section></main>")
+    page = pages.open(path, page_html(body, title="Article analytics", lang="en"), scripts=SCRIPTS, storage=SIGNED_IN)
+    page.clock.run_for(4000)
+    sent = pages.sent(page, "/api/analytics/page-figures")
+    assert sent and sent[0]["readings"][0]["figures"] == {"views": 900}

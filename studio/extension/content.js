@@ -944,14 +944,23 @@ const LABEL_THEN_FIGURE = {
 const ANALYTICS_WORD_FIGURES = ["impressions", "members_reached", "reactions", "comments", "shares", "saves", "sends",
   "in_network_pct", "out_of_network_pct"];
 const OUT_OF_NETWORK = /\b(?:out(?:side)?[\s-]+of[\s-]+(?:your[\s-]+)?network|outside[\s-]+(?:your[\s-]+)?network|beyond[\s-]+your[\s-]+network)\b/i;
-const IN_NETWORK = /\b(?:in|inside|within|from)\s+(?:your\s+)?network\b/i;
+const IN_NETWORK = /\b(?:in|inside|within|from)[\s-]+(?:your[\s-]+)?network\b/i;
 const SHARE_ONLY = /^(\d{1,3}(?:[.,]\d+)?)\s*%$/;
 // Words that make a phrase a comparison or a note rather than the range.
 const NOT_A_RANGE = /\b(?:vs\.?|versus|compared|prior|previous|than|ago|updated?)\b/i;
-const MONTH_WORD = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?(?![a-z])/i;
+// A date as a range's ends print it: "Oct 1" or "1 Oct".
+const DATE_WORDS = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\b\d{1,2}\.?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*/gi;
+// The range is the page's control (or a phrase that starts "Past" or "Last"):
+// a note ("may take up to 48 hours") or a table cell ("2 days") is not it.
+const RANGE_CONTROL = 'button, [role="button"], label, select, [aria-haspopup], [role="combobox"], [role="option"], [role="radio"], [role^="menuitem"]';
 // A menu's options name every range; only the chosen one is the page's.
 const RANGE_OPTIONS = '[role="listbox"], [role="menu"], [role="option"], [role^="menuitem"]';
 const RANGE_CHOSEN = '[aria-selected="true"], [aria-checked="true"], [aria-current="true"]';
+
+// A custom range: two dates joined by a dash or "to".
+function isDateRange(text) {
+  return (text.match(DATE_WORDS) || []).length >= 2 && /[-\u2013\u2014]|\bto\b/i.test(text);
+}
 
 function isShownOnPage(el) {
   if (el.closest("script, style, noscript, template")) return false;
@@ -1034,8 +1043,9 @@ function readAnalyticsWords(root) {
 
 // The window the page's own words name: the range control's "Past 28 days"
 // (or "Past 24 hours", in any language analyticsPeriodOf reads) as a phrase
-// of its own, outside the chart and outside an open menu's other options; a
-// custom range's dates are "unrecognised", as the old control's were. With
+// of its own, in a control or starting "Past" or "Last", outside the chart
+// and outside an open menu's other options; a custom range's two dates are
+// "unrecognised", as the old control's were. With
 // no such phrase, the old range control, then the comparison under the
 // change ("vs. prior 28 days" names the same length), and with none of
 // those the window is one the page did not name: "unnamed", which the studio
@@ -1044,10 +1054,9 @@ function analyticsWindowOfWords(words) {
   for (const w of words) {
     if (w.el.closest('svg, [role="img"], [role="region"]')) continue;
     if (w.el.closest(RANGE_OPTIONS) && !w.el.closest(RANGE_CHOSEN)) continue;
+    if (!w.el.closest(RANGE_CONTROL) && !/^(?:past|last)\b/i.test(w.text)) continue;
     const count = w.text.split(" ").length;
-    if (count <= 8 && MONTH_WORD.test(w.text) && /\d/.test(w.text) && /\s[-\u2013\u2014]\s|\bto\b/.test(w.text)) {
-      return "unrecognised";
-    }
+    if (count <= 8 && isDateRange(w.text)) return "unrecognised";
     if (count > 4 || NOT_A_RANGE.test(w.text)) continue;
     const period = analyticsPeriodOf(w.text);
     if (period) return period;

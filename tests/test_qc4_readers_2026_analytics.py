@@ -172,6 +172,14 @@ def test_an_open_range_menu_reads_the_range_it_marks_chosen(pages):
     assert sent[0]["period_label"] == "90d"
 
 
+def test_a_note_or_a_table_cell_is_never_the_range(pages):
+    body = _analytics_page(range_words="").replace(
+        "<p>Members reached counts each person once.</p>",
+        "<p>May take up to 48 hours.</p><table><tr><td>2 days</td></tr></table>")
+    _page, sent = _analytics(pages, body)
+    assert sent[0]["period_label"] == "28d", "the comparison names the range; the note and the cell do not"
+
+
 def test_a_custom_range_of_dates_is_unrecognised_and_never_a_window(pages):
     _page, sent = _analytics(pages, _analytics_page(range_words="<span>Oct 1, 2026 - Oct 19, 2026</span>",
                                                     comparison="vs. prior 19 days"))
