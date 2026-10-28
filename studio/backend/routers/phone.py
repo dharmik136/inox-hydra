@@ -42,6 +42,9 @@ class IngressOptionsPayload(BaseModel):
     quiet_hours: Optional[bool] = Field(None, description="Hold notifications during quiet hours")
     quiet_from: Optional[int] = Field(None, ge=0, le=23, description="Quiet hours start, a whole hour")
     quiet_to: Optional[int] = Field(None, ge=0, le=23, description="Quiet hours end, a whole hour")
+    weekly: Optional[bool] = Field(None, description="Send me a weekly summary")
+    weekly_day: Optional[int] = Field(None, ge=0, le=6, description="The weekly summary's day, 0 is Monday")
+    weekly_hour: Optional[int] = Field(None, ge=0, le=23, description="The weekly summary's hour, a whole hour")
 
 
 class IngressSettingsPayload(BaseModel):
@@ -85,7 +88,9 @@ def post_ingress_options(payload: IngressOptionsPayload):
     try:
         telegram_bot.save_options(replies=payload.replies, figures=payload.figures, notify_due=payload.notify_due,
                                   notify_24h=payload.notify_24h, quiet=payload.quiet_hours,
-                                  quiet_from=payload.quiet_from, quiet_to=payload.quiet_to)
+                                  quiet_from=payload.quiet_from, quiet_to=payload.quiet_to,
+                                  weekly_on=payload.weekly, weekly_day=payload.weekly_day,
+                                  weekly_hour=payload.weekly_hour)
     except ValueError as refused:
         raise HTTPException(status_code=400, detail=str(refused))
     return ingress.describe_settings()

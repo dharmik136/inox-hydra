@@ -3886,6 +3886,11 @@ export interface IngressOptions {
   /** Quiet hours, whole hours on the computer's clock: from 23 to 7 unless changed. */
   quiet_from: number;
   quiet_to: number;
+  /** Send a weekly summary to the paired chat. Off unless turned on. */
+  weekly: boolean;
+  /** The weekly summary's day, 0 is Monday, and its whole hour on the computer's clock: Monday 09:00 unless changed. */
+  weekly_day: number;
+  weekly_hour: number;
 }
 
 export interface IngressSettings {
@@ -3928,6 +3933,8 @@ export interface IngressSettings {
   options: IngressOptions;
   /** Quiet hours are on and it is now inside them: the bot's notifications wait. */
   quiet_now: boolean;
+  /** When the next weekly summary goes, on this computer's clock, such as "Mon 02 Nov, 09:00"; null while it is off. */
+  weekly_next: string | null;
   /** Why the bot's last message to Telegram did not go, in plain words; null when it went. */
   last_send_error: string | null;
   replies_waiting: number;

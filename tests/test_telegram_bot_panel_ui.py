@@ -130,3 +130,30 @@ def test_quiet_hours_show_their_defaults_change_and_save(page, studio, fake):
     expect(start).to_be_disabled()
     assert telegram_bot.quiet_hours()["on"] is False
     assert _axe(page, "section:has(input[aria-label='Telegram bot token'])") == []
+
+
+def test_the_weekly_summary_shows_its_defaults_changes_and_saves(page, studio, fake):
+    """Phase 2: Send me a weekly summary, off by default, Monday at 09:00 unless changed."""
+    _saved_in_the_panel(page, studio)
+    weekly = page.get_by_role("checkbox", name="Send me a weekly summary")
+    day = page.get_by_role("combobox", name="Weekly summary day")
+    hour = page.get_by_role("combobox", name="Weekly summary hour")
+    expect(weekly).not_to_be_checked()
+    expect(day).to_have_value("0")
+    expect(hour).to_have_value("9")
+    expect(day).to_be_disabled()
+    expect(page.get_by_text("only while the figures switch above is on", exact=False)).to_be_visible()
+    assert _axe(page, "section:has(input[aria-label='Telegram bot token'])") == []
+
+    weekly.click()
+    expect(page.get_by_text("A weekly summary on Monday at 09:00.")).to_be_visible()
+    expect(weekly).to_be_checked()
+    expect(page.get_by_text("NEXT SUMMARY:", exact=False)).to_be_visible()
+    assert telegram_bot.weekly()["on"] is True
+    day.select_option("4")
+    expect(page.get_by_text("A weekly summary on Friday at 09:00.")).to_be_visible()
+    hour.select_option("18")
+    expect(page.get_by_text("A weekly summary on Friday at 18:00.")).to_be_visible()
+    expect(page.get_by_text("NEXT SUMMARY: FRI", exact=False)).to_be_visible()
+    assert (telegram_bot.weekly()["day"], telegram_bot.weekly()["hour"]) == (4, 18)
+    assert _axe(page, "section:has(input[aria-label='Telegram bot token'])") == []

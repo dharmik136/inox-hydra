@@ -1201,6 +1201,8 @@ def describe_settings() -> Dict[str, Any]:
         "options": telegram_bot.options(),
         # The bot's notifications are waiting for quiet hours to end.
         "quiet_now": telegram_bot.in_quiet_hours(),
+        # When the next weekly summary goes, on this computer's clock; None while it is off.
+        "weekly_next": telegram_bot.weekly_next(),
         "last_send_error": ingress_daemon.outbox.last_error if running_here else None,
         "replies_waiting": ingress_daemon.outbox.waiting() if running_here else 0,
     }

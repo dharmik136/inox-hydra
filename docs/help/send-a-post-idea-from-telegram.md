@@ -82,18 +82,35 @@ Each figure says where it was read and how long ago; a figure nobody read is lef
 
 ## Notifications, each only if you tick it
 
-Two, each with its own switch in the panel, both off until you tick them:
+Three, each with its own switch in the panel, all off until you tick them:
 
 | Switch | What the bot sends |
 | --- | --- |
 | **Tell me when a queued post is due** | "A post in your queue is due now. Open your studio to post it." When several are due at once, how many. Never the post's words. With **Remind me in an hour** and **Done** under it |
 | **Send my latest post's figures at about 24 hours** | Once, when the studio has read your latest post at about a day old (between 20 and 30 hours) while it is under two days old: "Your latest post at about 24 hours: 880 impressions, 31 reactions, 4 comments, read on its analytics page." |
+| **Send me a weekly summary** | Once a week, on the day and at the hour you pick beside it (Monday at 09:00 on this computer's clock unless you change them), one message about the seven days to that moment. See [The weekly summary](#the-weekly-summary) |
 
 Each is sent once to your paired chat: the studio keeps what it has told, so a restart does not send it again. The studio looks for something to tell about once a minute while it is asking Telegram for messages. The figures then sit on Telegram's servers, as everything in the chat does; never a person's name or a comment. During quiet hours they wait: see below.
 
+## The weekly summary
+
+Tick **Send me a weekly summary** and pick a day and a whole hour beside **On** and **at**. The panel then says when the next one goes, for example "NEXT SUMMARY: MON 02 NOV, 09:00". The first comes at the first such moment after you tick it or change the day or hour, never at once. The summary reads, line by line:
+
+| Line | What it is |
+| --- | --- |
+| Your week, the seven days to Mon 02 Nov, 09:00 on your computer's clock: | The seven days it covers, ending at the moment you picked |
+| Posts published, as your studio recorded them: 3 | Your posts the studio holds as published in those days. A post the studio has not read yet is not counted |
+| Drafts saved from your phone: 5 | Drafts your bot saved in those days. One you took back with **Undo** is not counted |
+| Replies waiting: 2 | Comments on your posts waiting for your reply, as Today counts them. A count, never who or what |
+| Next scheduled post: Thu 05 Nov, 09:00 (your computer's time). | Or "No post is scheduled." |
+
+Only if **The bot may answer with your figures** is on, it goes on with "Your figures, each as last read:" and a line for each post of the week, newest first, named by its day: for example "- Published Fri 30 Oct: 1,234 impressions, 56 reactions, 7 comments, read on its analytics page 3 hours ago", or "no figures read yet". A figure nobody read is left out, never shown as 0. Up to seven posts are listed; any more are counted in a last line.
+
+It never carries a person's name or a comment, nor the words of your posts or drafts. Each week's summary is sent once: the studio keeps that it was told, so a restart does not send it again, and deleting everything forgets that too. If the studio is not running at that moment, it goes when the studio next runs that week, up to the end of Sunday. During [quiet hours](#quiet-hours) it waits like every notification.
+
 ## Quiet hours
 
-The notifications wait during quiet hours and go when they end, each still sent once: a post that came due at 02:00 is told at 07:00, if it is still due then, and three that came due in the night are told in one message. A reminder you asked for with **Remind me in an hour** waits the same way.
+The notifications wait during quiet hours and go when they end, each still sent once: a post that came due at 02:00 is told at 07:00, if it is still due then, and three that came due in the night are told in one message. A reminder you asked for with **Remind me in an hour**, and the weekly summary, wait the same way.
 
 **Hold notifications during quiet hours** is ticked, from 23:00 to 07:00 on this computer's clock, until you change it in the panel: pick whole hours beside **From** and **to**, or untick it to have notifications at any hour. While it is quiet, the panel says "QUIET NOW: NOTIFICATIONS WAIT UNTIL 07:00". A start and an end on the same hour are refused with a sentence, and nothing is saved.
 

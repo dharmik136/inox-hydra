@@ -10,8 +10,11 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-/** The whole hours quiet hours can start and end on. */
+/** The whole hours quiet hours and the weekly summary can be set to. */
 const HOURS = Array.from({ length: 24 }, (_unused, hour) => hour);
+
+/** The weekly summary's days, as the server numbers them: 0 is Monday. */
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 /** A whole hour as the computer's clock shows it: 7 is 07:00. */
 function clock(hour: number): string {
@@ -196,6 +199,60 @@ export function TelegramIngressPanel() {
                 disabled={busy}
                 onChange={(on) => void setOption({ notify_24h: on }, on ? "The bot sends your latest post's figures at about 24 hours." : "No message at 24 hours.")}
               />
+              <OptionRow
+                label="Send me a weekly summary"
+                detail="Once a week: how many posts you published, drafts saved from your phone and replies waiting, and when your next post is scheduled. Your figures too, each with where and when it was read, only while the figures switch above is on. Never anyone's name or words."
+                checked={state.options.weekly}
+                disabled={busy}
+                onChange={(on) =>
+                  void setOption(
+                    { weekly: on },
+                    on
+                      ? `A weekly summary on ${DAYS[state.options.weekly_day]} at ${clock(state.options.weekly_hour)}.`
+                      : "No weekly summary.",
+                  )
+                }
+              />
+              <div className="flex flex-wrap items-center gap-2 pl-5 text-[12px] text-ink-secondary">
+                <span>On</span>
+                <select
+                  aria-label="Weekly summary day"
+                  className={SELECT}
+                  value={state.options.weekly_day}
+                  disabled={busy || !state.options.weekly}
+                  onChange={(event) => {
+                    const day = Number(event.target.value);
+                    void setOption({ weekly_day: day }, `A weekly summary on ${DAYS[day]} at ${clock(state.options.weekly_hour)}.`);
+                  }}
+                >
+                  {DAYS.map((name, index) => (
+                    <option key={name} value={index}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <span>at</span>
+                <select
+                  aria-label="Weekly summary hour"
+                  className={SELECT}
+                  value={state.options.weekly_hour}
+                  disabled={busy || !state.options.weekly}
+                  onChange={(event) => {
+                    const hour = Number(event.target.value);
+                    void setOption({ weekly_hour: hour }, `A weekly summary on ${DAYS[state.options.weekly_day]} at ${clock(hour)}.`);
+                  }}
+                >
+                  {HOURS.map((hour) => (
+                    <option key={hour} value={hour}>
+                      {clock(hour)}
+                    </option>
+                  ))}
+                </select>
+                <span>on this computer&apos;s clock</span>
+              </div>
+              {state.weekly_next && (
+                <p className="studio-meta pl-5 text-ink-muted">{`NEXT SUMMARY: ${state.weekly_next.toUpperCase()}`}</p>
+              )}
               <p className="studio-meta mt-1 text-ink-muted">QUIET HOURS</p>
               <OptionRow
                 label="Hold notifications during quiet hours"

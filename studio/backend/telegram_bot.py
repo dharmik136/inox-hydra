@@ -43,6 +43,7 @@ import secrets
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from datetime import time as day_time
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -79,6 +80,14 @@ REMIND_AFTER_SECONDS = 3600.0
 # (ingress.is_quiet_hours), which changes only how often Telegram is asked.
 QUIET_KEY = "telegram_quiet"
 QUIET_FROM, QUIET_TO = 23, 7
+# The weekly summary, off by default: {on, day (0 is Monday), hour, since},
+# on the computer's own clock, Monday 09:00 unless changed. The first comes
+# at the first chosen moment after it was turned on or changed (since), and
+# each week is told once (telegram_told, "week:<year>-W<week>").
+WEEKLY_KEY = "telegram_weekly"
+WEEKLY_DAY, WEEKLY_HOUR = 0, 9
+# The posts of the week whose figures the summary lists, newest first.
+WEEKLY_POSTS_SHOWN = 7
 
 # The buttons, by the one letter a button's data ends with, and which a
 # message of each kind carries.
@@ -440,33 +449,87 @@ def today_answer() -> str:
             said.append(SENTENCES["no_post"])
         else:
             figure = results.figures(conn, [row["activity_urn"]]).get(row["activity_urn"]) or {}
-            by_figure = figure.get("by_figure") or {}
-            read = [(field, words) for field, words in FIGURE_WORDS if figure.get(field) is not None]
             head = f"Your latest post, published {ago(_instant(row['published_at']))}"
-            if not read:
-                said.append(f"{head}, has no figures read yet.")
-            else:
-                places = {(by_figure.get(f) or {}).get("source") or figure.get("source"): None for f, _w in read}
-                times = {(by_figure.get(f) or {}).get("read_at") or figure.get("read_at") for f, _w in read}
-                if len(places) == 1 and len(times) == 1:
-                    first = by_figure.get(read[0][0]) or figure
-                    counts = ", ".join(f"{figure[f]:,} {w}" for f, w in read)
-                    said.append(f"{head}: {counts}, {_where(first)}.")
-                else:
-                    counts = ", ".join(f"{figure[f]:,} {w} ({_where(by_figure.get(f) or figure)})" for f, w in read)
-                    said.append(f"{head}: {counts}.")
+            words = figure_words(figure)
+            said.append(f"{head}: {words}." if words else f"{head}, has no figures read yet.")
         said.append(f"Replies waiting: {replies.waiting_count(conn)}.")
-        upcoming = conn.execute("SELECT scheduled_for FROM posts WHERE status = 'scheduled' "
-                                "AND scheduled_for IS NOT NULL ORDER BY scheduled_for LIMIT 1").fetchone()
-        when = _instant(upcoming[0]) if upcoming else None
-        if when is not None:
-            local = when.astimezone()
-            said.append(f"Next scheduled post: {local.strftime('%a %d %b, %H:%M')} (your computer's time).")
-        else:
-            said.append(SENTENCES["nothing_scheduled"])
+        said.append(next_scheduled(conn))
         return " ".join(said)
     finally:
         conn.close()
+
+
+def figure_words(figure: Dict[str, Any]) -> Optional[str]:
+    """
+    One post's figures as the bot says them, each with where and how long
+    ago it was read ("1,234 impressions, 56 reactions, read on its analytics
+    page 3 hours ago"), or None when nobody read one. A figure nobody read
+    is left out, never said as 0.
+    """
+    by_figure = figure.get("by_figure") or {}
+    read = [(field, words) for field, words in FIGURE_WORDS if figure.get(field) is not None]
+    if not read:
+        return None
+    places = {(by_figure.get(f) or {}).get("source") or figure.get("source"): None for f, _w in read}
+    times = {(by_figure.get(f) or {}).get("read_at") or figure.get("read_at") for f, _w in read}
+    if len(places) == 1 and len(times) == 1:
+        first = by_figure.get(read[0][0]) or figure
+        return ", ".join(f"{figure[f]:,} {w}" for f, w in read) + f", {_where(first)}"
+    return ", ".join(f"{figure[f]:,} {w} ({_where(by_figure.get(f) or figure)})" for f, w in read)
+
+
+def next_scheduled(conn) -> str:
+    """When the next post is scheduled, on the computer's own clock, or that none is."""
+    upcoming = conn.execute("SELECT scheduled_for FROM posts WHERE status = 'scheduled' "
+                            "AND scheduled_for IS NOT NULL ORDER BY scheduled_for LIMIT 1").fetchone()
+    when = _instant(upcoming[0]) if upcoming else None
+    if when is None:
+        return SENTENCES["nothing_scheduled"]
+    return f"Next scheduled post: {when.astimezone().strftime('%a %d %b, %H:%M')} (your computer's time)."
+
+
+def weekly_summary(conn, moment: datetime) -> str:
+    """
+    The weekly summary for the seven days to `moment`: the posts the studio
+    recorded as published, the drafts saved from the phone, the replies
+    waiting and the next scheduled post, as counts and a time; and, only if
+    the bot may answer with the creator's figures, each of the week's posts'
+    figures with where and when they were read. Never a name, never a
+    comment, never a post's or a draft's words: a post is named by its day.
+    """
+    try:
+        from . import replies, results
+    except ImportError:
+        import replies
+        import results
+    start = moment - timedelta(days=7)
+    first_day = (start - timedelta(days=1)).date().isoformat()
+    published = []
+    for row in conn.execute("SELECT activity_urn, published_at FROM own_posts WHERE published_at IS NOT NULL "
+                            "AND substr(published_at, 1, 10) >= ?", (first_day,)):
+        when = _instant(row["published_at"])
+        if when is not None and start <= when < moment:
+            published.append((when, row["activity_urn"]))
+    published.sort(reverse=True)
+    drafts = 0
+    for row in conn.execute("SELECT created_at FROM drafts WHERE tags LIKE ? AND substr(created_at, 1, 10) >= ?",
+                            ('%"mobile-ingress"%', first_day)):
+        when = _instant(row["created_at"])
+        drafts += 1 if when is not None and start <= when < moment else 0
+    lines = [f"Your week, the seven days to {moment.strftime('%a %d %b, %H:%M')} on your computer's clock:",
+             f"Posts published, as your studio recorded them: {len(published)}",
+             f"Drafts saved from your phone: {drafts}",
+             f"Replies waiting: {replies.waiting_count(conn)}",
+             next_scheduled(conn)]
+    if published and figures_on():
+        figures = results.figures(conn, [urn for _when, urn in published])
+        lines += ["", "Your figures, each as last read:"]
+        for when, urn in published[:WEEKLY_POSTS_SHOWN]:
+            words = figure_words(figures.get(urn) or {}) or "no figures read yet"
+            lines.append(f"- Published {when.astimezone().strftime('%a %d %b')}: {words}")
+        if len(published) > WEEKLY_POSTS_SHOWN:
+            lines.append(f"- and {len(published) - WEEKLY_POSTS_SHOWN} more, in your studio")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -532,22 +595,80 @@ def in_quiet_hours(now: Optional[datetime] = None) -> bool:
     return start <= hour < end if start < end else (hour >= start or hour < end)
 
 
+def weekly() -> Dict[str, Any]:
+    """The weekly summary's setting in the open profile: {on, day, hour, since}. Off, Monday 09:00, by default."""
+    try:
+        held = json.loads(_setting(WEEKLY_KEY) or "{}")
+    except (TypeError, ValueError):
+        held = {}
+    held = held if isinstance(held, dict) else {}
+    day = held.get("day")
+    day = day if isinstance(day, int) and not isinstance(day, bool) and 0 <= day <= 6 else WEEKLY_DAY
+    return {"on": held.get("on") is True, "day": day, "hour": _hour(held.get("hour"), WEEKLY_HOUR),
+            "since": held.get("since") if isinstance(held.get("since"), str) else None}
+
+
+def _weekly_moment(now: datetime, setting: Dict[str, Any]) -> datetime:
+    """The chosen day and hour in the week of `now` (weeks start on Monday), on the computer's clock."""
+    monday = now.date() - timedelta(days=now.weekday())
+    return datetime.combine(monday + timedelta(days=setting["day"]), day_time(hour=setting["hour"])).astimezone()
+
+
+def _week_key(moment: datetime) -> str:
+    year, week, _day = moment.isocalendar()
+    return f"week:{year}-W{week:02d}"
+
+
+def _weekly_due(told: List[str]) -> Optional[datetime]:
+    """This week's moment, when the summary is due: on, the moment passed, after it was turned on, not yet told."""
+    setting = weekly()
+    if not setting["on"]:
+        return None
+    now = local_now()
+    moment = _weekly_moment(now, setting)
+    since = _instant(setting["since"])
+    if moment > now or (since is not None and since >= moment) or _week_key(moment) in told:
+        return None
+    return moment
+
+
+def weekly_next() -> Optional[str]:
+    """When the next weekly summary goes, as the panel says it, or None while it is off."""
+    setting = weekly()
+    if not setting["on"]:
+        return None
+    conn = get_db()
+    try:
+        told = _told(conn)
+    finally:
+        conn.close()
+    due = _weekly_due(told)
+    if due is None:
+        due = _weekly_moment(local_now(), setting)
+        if due <= local_now() or _week_key(due) in told:
+            due = _weekly_moment(local_now() + timedelta(days=7), setting)
+    return due.strftime("%a %d %b, %H:%M")
+
+
 def options() -> Dict[str, Any]:
     """The bot's switches, as the panel shows them."""
-    quiet = quiet_hours()
+    quiet, week = quiet_hours(), weekly()
     return {"replies": replies_on(), "figures": figures_on(), "notify_due": notify_due_on(),
             "notify_24h": notify_24h_on(), "quiet_hours": quiet["on"], "quiet_from": quiet["from"],
-            "quiet_to": quiet["to"]}
+            "quiet_to": quiet["to"], "weekly": week["on"], "weekly_day": week["day"], "weekly_hour": week["hour"]}
 
 
 def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
                  notify_due: Optional[bool] = None, notify_24h: Optional[bool] = None,
                  quiet: Optional[bool] = None, quiet_from: Optional[int] = None,
-                 quiet_to: Optional[int] = None) -> Dict[str, Any]:
+                 quiet_to: Optional[int] = None, weekly_on: Optional[bool] = None,
+                 weekly_day: Optional[int] = None, weekly_hour: Optional[int] = None) -> Dict[str, Any]:
     """
     Saves the switches the panel sent; a switch not sent is left as it is.
     Quiet hours run from one whole hour to another that differs from it;
-    anything else raises ValueError with the sentence the panel shows, and
+    the weekly summary goes on a day (0 is Monday) at a whole hour, and the
+    first comes at the first such moment after it is turned on or changed.
+    Anything else raises ValueError with the sentence the panel shows, and
     nothing is saved.
     """
     changes = {}
@@ -566,6 +687,15 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
                              "notifications during quiet hours. Nothing was saved.")
         changes[QUIET_KEY] = json.dumps({"on": held["on"] if quiet is None else bool(quiet), "from": start,
                                          "to": end})
+    if weekly_on is not None or weekly_day is not None or weekly_hour is not None:
+        held = weekly()
+        day = held["day"] if weekly_day is None else weekly_day
+        hour = held["hour"] if weekly_hour is None else weekly_hour
+        if not (isinstance(day, int) and 0 <= day <= 6) or _hour(hour, -1) < 0:
+            raise ValueError("The weekly summary goes on a day of the week at a whole hour, 00:00 to 23:00. "
+                             "Nothing was saved.")
+        changes[WEEKLY_KEY] = json.dumps({"on": held["on"] if weekly_on is None else bool(weekly_on), "day": day,
+                                          "hour": hour, "since": local_now().astimezone(timezone.utc).isoformat()})
     if changes:
         conn = get_db()
         try:
@@ -633,20 +763,21 @@ def notifications() -> List[Dict[str, Any]]:
     """
     What there is to tell the paired chat, in the open profile, each thing
     once: a queued post that is due, as a count; the latest post's reading
-    at about 24 hours, with that reading's own figures; and a due post the
+    at about 24 hours, with that reading's own figures; a due post the
     creator asked to be reminded of (Remind me in an hour), again, while it
-    is still due. Marks what it returns as told. Counts and the creator's
-    own figures only. Each is {text, due}: due names the due posts a
-    message's Remind me in an hour and Done are about, or is None.
+    is still due; and the weekly summary, once a week. Marks what it
+    returns as told. Counts and the creator's own figures only. Each is
+    {text, due}: due names the due posts a message's Remind me in an hour
+    and Done are about, or is None.
     """
-    due_on, day_on = notify_due_on(), notify_24h_on()
+    due_on, day_on, week_on = notify_due_on(), notify_24h_on(), weekly()["on"]
     conn = get_db()
     try:
         if not due_on:
             # Unticked, no reminder comes either.
             conn.execute("DELETE FROM settings WHERE key = ?", (REMIND_KEY,))
             conn.commit()
-        if not (due_on or day_on):
+        if not (due_on or day_on or week_on):
             return []
         try:
             from . import post_identity
@@ -685,6 +816,10 @@ def notifications() -> List[Dict[str, Any]]:
                     said.append({"text": f"Your latest post at about 24 hours: {', '.join(counts)}, read {where}.",
                                  "due": None})
                     newly.append(key)
+        week = _weekly_due(told) if week_on else None
+        if week is not None:
+            said.append({"text": weekly_summary(conn, week), "due": None})
+            newly.append(_week_key(week))
         if newly:
             _mark_told(conn, told + newly)
         return said

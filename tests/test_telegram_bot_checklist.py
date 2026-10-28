@@ -81,3 +81,13 @@ def test_the_quiet_hours_it_names_are_the_panels():
                  encoding="utf-8").read()
     for words in ("Hold notifications during quiet hours", "QUIET NOW"):
         assert words in _article() and words in panel, words
+
+
+def test_the_weekly_summary_it_names_is_the_panels_and_the_bots():
+    """Phase 2: the optional check of the weekly summary quotes the panel and the bot."""
+    panel = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "TelegramIngressPanel.tsx"),
+                 encoding="utf-8").read()
+    for words in ("Send me a weekly summary", "NEXT SUMMARY:"):
+        assert words in _article() and words in panel, words
+    bot = open(os.path.join(REPO_ROOT, "studio", "backend", "telegram_bot.py"), encoding="utf-8").read()
+    assert "Your week, the seven days to" in _article() and "Your week, the seven days to" in bot
