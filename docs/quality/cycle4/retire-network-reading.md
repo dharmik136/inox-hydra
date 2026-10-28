@@ -28,6 +28,8 @@ the webRequest observer had nothing to read and could not be re-keyed.
 |---|---|
 | 1fc14d8 | Network reading retired in the extension and the studio, with the guard |
 | 95fa264 | The policy, the help and the store disclosures |
+| 6f22c6f | This record, filed in the library |
+| ecf1a81 | The two things the first full run found: a help sentence that put a post in Analytics, and track 4's first-viewport test expecting the retired state's words |
 
 ## Left as it is
 
@@ -38,4 +40,12 @@ the webRequest observer had nothing to read and could not be re-keyed.
 
 ## Suite, as CI runs it
 
-Not run yet at this record's first commit.
+`pytest tests studio/tests -q -rs` after `npm --prefix studio/ui run build`:
+
+| Run | Result |
+|---|---|
+| At 6f22c6f | 4,095 passed, 17 skipped, 2 failed in 15 min 6 s: `test_qc4_t3_help_posts_are_on_posts` (the Health article's new sentence said the retired readers' figures stay "with your posts and in Analytics") and `test_qc4_t4_views` (Health's first view expected "not reported by this extension version"). Both fixed in ecf1a81 |
+| At ecf1a81 | 4,097 passed, 17 skipped, 0 failed in 14 min 32 s |
+
+The 17 skips are Windows and macOS primitives, PyYAML not installed here, a browser launch that needs a
+real desktop, and enrichment the interface does not surface yet.
