@@ -15,6 +15,11 @@
 export interface SearchFocus {
   id: string;
   anchor?: string | null;
+  /**
+   * The post the creator came from, when a lead was opened from one (Replies
+   * or a post's detail): a stage change made in that dossier records it.
+   */
+  post?: string | null;
   nonce: number;
 }
 

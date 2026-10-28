@@ -1104,10 +1104,13 @@ export default function App() {
               {active === "replies" && (
                 <RepliesSurface
                   onOpenSetup={() => navigate("setup")}
-                  onOpenLead={(leadId) => {
+                  onOpenLead={(leadId, fromPost) => {
                     if (!navigate("leads")) return;
                     focusNonce.current += 1;
-                    setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
+                    setFocus({
+                      section: "leads",
+                      target: { id: leadId, anchor: null, post: fromPost ?? null, nonce: focusNonce.current },
+                    });
                   }}
                 />
               )}
@@ -1126,10 +1129,13 @@ export default function App() {
                 <PostsSurface
                   onOpenActivity={() => navigate("activity")}
                   onOpenSetup={() => navigate("setup")}
-                  onOpenLead={(leadId) => {
+                  onOpenLead={(leadId, fromPost) => {
                     if (!navigate("leads")) return;
                     focusNonce.current += 1;
-                    setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
+                    setFocus({
+                      section: "leads",
+                      target: { id: leadId, anchor: null, post: fromPost ?? null, nonce: focusNonce.current },
+                    });
                   }}
                 />
               )}

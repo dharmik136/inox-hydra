@@ -539,6 +539,10 @@ export interface LeadStageEvent {
   from_status: string | null;
   to_status: string;
   changed_at: string;
+  /** The post the change came from; null for one made with no post in view. */
+  post_urn?: string | null;
+  /** That post's opening, when the studio holds the post. */
+  post_excerpt?: string | null;
 }
 
 /** Reactions older than 24 months that retention folded into counts (studio/backend/retention.py). */
@@ -919,10 +923,15 @@ export async function runAiCommand(command: string, context?: string): Promise<R
 /** The four the backend accepts. Anything else is rejected with a 400. */
 export const LEAD_STATUSES = ["New Lead", "Outreach Sent", "Connected", "Meeting Booked"] as const;
 
-export async function updateLeadStatus(leadId: string, status: string): Promise<void> {
+/**
+ * Moves a lead to a stage. postUrn is the post the change came from, when the
+ * dossier was opened from one; the studio refuses it (422) for a post the
+ * person never engaged with rather than record it.
+ */
+export async function updateLeadStatus(leadId: string, status: string, postUrn?: string | null): Promise<void> {
   await call(`/api/leads/${encodeURIComponent(leadId)}/status`, {
     method: "PUT",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(postUrn ? { status, post_urn: postUrn } : { status }),
   });
 }
 

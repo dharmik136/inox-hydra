@@ -45,7 +45,8 @@ export function PostsSurface({
   onOpenActivity,
   onOpenSetup,
 }: {
-  onOpenLead: (leadId: string) => void;
+  /** Opens the person in Leads, with the post they were opened from. */
+  onOpenLead: (leadId: string, fromPost?: string) => void;
   onOpenActivity?: () => void;
   onOpenSetup?: () => void;
 }) {

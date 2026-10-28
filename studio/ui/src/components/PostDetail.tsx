@@ -20,7 +20,8 @@ export function PostDetail({
 }: {
   activityUrn: string;
   onClose: () => void;
-  onOpenLead: (leadId: string) => void;
+  /** Opens the person in Leads, with this post, so a stage change made there records it. */
+  onOpenLead: (leadId: string, fromPost?: string) => void;
 }) {
   const [post, setPost] = useState<PostDetailData | null>(null);
   const [engagers, setEngagers] = useState<PostEngager[] | null>(null);
@@ -152,7 +153,7 @@ export function PostDetail({
                           <li key={`${person.id}-${person.interaction_type ?? ""}`}>
                             <button
                               type="button"
-                              onClick={() => onOpenLead(person.id)}
+                              onClick={() => onOpenLead(person.id, activityUrn)}
                               className="flex w-full flex-col items-start text-left text-[12px] text-ink-secondary hover:text-ink-primary"
                             >
                               <span>

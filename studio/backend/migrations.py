@@ -1957,6 +1957,24 @@ def _migrate_reader_timing_and_network_reading(cursor: sqlite3.Cursor) -> None:
     onboarding.forget_other_members_readings(cursor.connection)
 
 
+def _migrate_stage_change_post(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 34:
+    A stage change keeps the post it came from.
+
+    Migration 14 created lead_stage_events to answer "which post brought the
+    people I ended up talking to", and wrote no post: every change said when
+    and from what to what, never from where. A creator moves someone along
+    most often straight after reading them on a post, in Replies under the
+    post their comment is on or in that post's detail, so the change made
+    there now keeps the post. Forward from this version only: a change made
+    before it, or from the Leads list, has none, and nothing pretends it has.
+    """
+    columns = {row[1] for row in cursor.execute("PRAGMA table_info(lead_stage_events)")}
+    if "post_urn" not in columns:
+        cursor.execute("ALTER TABLE lead_stage_events ADD COLUMN post_urn TEXT")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -1998,6 +2016,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (33, "Each reader says how long it took, the bridge says whether network reading is on, "
          "network reading keeps only your own posts, and every publication has its post again",
      _migrate_reader_timing_and_network_reading),
+    (34, "A stage change keeps the post it came from", _migrate_stage_change_post),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
