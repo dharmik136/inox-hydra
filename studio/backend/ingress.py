@@ -41,13 +41,14 @@ import time
 
 try:
     from .database import get_db, create_draft, get_draft
-    from . import desk_requests, paths, post_identity, secret_settings
+    from . import desk_requests, paths, post_identity, secret_settings, telegram_bot
 except ImportError:
     from database import get_db, create_draft, get_draft
     import desk_requests
     import paths
     import post_identity
     import secret_settings
+    import telegram_bot
 
 # The bot, set up per profile in Brand Studio's Local security tab (cycle 4,
 # decision D6). The token is a secret setting, sealed at rest like the AI key
@@ -596,7 +597,7 @@ class TelegramIngressDaemon:
             return []
 
         token = self.bot_token
-        url = f"https://api.telegram.org/bot{token}/getUpdates"
+        url = telegram_bot.method_url(token, "getUpdates")
         params = {
             "offset": self.last_update_id + 1,
             "timeout": 30,
