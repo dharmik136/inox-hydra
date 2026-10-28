@@ -422,7 +422,7 @@ class TelegramIngressDaemon:
         return nullcontext()
 
     def _reply(self, chat_id: str, text: Optional[str], always: bool = False,
-               draft_id: Optional[int] = None, item_id: Optional[int] = None) -> None:
+               draft_id: Optional[int] = None, item: Optional[Dict[str, Any]] = None) -> None:
         """
         Queues one of the bot's fixed sentences for a chat: a confirmation when
         the bot confirms messages, and an answer to a question (always) in any
@@ -440,11 +440,35 @@ class TelegramIngressDaemon:
                 return
         if draft_id is not None:
             keyboard = self._buttons(chat_id, text, "undo", draft=draft_id)
-        elif item_id is not None:
-            keyboard = self._buttons(chat_id, text, "item", item=item_id)
+        elif item is not None:
+            # Something to write from: Write it up and the angles; a link alone: Undo only.
+            kind = "item" if (item.get("text") or "").strip() else "item_bare"
+            keyboard = self._buttons(chat_id, text, kind, item=item["id"])
         else:
             keyboard = None
         self.outbox.put(chat_id, text, keyboard)
+
+    def _start_job(self, job: Dict[str, Any], chat_id: str) -> None:
+        """
+        What a press asked to be written (telegram_bot.run_job), on a thread of
+        its own in the bot's profile, never in the polling loop: a provider
+        can take its time, and the bot answers everything else meanwhile.
+        When it is done the bot sends a new message, which the phone notifies.
+        """
+        profile = self.profile_id
+
+        def run() -> None:
+            try:
+                pinned = profile if profile and profile in paths.profile_ids() else None
+                with (paths.using_profile(pinned) if pinned else nullcontext()):
+                    text, keyboard = telegram_bot.run_job(job, chat_id)
+            except Exception as error:
+                logger.warning("Writing from the collection failed: %s", type(error).__name__)
+                text, keyboard = telegram_bot.SENTENCES["write_failed"], None
+            self.outbox.put(chat_id, text, keyboard)
+            self.flush_replies()
+
+        threading.Thread(target=run, daemon=True, name="TelegramCollectionWriting").start()
 
     def _buttons(self, chat_id: str, text: str, kind: str, **target: Any) -> Optional[Dict[str, Any]]:
         """A message's buttons, kept in the bot's profile; None if they cannot be kept (the message goes anyway)."""
@@ -505,8 +529,14 @@ class TelegramIngressDaemon:
             logger.warning("The bot's notifications could not be read: %s", type(error).__name__)
             return
         for item in said:
-            # A due post's message carries Remind me in an hour and Done.
-            keyboard = self._buttons(chat, item["text"], "due", due=item["due"]) if item.get("due") else None
+            # A due post's message carries Remind me in an hour and Done; the
+            # morning idea, Write it up and Not today.
+            if item.get("due"):
+                keyboard = self._buttons(chat, item["text"], "due", due=item["due"])
+            elif item.get("morning"):
+                keyboard = self._buttons(chat, item["text"], "morning", **item["morning"])
+            else:
+                keyboard = None
             self.outbox.put(chat, item["text"], keyboard)
         if said:
             self.flush_replies()
@@ -644,7 +674,7 @@ class TelegramIngressDaemon:
                 _note_heard()
         if from_telegram:
             self._reply(chat_id, answer, always=question, draft_id=telegram_bot.draft_of(stored),
-                        item_id=telegram_bot.item_of(stored))
+                        item=telegram_bot.item_of(stored))
         return stored
 
     def _press(self, callback: Dict[str, Any]) -> None:
@@ -683,6 +713,8 @@ class TelegramIngressDaemon:
                                                          "text": done["edit"]})
             else:
                 self.outbox.put_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message_id})
+        if done.get("job"):
+            self._start_job(done["job"], chat_id)
 
     def _command(self, command, update: Dict[str, Any], from_telegram: bool = True):
         """One of the bot's commands: (what was stored or done, the answer, whether it was a question)."""

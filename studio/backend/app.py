@@ -2082,6 +2082,14 @@ except (ImportError, ValueError):
 
 app.include_router(collection_router_module.router)
 
+# How the studio writes for the creator: their writing preferences (phase 3).
+try:
+    from .routers import writing as writing_router_module
+except (ImportError, ValueError):
+    from routers import writing as writing_router_module
+
+app.include_router(writing_router_module.router)
+
 # Your phone, through Telegram: the settings behind the Local security panel.
 try:
     from .routers import phone as phone_router_module

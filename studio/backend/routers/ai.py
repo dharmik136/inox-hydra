@@ -25,8 +25,8 @@ try:
     )
     from ..agno_agentos import orchestrator
     from ..agno_agentos.scar_tissue import BANNED_TROPES
-    from ..repurposer import get_ai_status, command_ai_engine, COMMAND_CLICHES
-    from .. import voice_pack
+    from ..repurposer import get_ai_status, command_ai_engine
+    from .. import voice_pack, writing
     from ..mcp_client import servers as mcp_servers
 except ImportError:
     from agno_agentos.model_gateway import (
@@ -38,8 +38,9 @@ except ImportError:
     )
     from agno_agentos import orchestrator
     from agno_agentos.scar_tissue import BANNED_TROPES
-    from repurposer import get_ai_status, command_ai_engine, COMMAND_CLICHES
+    from repurposer import get_ai_status, command_ai_engine
     import voice_pack
+    import writing
     from mcp_client import servers as mcp_servers
 
 router = APIRouter()
@@ -66,9 +67,10 @@ def get_what_the_model_is_told() -> Dict[str, Any]:
             # A model's image description is refused when it holds one, and
             # the studio writes the scene itself instead (briefing.validate_response).
             "checked_on": ["image prompts"],
-            # Command's instruction names these; Re-Hook's names none; neither
-            # answer is checked against the list.
-            "named_in_command": list(COMMAND_CLICHES),
+            # Command's instruction names these, the creator's words to avoid
+            # (writing.py, phase 3), as Re-Hook's now does; neither answer is
+            # checked against the list.
+            "named_in_command": list(writing.preferences()["avoid"]),
         },
         "grounding": {
             "sources": len(sources),

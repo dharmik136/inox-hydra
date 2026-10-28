@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ImageProviderSettings } from "./ImageProviderSettings";
+import { useWritingPreferences, WritingSummary } from "./WritingPreferences";
 
 /** The capability keys the backend returns, in words rather than identifiers. */
 const CAPABILITY_LABELS: Record<string, string> = {
@@ -43,7 +44,16 @@ const SENT_BY_FEATURE: { feature: string; what: string }[] = [
   { feature: "Re-Hook", what: "the first line of your selection" },
   { feature: "Command", what: "your instruction, and your Composer draft when you tick the box to include it" },
   { feature: "Media", what: "your image description" },
+  {
+    feature: "Collection",
+    what: "the words of the items you write from: Make a post, Combine and Angles in your collection, Write it up on your bot",
+  },
 ];
+
+/** "a, b and c", for a list of features. */
+function inWords(parts: string[]): string {
+  return parts.length < 2 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
 
 /**
  * The prompt inspector (blueprint section 10).
@@ -88,7 +98,7 @@ function WhatTheModelIsTold() {
     <section>
       <p className="studio-label mb-2">What the model is told</p>
       <p className="text-[12px] leading-snug text-ink-secondary">
-        With every {voice.sent_with.join(" and ")} request
+        With every {inWords(voice.sent_with)} request
         {told.provider.configured ? "" : ", once a provider is connected"}, about you:
       </p>
       {voice.who.length > 0 && (
@@ -271,6 +281,11 @@ export function PromptPanel({ draft = "" }: { draft?: string } = {}) {
 
       <WhatTheModelIsTold />
 
+      {/* Phase 3: Command's tone, paragraphs, first line, ending and words to
+          avoid, and Re-Hook's tone, language, emojis and words to avoid, are the
+          creator's writing preferences, named here with their defaults. */}
+      <HowTheyWrite />
+
       <section>
         <p className="studio-label mb-2">Available here</p>
         <ul className="flex flex-wrap gap-1">
@@ -386,6 +401,19 @@ interface Ran {
  * can be copied, which it could not be on the section: the only way to use
  * one there was to select it with the mouse.
  */
+function HowTheyWrite() {
+  const [described] = useWritingPreferences();
+  return (
+    <section>
+      <WritingSummary
+        described={described}
+        fields={["tone", "language", "opening", "line_breaks", "ending", "emojis", "hashtags", "avoid"]}
+        title="How Command and Re-Hook write"
+      />
+    </section>
+  );
+}
+
 function CommandBlock({ draft }: { draft: string }) {
   const [command, setCommand] = useState("");
   const [includeDraft, setIncludeDraft] = useState(false);

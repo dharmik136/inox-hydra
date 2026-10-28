@@ -12,15 +12,16 @@ Strict Invariants:
 - Zero egress: these routes read and write the creator's own rows only.
 """
 
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 try:
-    from .. import collection
+    from .. import collection, writing
 except (ImportError, ValueError):
     import collection
+    import writing
 
 router = APIRouter()
 
@@ -29,10 +30,15 @@ class StatusPayload(BaseModel):
     status: str = Field(..., max_length=20, description="new, or not_now to set the item aside")
 
 
+class WritePayload(BaseModel):
+    items: List[int] = Field(..., description="One item for Make a post, two or more to Combine")
+    angle: Optional[str] = Field(None, max_length=400, description="An opening line Angles offered, to start from")
+
+
 def _answer(work):
     try:
         return work()
-    except collection.Refused as refused:
+    except (collection.Refused, writing.Refused) as refused:
         raise HTTPException(status_code=400, detail=str(refused))
     except LookupError as gone:
         raise HTTPException(status_code=404, detail=str(gone))
@@ -56,6 +62,22 @@ def post_collection_status(item_id: int, payload: StatusPayload):
 def post_collection_draft(item_id: int):
     """Use as a draft: the item's words, as they are, become a Composer draft, and the item is used."""
     return _answer(lambda: collection.use_as_draft(item_id))
+
+
+@router.post("/api/v1/collection/write", tags=["Collection"])
+def post_collection_write(payload: WritePayload):
+    """
+    Make a post from one item, or Combine several into one draft, through
+    the creator's own provider, as their writing preferences say. With no
+    provider it says so and writes nothing; a provider that fails says why.
+    """
+    return _answer(lambda: writing.make_post(payload.items, payload.angle))
+
+
+@router.post("/api/v1/collection/{item_id}/angles", tags=["Collection"])
+def post_collection_angles(item_id: int):
+    """Angles: the creator's number of opening lines for a post from this item, kept on the item."""
+    return _answer(lambda: writing.angles(item_id))
 
 
 @router.delete("/api/v1/collection/{item_id}", tags=["Collection"])

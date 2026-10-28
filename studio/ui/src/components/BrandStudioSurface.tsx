@@ -39,6 +39,7 @@ import { hasUnsavedWork, registerUnsavedWork, reloadStudio, unsavedWorkLabels } 
 import { GroundingWorkspace } from "./GroundingWorkspace";
 import { LicenceWorkspace } from "./LicenceWorkspace";
 import { StoragePrivacyWorkspace } from "./StoragePrivacyWorkspace";
+import { WritingPreferencesPanel } from "./WritingPreferences";
 
 // Brand Studio was one screen of six tabs that opened on a Name, Headline and
 // Company form, the sections report's one outright one-view failure. It is
@@ -46,8 +47,11 @@ import { StoragePrivacyWorkspace } from "./StoragePrivacyWorkspace";
 // showed it, with its editors one level down; Settings, about this machine,
 // opens on an overview, with the rest one level down. Both live in this file,
 // so the code that says what leaves this machine stays where its guards read it.
-type BrandView = "Profile" | "Identity" | "Watermark";
-const BRAND_VIEWS: BrandView[] = ["Profile", "Identity", "Watermark"];
+// Writing (phase 3 of the Telegram bot): how the studio writes for you, each
+// choice a writing request makes, with its default; about you, beside how you
+// write in Profile.
+type BrandView = "Profile" | "Identity" | "Watermark" | "Writing";
+const BRAND_VIEWS: BrandView[] = ["Profile", "Identity", "Watermark", "Writing"];
 
 // Grounding sits beside the other settings rather than in the composer: it
 // is a standing grant about what this machine will run and what leaves it,
@@ -157,7 +161,7 @@ export function BrandSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {})
           <p className="studio-label">Brand</p>
           <h1 className="studio-title mt-1">What your profile shows</h1>
         </div>
-        {view !== "Profile" && <SaveControl state={state} error={error} onSave={onSave} />}
+        {(view === "Identity" || view === "Watermark") && <SaveControl state={state} error={error} onSave={onSave} />}
       </div>
 
       <ViewTabs label="Brand views" views={BRAND_VIEWS} view={view} onView={setView} />
@@ -168,6 +172,7 @@ export function BrandSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {})
           <IdentityWorkspace profile={profile} edit={edit} isSet={loaded?.is_set ?? false} asRead={asRead} />
         )}
         {view === "Watermark" && <WatermarkWorkspace profile={profile} edit={edit} />}
+        {view === "Writing" && <WritingPreferencesPanel />}
       </div>
     </div>
   );

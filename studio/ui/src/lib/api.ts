@@ -3761,6 +3761,8 @@ export interface CollectionItem {
   source: "telegram" | "studio";
   /** A draft, and where it is now; or the request on Today, and its state; null while it is material. */
   became: { kind: "draft" | "request"; said: string; post_id?: string } | null;
+  /** Opening lines Angles found for it, kept for the box and the bot. */
+  angles: string[];
 }
 
 export interface CollectionListing {
@@ -3789,6 +3791,84 @@ export async function draftFromCollection(id: number): Promise<{ id: string; con
 
 export async function removeCollectionItem(id: number): Promise<void> {
   await call(`/api/v1/collection/${id}`, { method: "DELETE" });
+}
+
+/** What writing from the collection made, or why nothing was written. */
+export type CollectionWritten =
+  | { status: "drafted"; id: string; content: string; items: number[] }
+  | { status: "no_provider" | "refused"; said: string };
+
+/** Make a post (one item) or Combine (several), through the creator's own provider. */
+export async function writeFromCollection(items: number[], angle?: string): Promise<CollectionWritten> {
+  return call<CollectionWritten>("/api/v1/collection/write", {
+    method: "POST",
+    body: JSON.stringify(angle ? { items, angle } : { items }),
+  });
+}
+
+/** Angles: the creator's number of opening lines for a post from one item. */
+export async function anglesForItem(
+  id: number,
+): Promise<{ status: "success"; angles: string[] } | { status: "no_provider" | "refused"; said: string }> {
+  return call(`/api/v1/collection/${id}/angles`, { method: "POST" });
+}
+
+// -------------------------------------------------------------
+// How the studio writes for you: the writing preferences (phase 3)
+// -------------------------------------------------------------
+
+export type IdeaSource = "collection" | "posts" | "asks";
+
+export interface WritingPreferences {
+  length_words: number;
+  tone: string;
+  /** Empty for the language of what you wrote. */
+  language: string;
+  /** Empty for a first line that stops the scroll, or one of Re-Hook's forms. */
+  opening: string;
+  emojis: string;
+  hashtags: string;
+  line_breaks: string;
+  ending: string;
+  avoid: string[];
+  angles: number;
+  sources: IdeaSource[];
+}
+
+export interface WritingDescribed {
+  values: WritingPreferences;
+  defaults: WritingPreferences;
+  choices: {
+    length_words: number[];
+    angles: number[];
+    opening: string[];
+    emojis: Record<string, string>;
+    hashtags: Record<string, string>;
+    line_breaks: Record<string, string>;
+    ending: Record<string, string>;
+    sources: IdeaSource[];
+  };
+  labels: {
+    emojis: Record<string, string>;
+    hashtags: Record<string, string>;
+    line_breaks: Record<string, string>;
+    ending: Record<string, string>;
+    sources: Record<IdeaSource, string>;
+    language: string;
+    opening: string;
+  };
+  limits: { tone: number; language: number; avoid: number; avoid_phrase: number };
+  /** The provider every writing request goes to, as connected on the Composer's Prompt tab. */
+  provider: { configured: boolean; provider: string | null; model: string | null };
+}
+
+export async function fetchWritingPreferences(): Promise<WritingDescribed> {
+  return call<WritingDescribed>("/api/v1/writing/preferences");
+}
+
+/** Saves the preferences sent; one left out keeps its value. Outside its choices, nothing is saved. */
+export async function saveWritingPreferences(change: Partial<WritingPreferences>): Promise<WritingDescribed> {
+  return call<WritingDescribed>("/api/v1/writing/preferences", { method: "PUT", body: JSON.stringify(change) });
 }
 
 export async function fetchRecordSetup(): Promise<Record<RecordSetupField, string | null>> {
@@ -3924,6 +4004,14 @@ export interface IngressOptions {
   /** Quiet hours, whole hours on the computer's clock: from 23 to 7 unless changed. */
   quiet_from: number;
   quiet_to: number;
+  /** The bot's answers carry what it writes from the collection (its words). Off unless turned on. */
+  collection_words: boolean;
+  /** An idea from the collection each morning, on these days (0 is Monday) at this hour. Off unless turned on. */
+  morning: boolean;
+  morning_days: number[];
+  morning_hour: number;
+  /** The angles button's number, set in Brand under Writing; shown here. */
+  angles?: number;
   /** Send a weekly summary to the paired chat. Off unless turned on. */
   weekly: boolean;
   /** The weekly summary's day, 0 is Monday, and its whole hour on the computer's clock: Monday 09:00 unless changed. */

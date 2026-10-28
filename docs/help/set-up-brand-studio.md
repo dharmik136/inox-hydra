@@ -5,7 +5,7 @@ See your profile as LinkedIn last showed it and set how you sign your images in 
 
 **Brand** and **Settings** are two entries in the rail. They used to open one screen, Brand Studio, with six tabs that opened on a Name, Headline and Company form; they are two screens now, each opening on what it is for, with the rest one level down.
 
-- **Brand** opens on **Profile**, with **Identity** and **Watermark** beside it.
+- **Brand** opens on **Profile**, with **Identity**, **Watermark** and **Writing** beside it.
 - **Settings** opens on **Overview**, with **Grounding**, **Local security**, **Storage and privacy** and **Licence** beside it.
 
 ## Brand: your profile as LinkedIn last showed it
@@ -31,7 +31,7 @@ Until a name has been saved, the screen reads UNTIL A NAME IS SAVED, WATERMARKS 
 
 ## How saving works
 
-**Save**, at the top right of **Brand** while **Identity** or **Watermark** is open, saves both together.
+**Save**, at the top right of **Brand** while **Identity** or **Watermark** is open, saves both together. **Writing** has a **Save** of its own.
 
 - It is greyed out until you first change something, and while a save is running. After a save it stays available.
 - The mark beside it reads UNSAVED, SAVING, SAVED or SAVE FAILED. Hover over SAVE FAILED to read the reason.
@@ -52,6 +52,25 @@ The **Preview frame** shows the mark where you placed it. It is labelled A DRAWN
 
 > [!WARNING]
 > These settings are saved, but nothing in the interface applies them yet. Images you generate from the **Media** tab are never stamped with your watermark, whatever you choose here.
+
+## Brand: Writing
+
+How the studio writes for you. Every writing request reads these: **Make a post**, **Combine** and **Angles** in **From your record**'s **Your collection**, **Write it up** on your Telegram bot, and **Command** and **Re-Hook** in the Composer. Each says its default under it, and each feature shows the ones it reads beside it.
+
+| Preference | Default |
+| --- | --- |
+| Length of a draft | About 150 words (60, 100, 150, 200 or 300) |
+| Tone | punchy, high-signal, authentic and authoritative |
+| Language | The language of what you wrote |
+| Opening line | A first line that stops the scroll, or one of Re-Hook's forms |
+| Emojis | No emojis |
+| Hashtags | Only those already in what you wrote |
+| Line breaks | Short paragraphs of one or two sentences |
+| Ending | A thoughtful question or takeaway |
+| Words to avoid | In today's fast-paced world, game-changer, delve, testament |
+| Angles | 3 opening lines (2 to 5) |
+
+The defaults are what Command was told until now. Press **Save** under them to keep your changes, or **Back to the defaults**. The rules that keep writing honest are not choices: only what you sent is used, no figure, person, date or quote is invented, and no em dash. The provider every request goes to is the one connected on the Composer's **Prompt** tab, named at the top.
 
 ## Settings: Overview
 

@@ -439,8 +439,14 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # /api/v1/collection/{item_id}/draft and /api/v1/collection/{item_id}.
 # Total 228 -> 232, reached 180 -> 184, unreachable stays 48.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 232
-REACHED_BY_INTERFACE = 184
+# Item 2: Make a post and Combine (/api/v1/collection/write) and Angles
+# (/api/v1/collection/{item_id}/angles), which the collection level presses,
+# and the writing preferences (/api/v1/writing/preferences), which Brand's
+# Writing view reads and saves and each feature's summary reads.
+# Total 232 -> 235, reached 184 -> 187, unreachable stays 48.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 235
+REACHED_BY_INTERFACE = 187
 UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

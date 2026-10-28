@@ -12,7 +12,7 @@ Strict Invariants:
   afterwards is the one outbound path, already under the ingress category.
 """
 
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -43,6 +43,10 @@ class IngressOptionsPayload(BaseModel):
     quiet_from: Optional[int] = Field(None, ge=0, le=23, description="Quiet hours start, a whole hour")
     quiet_to: Optional[int] = Field(None, ge=0, le=23, description="Quiet hours end, a whole hour")
     weekly: Optional[bool] = Field(None, description="Send me a weekly summary")
+    collection_words: Optional[bool] = Field(None, description="The bot may send me what it writes from my collection")
+    morning: Optional[bool] = Field(None, description="Send me an idea from my collection each morning")
+    morning_days: Optional[List[int]] = Field(None, description="The morning idea's days, 0 is Monday")
+    morning_hour: Optional[int] = Field(None, ge=0, le=23, description="The morning idea's hour, a whole hour")
     weekly_day: Optional[int] = Field(None, ge=0, le=6, description="The weekly summary's day, 0 is Monday")
     weekly_hour: Optional[int] = Field(None, ge=0, le=23, description="The weekly summary's hour, a whole hour")
 
@@ -90,7 +94,9 @@ def post_ingress_options(payload: IngressOptionsPayload):
                                   notify_24h=payload.notify_24h, quiet=payload.quiet_hours,
                                   quiet_from=payload.quiet_from, quiet_to=payload.quiet_to,
                                   weekly_on=payload.weekly, weekly_day=payload.weekly_day,
-                                  weekly_hour=payload.weekly_hour)
+                                  weekly_hour=payload.weekly_hour, collection_words=payload.collection_words,
+                                  morning_on=payload.morning, morning_days=payload.morning_days,
+                                  morning_hour=payload.morning_hour)
     except ValueError as refused:
         raise HTTPException(status_code=400, detail=str(refused))
     return ingress.describe_settings()

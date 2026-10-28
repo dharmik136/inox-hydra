@@ -227,7 +227,7 @@ def told(max_openers: int = 3) -> Dict[str, Any]:
         "habits_need": MIN_POSTS_FOR_HABITS,
         "openers": openers,
         "openers_rule": OPENERS_RULE,
-        "sent_with": ["Re-Hook", "Command"],
+        "sent_with": ["Re-Hook", "Command", "Make a post", "Combine", "Angles", "Write it up"],
     }
 
 

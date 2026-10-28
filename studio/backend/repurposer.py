@@ -28,9 +28,16 @@ except ImportError:
         last_provider_failure = None
 
 
-# The clichés Command's instruction names, which the Composer's "What the
-# model is told" lists from here. The answer is not checked against them.
-COMMAND_CLICHES = ("In today's fast-paced world", "game-changer", "delve", "testament")
+try:
+    from . import writing as _writing
+except ImportError:
+    import writing as _writing
+
+# The clichés Command's instruction named until phase 3: now the default of
+# the creator's "words to avoid" preference (writing.py), which Command's
+# instruction and "What the model is told" read. The answer is not checked
+# against them.
+COMMAND_CLICHES = _writing.DEFAULT_AVOID
 
 
 def _ask_provider(cfg, prompt: str, system_prompt: str, max_tokens: int) -> str:
@@ -241,17 +248,10 @@ def command_ai_engine(command: Optional[str], context: Optional[str] = None) -> 
     # Written for whoever owns this studio. It used to describe one particular
     # author, a content strategist in enterprise systems, for every user; the
     # voice pack appended below now says who the author is when the studio knows.
-    system_prompt = (
-        "You are a writing assistant for a practitioner who posts on LinkedIn.\n"
-        "Your writing style is punchy, high-signal, authentic, and authoritative.\n"
-        "CRITICAL FORMATTING RULES:\n"
-        "1. NEVER use em-dashes (\u2014) or en-dashes (–). Use commas, periods, or clean line breaks instead.\n"
-        "2. NO corporate clichés or generic buzzwords (avoid: "
-        + ", ".join(f"'{phrase}'" for phrase in COMMAND_CLICHES) + ").\n"
-        "3. Format for mobile dwell time: short paragraphs (1-2 sentences max), generous spacing.\n"
-        "4. Hook rule: The first line must stop the scroll instantly.\n"
-        "5. Conclude with an authentic, thoughtful question or takeaway."
-    )
+    # Its tone, paragraphs, first line, ending, language, emojis, hashtags and
+    # words to avoid are the creator's writing preferences (phase 3), whose
+    # defaults are what this instruction said until then.
+    system_prompt = _writing.command_system()
 
     full_prompt = f"Command: {command_clean}\n\n"
     if context_clean:
@@ -338,10 +338,10 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
             configured = cfg
             prompt = (
                 f"Generate exactly 10 distinct, high-converting LinkedIn hooks for the topic: '{subject_clean}'.\n"
-                "Archetypes required: Pattern Interrupt, Concrete Metric, Hard Lesson, Counter-Intuitive, "
-                "Tactical Playbook, Cost of Inaction, Quiet Title, Unpopular Truth, Before vs After, Razor of Leverage.\n"
+                "Archetypes required: " + ", ".join(_writing.HOOK_FORMS) + ".\n"
                 "Rules:\n"
                 "- NEVER use em-dashes (\u2014). Use clean punctuation.\n"
+                + _writing.hook_rules() +
                 "- First line must be under 120 characters so it does not truncate before the 'see more' button on mobile.\n"
                 "- Return strictly a valid JSON array of objects with keys: 'archetype', 'hook'. Do not enclose in markdown code blocks."
             ) + _voice()

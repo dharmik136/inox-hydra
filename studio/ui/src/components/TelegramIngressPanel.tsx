@@ -3,12 +3,15 @@ import { Loader2 } from "lucide-react";
 import {
   fetchIngressSettings,
   saveIngressOptions,
+  saveWritingPreferences,
+  type IdeaSource,
   saveIngressSettings,
   sendIngressTestMessage,
   type IngressOptions,
   type IngressSettings,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useWritingPreferences } from "./WritingPreferences";
 
 /** The whole hours quiet hours and the weekly summary can be set to. */
 const HOURS = Array.from({ length: 24 }, (_unused, hour) => hour);
@@ -54,6 +57,7 @@ export function TelegramIngressPanel() {
   const [chatId, setChatId] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [writing, reloadWriting] = useWritingPreferences();
 
   useEffect(() => {
     let live = true;
@@ -99,6 +103,23 @@ export function TelegramIngressPanel() {
       setNote(said);
     } catch (caught) {
       setNote(caught instanceof Error ? caught.message : "The switch was not saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** What ideas draw on: one of the writing preferences, kept with them (Brand, Writing). */
+  async function setSource(source: IdeaSource, on: boolean, said: string) {
+    if (!writing) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const now = writing.values.sources;
+      await saveWritingPreferences({ sources: on ? [...now, source] : now.filter((s) => s !== source) });
+      await reloadWriting();
+      setNote(said);
+    } catch (caught) {
+      setNote(caught instanceof Error ? caught.message : "That was not saved.");
     } finally {
       setBusy(false);
     }
@@ -184,6 +205,29 @@ export function TelegramIngressPanel() {
                 disabled={busy}
                 onChange={(on) => void setOption({ figures: on }, on ? "The bot may answer /today with your figures." : "Your figures stay in the studio.")}
               />
+              <OptionRow
+                label="The bot may send me what it writes from my collection"
+                detail="When on, what Write it up and the angles make, and the morning idea, come to your phone with their words: a draft's first line, the angles, your idea's first line. Those words of yours then sit on Telegram's servers, as everything in the chat does. Off, the bot says only that it is done."
+                checked={state.options.collection_words}
+                disabled={busy}
+                onChange={(on) =>
+                  void setOption(
+                    { collection_words: on },
+                    on ? "The bot may send you what it writes from your collection." : "The bot says only that it is done.",
+                  )
+                }
+              />
+              {state.options.angles !== undefined && (
+                <p className="pl-5 text-[12px] text-ink-secondary">
+                  {`Under what you send, the angles button says ${state.options.angles} angles`}
+                  {writing && state.options.angles === writing.defaults.angles
+                    ? " (the default)"
+                    : writing
+                      ? ` (default: ${writing.defaults.angles})`
+                      : ""}
+                  , as set in Brand, under Writing.
+                </p>
+              )}
               <p className="studio-meta mt-1 text-ink-muted">WHAT THE BOT TELLS YOU, EACH ONLY IF TICKED</p>
               <OptionRow
                 label="Tell me when a queued post is due"
@@ -252,6 +296,90 @@ export function TelegramIngressPanel() {
               </div>
               {state.weekly_next && (
                 <p className="studio-meta pl-5 text-ink-muted">{`NEXT SUMMARY: ${state.weekly_next.toUpperCase()}`}</p>
+              )}
+              <OptionRow
+                label="Send me an idea from my collection each morning"
+                detail="On the days and at the hour you pick: one unused idea from your collection, the one offered least recently, with an angle from what worked in your own posts, and Write it up and Not today under it. It carries your words, so it needs the switch that lets the bot send what it writes."
+                checked={state.options.morning}
+                disabled={busy}
+                onChange={(on) =>
+                  void setOption(
+                    { morning: on },
+                    on ? `An idea each morning at ${clock(state.options.morning_hour)}.` : "No morning idea.",
+                  )
+                }
+              />
+              <div className="flex flex-wrap items-center gap-2 pl-5 text-[12px] text-ink-secondary">
+                {DAYS.map((name, index) => (
+                  <label key={name} className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={state.options.morning_days.includes(index)}
+                      disabled={busy || !state.options.morning}
+                      onChange={(event) => {
+                        const days = event.target.checked
+                          ? [...state.options.morning_days, index]
+                          : state.options.morning_days.filter((day) => day !== index);
+                        if (days.length) void setOption({ morning_days: days }, `The morning idea comes on ${days.length} days a week.`);
+                      }}
+                    />
+                    <span>{name.slice(0, 3)}</span>
+                  </label>
+                ))}
+                <span>at</span>
+                <select
+                  aria-label="Morning idea hour"
+                  className={SELECT}
+                  value={state.options.morning_hour}
+                  disabled={busy || !state.options.morning}
+                  onChange={(event) => {
+                    const hour = Number(event.target.value);
+                    void setOption({ morning_hour: hour }, `An idea each morning at ${clock(hour)}.`);
+                  }}
+                >
+                  {HOURS.map((hour) => (
+                    <option key={hour} value={hour}>
+                      {clock(hour)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {state.options.morning && !state.options.collection_words && (
+                <p className="studio-meta pl-5 text-signal-orange-text">
+                  IT CARRIES YOUR WORDS, SO IT WAITS FOR THE SWITCH THAT LETS THE BOT SEND WHAT IT WRITES
+                </p>
+              )}
+              {writing && (
+                <div className="flex flex-wrap items-center gap-3 pl-5 text-[12px] text-ink-secondary">
+                  <span>Ideas draw on</span>
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={writing.values.sources.includes("collection")}
+                      disabled={busy}
+                      onChange={(event) =>
+                        void setSource("collection", event.target.checked, event.target.checked ? "Ideas draw on your collection." : "Ideas leave your collection alone.")
+                      }
+                    />
+                    <span>your collection</span>
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={writing.values.sources.includes("posts")}
+                      disabled={busy}
+                      onChange={(event) =>
+                        void setSource("posts", event.target.checked, event.target.checked ? "Angles draw on your own posts." : "Angles leave your posts alone.")
+                      }
+                    />
+                    <span>your posts, for the angle</span>
+                  </label>
+                  <span className="text-ink-muted">
+                    {JSON.stringify(writing.values.sources) === JSON.stringify(writing.defaults.sources)
+                      ? "(the default: your collection, your posts and your asks)"
+                      : "(default: your collection, your posts and your asks)"}
+                  </span>
+                </div>
               )}
               <p className="studio-meta mt-1 text-ink-muted">QUIET HOURS</p>
               <OptionRow

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  anglesForItem,
   draftFromCollection,
   fetchCollection,
   fetchDraftById,
   removeCollectionItem,
   setCollectionStatus,
+  writeFromCollection,
   type CollectionItem,
   type CollectionKind,
   type CollectionListing,
@@ -13,6 +15,10 @@ import {
 import { useRefresh } from "@/lib/refresh";
 import { formatLocal } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { useWritingPreferences, WritingSummary } from "./WritingPreferences";
+
+/** Combine takes this many at most, as the server does, so one request stays small. */
+const COMBINE_AT_MOST = 10;
 
 /**
  * Your collection: everything the creator sent their Telegram bot, in one
@@ -55,6 +61,10 @@ export function CollectionPanel({
   const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [confirming, setConfirming] = useState<number | null>(null);
+  const [chosen, setChosen] = useState<number[]>([]);
+  const [writingNow, setWritingNow] = useState<string | null>(null);
+  const [described] = useWritingPreferences();
+  const angleCount = described?.values.angles;
 
   const load = useCallback(() => {
     return fetchCollection({ status, kind, q: words })
@@ -98,6 +108,48 @@ export function CollectionPanel({
     } finally {
       setBusy(null);
     }
+  }
+
+  /** Make a post (one item, maybe from an angle) or Combine: the provider writes, the Composer opens it. */
+  async function write(ids: number[], angle?: string) {
+    setBusy(ids.length === 1 ? ids[0] : -1);
+    setNote(null);
+    setWritingNow(ids.length > 1 ? `Writing one post from ${ids.length} items with your provider.` : "Writing it up with your provider.");
+    try {
+      const made = await writeFromCollection(ids, angle);
+      if (made.status === "drafted") {
+        setChosen([]);
+        await load();
+        onOpenDraft?.({ id: made.id, content: made.content });
+      } else {
+        setNote({ text: made.said, error: made.status === "refused" });
+      }
+    } catch (error) {
+      setNote({ text: error instanceof Error ? error.message : "Nothing was written.", error: true });
+    } finally {
+      setBusy(null);
+      setWritingNow(null);
+    }
+  }
+
+  async function findAngles(item: CollectionItem) {
+    setBusy(item.id);
+    setNote(null);
+    setWritingNow("Finding angles with your provider.");
+    try {
+      const found = await anglesForItem(item.id);
+      if (found.status === "success") await load();
+      else setNote({ text: found.said, error: found.status === "refused" });
+    } catch (error) {
+      setNote({ text: error instanceof Error ? error.message : "No angles were found.", error: true });
+    } finally {
+      setBusy(null);
+      setWritingNow(null);
+    }
+  }
+
+  function choose(item: CollectionItem, on: boolean) {
+    setChosen((current) => (on ? [...current, item.id].slice(0, COMBINE_AT_MOST) : current.filter((id) => id !== item.id)));
   }
 
   async function openDraft(postId: string) {
@@ -175,6 +227,38 @@ export function CollectionPanel({
         />
       </div>
 
+      <WritingSummary
+        described={described}
+        fields={["length_words", "tone", "language", "opening", "emojis", "hashtags", "line_breaks", "ending", "avoid", "angles"]}
+        title="How Make a post, Combine and Angles write"
+      />
+
+      {chosen.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-[12px] text-ink-secondary">
+          <span>
+            {chosen.length} chosen{chosen.length < 2 ? ": choose one more to combine" : ""}
+          </span>
+          {chosen.length >= 2 && (
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void write(chosen)}
+              className="rounded-md border border-edge px-2 py-0.5 hover:text-ink-primary disabled:opacity-40"
+            >
+              Combine {chosen.length} into one post
+            </button>
+          )}
+          <button type="button" onClick={() => setChosen([])} className="underline underline-offset-2 hover:text-ink-primary">
+            Clear
+          </button>
+        </div>
+      )}
+
+      {writingNow && (
+        <p role="status" className="studio-meta text-ink-muted">
+          {writingNow.toUpperCase()}
+        </p>
+      )}
       {note && (
         <p role="status" className={cn("text-[12px]", note.error ? "text-signal-orange-text" : "text-ink-secondary")}>
           {note.text}
@@ -194,6 +278,15 @@ export function CollectionPanel({
           {listing.items.map((item) => (
             <li key={item.id} className="py-2.5">
               <p className="flex flex-wrap items-baseline gap-x-2 text-[11px] text-ink-muted">
+                {item.text && item.status !== "used" && (
+                  <input
+                    type="checkbox"
+                    className="self-center"
+                    aria-label={`Choose to combine: ${item.text.slice(0, 40)}`}
+                    checked={chosen.includes(item.id)}
+                    onChange={(event) => choose(item, event.target.checked)}
+                  />
+                )}
                 <span className="studio-meta text-ink-secondary">{item.kind_said.toUpperCase()}</span>
                 <span>{formatLocal(item.received_at)}</span>
                 {item.source === "studio" && <span>from this computer</span>}
@@ -212,6 +305,23 @@ export function CollectionPanel({
                 >
                   {item.link}
                 </a>
+              )}
+              {item.angles && item.angles.length > 0 && (
+                <ol className="mt-1.5 flex list-decimal flex-col gap-1 pl-5 text-[12px] text-ink-secondary">
+                  {item.angles.map((angle) => (
+                    <li key={angle}>
+                      <span className="text-ink-primary">{angle}</span>{" "}
+                      <button
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={() => void write([item.id], angle)}
+                        className="underline underline-offset-2 hover:text-ink-primary disabled:opacity-40"
+                      >
+                        Write it up
+                      </button>
+                    </li>
+                  ))}
+                </ol>
               )}
               {item.became && (
                 <p className="mt-1 text-[12px] text-ink-secondary">
@@ -232,6 +342,26 @@ export function CollectionPanel({
                 </p>
               )}
               <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[12px] text-ink-secondary">
+                {item.text && (
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => void write([item.id])}
+                    className="rounded-md border border-edge px-2 py-0.5 hover:text-ink-primary disabled:opacity-40"
+                  >
+                    Make a post
+                  </button>
+                )}
+                {item.text && (
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => void findAngles(item)}
+                    className="rounded-md border border-edge px-2 py-0.5 hover:text-ink-primary disabled:opacity-40"
+                  >
+                    {angleCount ? `${angleCount} angles` : "Angles"}
+                  </button>
+                )}
                 {item.text && (
                   <button
                     type="button"

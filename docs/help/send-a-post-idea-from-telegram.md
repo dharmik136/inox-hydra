@@ -65,9 +65,45 @@ Everything you send your bot lands in **From your record**, on its **Your collec
 - **Not now** sets an item aside, and **Back to new** brings it back.
 - **Remove** takes an item out for good, once you confirm. A draft made from it stays a draft.
 
+**Make a post**, **Angles** and **Combine** write from your items through your own AI provider. See [Make something out of it](#make-something-out-of-it).
+
 A link to one of your posts, and a short link, are also requests on Today, and the item says what became of the request. A link to someone else's post is a bookmark, which the studio never opens; your own browser does, if you click it. What you sent before this version is listed too, as used: each message the bot saved as a draft, and each link it asked Today to open.
 
 Your collection is counted in **Storage and privacy** as "Your collection: what you sent your bot", is in the data export and in backups like everything else, and is deleted when you delete everything the studio holds about you. A message is kept once, even if Telegram sends it again after a restart.
+
+## Make something out of it
+
+In the studio, on an item of **Your collection**:
+
+- **Make a post** writes a draft from it through your own AI provider and opens it in the Composer. The item is then used.
+- The **Angles** button, which says how many it offers (**3 angles** unless you change it), finds that many opening lines for a post from it, and lists them under the item, each with **Write it up**.
+- Tick two or more items, up to ten, and **Combine** writes one draft from all of them.
+
+On your bot, under "Saved to your collection.", **Write it up** and the **Angles** button do the same. The bot answers at once ("Writing it up in your studio.") and keeps answering everything else while your provider writes; when it is done it sends a new message, which your phone notifies.
+
+What is sent to your provider, and nothing else: the words of the items you pressed it on, what the studio knows about how you write (as for Re-Hook and Command), and your writing preferences. Every choice it makes is yours: how long a draft is, its tone, its language, its opening line, emojis, hashtags, line breaks, how it ends, words it never writes, and how many angles. Each has a default you can see, under **Brand**, then **Writing**, and each feature shows the ones it reads beside it. See [Set up your Brand and your Settings](set-up-brand-studio.md#brand-writing).
+
+What is kept is only what you sent: a draft or an angle that carries a figure, or the name of a person the studio knows of, that is not in your words is refused and said, never repaired, and nothing is kept. With no AI provider set up, each says so plainly, and **Use as a draft** gives you the item's words as they are.
+
+**The bot may send me what it writes from my collection**, in the panel, is off until you tick it. Off, the bot says only "Draft ready in your studio." or that the angles are ready in your studio. On, its message carries what was written: a draft's first line, or the angles, each with a **Write up** button. Those words of yours then sit on Telegram's servers, as everything in the chat does.
+
+| What happened | The bot says |
+| --- | --- |
+| You pressed **Write it up** | Writing it up in your studio. |
+| The draft is written, with the switch off | Draft ready in your studio. |
+| The draft is written, with the switch on | Draft ready in your studio. It begins: (and its first line) |
+| You pressed the **Angles** button | Finding angles in your studio. |
+| The angles are found, with the switch off | 3 angles are ready in your studio, on the item in your collection. |
+| The angles are found, with the switch on | Angles from your collection. Press one to write it up: (and the angles, each with **Write up**) |
+| No AI provider is set up | No AI provider is set up in your studio, so nothing was written. Connect yours on the Composer's Prompt tab, or use it as a draft in your collection. |
+| Your provider did not write it | Your AI provider did not write it, so nothing changed. Open your studio to see why. |
+| What it wrote named a figure or a person not in your note | Nothing was kept: what your AI provider wrote had a figure or a name that is not in your note. |
+
+## A morning idea
+
+Tick **Send me an idea from my collection each morning** in the panel, and pick the days (Monday to Friday unless you change them) and the hour (08:00). On those mornings the bot sends one unused item from your collection, the one it offered least recently, under "An idea from your collection:", with an angle from what worked in your own posts, for example "Angle: open with a question, as the posts of yours that did best did.", and **Write it up** and **Not today** under it. **Not today** leaves it in your collection ("Not today. It stays in your collection.").
+
+It carries your words, so it comes only while **The bot may send me what it writes from my collection** is on, and it waits through quiet hours like every notification. **Ideas draw on**, beside it, says whether the idea comes from your collection and whether its angle comes from your posts. A day with nothing new to offer sends nothing.
 
 ## Commands
 
@@ -133,11 +169,14 @@ Quiet hours are not the studio's slower checking at night. Between 23:00 and 06:
 
 ## Buttons you can press
 
-Two kinds of message carry buttons, which you press in Telegram:
+These messages carry buttons, which you press in Telegram:
 
 | Under | Button | What it does |
 | --- | --- | --- |
-| "Saved to your collection." | **Undo** | Takes it out of your collection, while it is still new there: never used as a draft and never set aside |
+| "Saved to your collection." | **Write it up** | Writes a draft from it through your own AI provider. See [Make something out of it](#make-something-out-of-it) |
+| The same | The **Angles** button | Finds your number of opening lines for a post from it |
+| The same | **Undo** | Takes it out of your collection, while it is still new there: never used as a draft and never set aside |
+| "An idea from your collection:" | **Write it up** and **Not today** | See [A morning idea](#a-morning-idea) |
 | "Saved as a draft in your studio." | **Undo** | Removes that draft from your studio, and its line in your collection, while it is untouched there: still a draft, with the words, tags and media the bot saved, never queued or published. A draft you changed is kept |
 | "A post in your queue is due now." | **Remind me in an hour** | The bot tells you again in an hour, if the post is still due then, with the same two buttons |
 | The same | **Done** | Clears the reminder, and that is all: nothing is marked as posted, and nothing is done on LinkedIn. The post stays due in your studio until you post it |

@@ -52,11 +52,13 @@ try:
     from . import changes
     from . import collection
     from . import egress as _egress
+    from . import writing
     from .database import get_db
 except ImportError:
     import changes
     import collection
     import egress as _egress
+    import writing
     from database import get_db
 
 logger = logging.getLogger("studio.telegram")
@@ -94,9 +96,17 @@ WEEKLY_DAY, WEEKLY_HOUR = 0, 9
 WEEKLY_POSTS_SHOWN = 7
 
 # The buttons, by the one letter a button's data ends with, and which a
-# message of each kind carries.
-BUTTON_LABELS = {"u": "Undo", "r": "Remind me in an hour", "d": "Done"}
-BUTTON_ROWS = {"undo": (("u",),), "item": (("u",),), "due": (("r",), ("d",))}
+# message of each kind carries. "a" says the creator's own number of angles
+# (writing.py), and a digit writes up the angle it numbers.
+BUTTON_LABELS = {"u": "Undo", "r": "Remind me in an hour", "d": "Done", "w": "Write it up", "a": "Angles",
+                 "n": "Not today"}
+BUTTON_ROWS = {"undo": (("u",),), "item": (("w", "a"), ("u",)), "item_bare": (("u",),),
+               "due": (("r",), ("d",)), "morning": (("w", "n"),)}
+# The bot may send what it writes from the collection (its words): off unless "on".
+COLLECTION_WORDS_KEY = "telegram_collection_words"
+# The morning idea, off by default: {on, days (0 is Monday), hour, since}.
+MORNING_KEY = "telegram_morning"
+MORNING_DAYS, MORNING_HOUR = (0, 1, 2, 3, 4), 8
 
 # The worker looks for something to tell between polls, at most this often.
 NOTIFY_EVERY_SECONDS = 60.0
@@ -153,6 +163,24 @@ SENTENCES = {
     "undone_item": "Undone: it is removed from your collection.",
     "undo_item_kept": "Not undone: you have used it in your studio since, so it was kept.",
     "undo_item_gone": "Nothing to undo: it is no longer in your collection.",
+    # Phase 3, item 2: something made from the collection.
+    "writing": "Writing it up in your studio.",
+    "finding_angles": "Finding angles in your studio.",
+    "draft_ready": "Draft ready in your studio.",
+    "draft_ready_words": "Draft ready in your studio. It begins:",
+    "angles_ready": "{count} angles are ready in your studio, on the item in your collection.",
+    "angles_here": "Angles from your collection. Press one to write it up:",
+    "no_provider": ("No AI provider is set up in your studio, so nothing was written. Connect yours on the Composer's "
+                    "Prompt tab, or use it as a draft in your collection."),
+    "write_failed": "Your AI provider did not write it, so nothing changed. Open your studio to see why.",
+    "write_refused": ("Nothing was kept: what your AI provider wrote had a figure or a name that is not in your "
+                      "note."),
+    "not_today": "Not today. It stays in your collection.",
+    "morning": "An idea from your collection:",
+    "angle_question": "Angle: open with a question, as the posts of yours that did best did.",
+    "angle_story": "Angle: open with something that happened to you, as the posts of yours that did best did.",
+    "angle_short": "Angle: open with one short line, as the posts of yours that did best did.",
+    "angle_statement": "Angle: open with a plain, bold statement, as the posts of yours that did best did.",
 }
 
 # Where a figure was read, as /today says it.
@@ -672,19 +700,45 @@ def weekly_next() -> Optional[str]:
     return due.strftime("%a %d %b, %H:%M")
 
 
+def collection_words_on() -> bool:
+    """Whether the bot may send what it writes from the collection, in the open profile. Off unless turned on."""
+    return (_setting(COLLECTION_WORDS_KEY) or "off") == "on"
+
+
+def morning() -> Dict[str, Any]:
+    """The morning idea's setting in the open profile: {on, days, hour, since}. Off, Monday to Friday, 08:00."""
+    try:
+        held = json.loads(_setting(MORNING_KEY) or "{}")
+    except (TypeError, ValueError):
+        held = {}
+    held = held if isinstance(held, dict) else {}
+    days = held.get("days")
+    if not (isinstance(days, list) and days and all(isinstance(d, int) and not isinstance(d, bool) and 0 <= d <= 6
+                                                    for d in days)):
+        days = list(MORNING_DAYS)
+    return {"on": held.get("on") is True, "days": sorted(set(days)), "hour": _hour(held.get("hour"), MORNING_HOUR),
+            "since": held.get("since") if isinstance(held.get("since"), str) else None}
+
+
 def options() -> Dict[str, Any]:
     """The bot's switches, as the panel shows them."""
-    quiet, week = quiet_hours(), weekly()
+    quiet, week, early = quiet_hours(), weekly(), morning()
     return {"replies": replies_on(), "figures": figures_on(), "notify_due": notify_due_on(),
             "notify_24h": notify_24h_on(), "quiet_hours": quiet["on"], "quiet_from": quiet["from"],
-            "quiet_to": quiet["to"], "weekly": week["on"], "weekly_day": week["day"], "weekly_hour": week["hour"]}
+            "quiet_to": quiet["to"], "weekly": week["on"], "weekly_day": week["day"], "weekly_hour": week["hour"],
+            "collection_words": collection_words_on(), "morning": early["on"], "morning_days": early["days"],
+            "morning_hour": early["hour"],
+            # Shown beside the bot's button, set in Brand under Writing.
+            "angles": writing.preferences()["angles"]}
 
 
 def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
                  notify_due: Optional[bool] = None, notify_24h: Optional[bool] = None,
                  quiet: Optional[bool] = None, quiet_from: Optional[int] = None,
                  quiet_to: Optional[int] = None, weekly_on: Optional[bool] = None,
-                 weekly_day: Optional[int] = None, weekly_hour: Optional[int] = None) -> Dict[str, Any]:
+                 weekly_day: Optional[int] = None, weekly_hour: Optional[int] = None,
+                 collection_words: Optional[bool] = None, morning_on: Optional[bool] = None,
+                 morning_days: Optional[List[int]] = None, morning_hour: Optional[int] = None) -> Dict[str, Any]:
     """
     Saves the switches the panel sent; a switch not sent is left as it is.
     Quiet hours run from one whole hour to another that differs from it;
@@ -718,6 +772,20 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
                              "Nothing was saved.")
         changes[WEEKLY_KEY] = json.dumps({"on": held["on"] if weekly_on is None else bool(weekly_on), "day": day,
                                           "hour": hour, "since": local_now().astimezone(timezone.utc).isoformat()})
+    if collection_words is not None:
+        changes[COLLECTION_WORDS_KEY] = "on" if collection_words else "off"
+    if morning_on is not None or morning_days is not None or morning_hour is not None:
+        held = morning()
+        days = held["days"] if morning_days is None else morning_days
+        hour = held["hour"] if morning_hour is None else morning_hour
+        if (not isinstance(days, list) or not days
+                or not all(isinstance(d, int) and not isinstance(d, bool) and 0 <= d <= 6 for d in days)
+                or _hour(hour, -1) < 0):
+            raise ValueError("The morning idea comes on one or more days of the week at a whole hour, 00:00 to "
+                             "23:00. Nothing was saved.")
+        changes[MORNING_KEY] = json.dumps({"on": held["on"] if morning_on is None else bool(morning_on),
+                                           "days": sorted(set(days)), "hour": hour,
+                                           "since": local_now().astimezone(timezone.utc).isoformat()})
     if changes:
         conn = get_db()
         try:
@@ -753,12 +821,15 @@ def _item(record: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return {}
 
 
-def item_of(record: Optional[Dict[str, Any]]) -> Optional[int]:
-    """The id of the item a message was collected as, which its answer's Undo removes while it is new."""
+def item_of(record: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    The item a message was collected as, while it is new material: its
+    answer carries Undo, and Write it up and the angles when it has words.
+    """
     item = _item(record)
     if item.get("kind") not in collection.MATERIAL or item.get("status") != "new":
         return None
-    return item.get("id")
+    return item
 
 
 def answer_for(record: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -817,14 +888,14 @@ def notifications() -> List[Dict[str, Any]]:
     {text, due}: due names the due posts a message's Remind me in an hour
     and Done are about, or is None.
     """
-    due_on, day_on, week_on = notify_due_on(), notify_24h_on(), weekly()["on"]
+    due_on, day_on, week_on, early_on = notify_due_on(), notify_24h_on(), weekly()["on"], morning()["on"]
     conn = get_db()
     try:
         if not due_on:
             # Unticked, no reminder comes either.
             conn.execute("DELETE FROM settings WHERE key = ?", (REMIND_KEY,))
             conn.commit()
-        if not (due_on or day_on or week_on):
+        if not (due_on or day_on or week_on or early_on):
             return []
         try:
             from . import post_identity
@@ -867,11 +938,84 @@ def notifications() -> List[Dict[str, Any]]:
         if week is not None:
             said.append({"text": weekly_summary(conn, week), "due": None})
             newly.append(_week_key(week))
+        idea = _morning_idea(conn, told) if early_on else None
+        if idea is not None:
+            key, offered = idea
+            newly.append(key)
+            if offered:
+                said.append(offered)
         if newly:
             _mark_told(conn, told + newly)
         return said
     finally:
         conn.close()
+
+
+def _morning_due(told: List[str]) -> Optional[str]:
+    """Today's key when the morning idea is due: on, a chosen day, its hour passed, after it was set, not told today."""
+    setting = morning()
+    if not setting["on"]:
+        return None
+    now = local_now()
+    if now.weekday() not in setting["days"]:
+        return None
+    moment = datetime.combine(now.date(), day_time(hour=setting["hour"])).astimezone()
+    since = _instant(setting["since"])
+    key = f"morning:{now.date().isoformat()}"
+    if now < moment or (since is not None and since >= moment) or key in told:
+        return None
+    return key
+
+
+def opening_form(conn) -> Optional[str]:
+    """
+    The form of the opening line of the creator's post that did best
+    against their usual (the voice pack's first opener), read locally:
+    question, story, short or statement. None when the studio cannot say.
+    """
+    try:
+        try:
+            from . import voice_pack
+        except ImportError:
+            import voice_pack
+        openers = voice_pack._openers(conn, 1)
+    except Exception:
+        return None
+    line = (openers[0] if openers else "").strip()
+    if not line:
+        return None
+    words = line.split()
+    if line.endswith("?"):
+        return "question"
+    if words[0].lower().strip(",.") in ("i", "i'm", "i've", "my", "we", "our", "last", "yesterday", "when"):
+        return "story"
+    if len(words) <= 6:
+        return "short"
+    return "statement"
+
+
+def _morning_idea(conn, told: List[str]) -> Optional[Tuple[str, Optional[Dict[str, Any]]]]:
+    """
+    The morning idea, when it is due: one unused item from the collection,
+    the one offered least recently, with an angle from what worked in the
+    creator's own posts, both as their sources allow. It carries the
+    creator's words, so it goes only with the switch that lets the bot send
+    them. Returns (today's key, the message or None): a day with nothing to
+    offer is marked told all the same, so nothing comes later that day.
+    """
+    key = _morning_due(told)
+    if key is None or not collection_words_on():
+        return None
+    sources = writing.preferences(conn)["sources"]
+    item = collection.least_offered(conn) if "collection" in sources else None
+    if item is None:
+        return key, None
+    form = opening_form(conn) if "posts" in sources else None
+    text = SENTENCES["morning"] + "\n\n" + _first_line(item["text"])
+    if form:
+        text += "\n\n" + SENTENCES[f"angle_{form}"]
+    collection.offered(conn, item["id"])
+    return key, {"text": text, "due": None, "morning": {"item": item["id"], "form": form}}
 
 
 def _reminders_due(conn, due_now) -> List[Dict[str, Any]]:
@@ -924,15 +1068,29 @@ def _write_json(conn, key: str, value: Any) -> None:
             (key, json.dumps(value)))
 
 
-def issue_buttons(chat_id: Any, kind: str, said: str, **target: Any) -> Dict[str, Any]:
+def _label(letter: str) -> str:
+    if letter == "a":
+        return f"{writing.preferences()['angles']} angles"
+    if letter.isdigit():
+        return f"Write up {letter}"
+    return BUTTON_LABELS[letter]
+
+
+def issue_buttons(chat_id: Any, kind: str, said: str, rows: Optional[List[List[str]]] = None,
+                  **target: Any) -> Dict[str, Any]:
     """
     Keeps what the buttons on one message do, in the open profile, and
     returns the message's inline keyboard. kind is "undo" (target: draft, a
-    draft id) or "due" (target: due, the due posts' keys). Each button's data
-    is the message's opaque id and the button's letter, and nothing else.
+    draft id), "item" or "item_bare" (target: item, a collection item),
+    "due" (target: due, the due posts' keys), "angles" (target: item and the
+    angles offered) or "morning" (target: item and the angle's form). Each
+    button's data is the message's opaque id and the button's letter, and
+    nothing else.
     """
+    rows = [list(row) for row in (rows or BUTTON_ROWS[kind])]
     token = secrets.token_urlsafe(9)
-    record = {"id": token, "kind": kind, "chat": str(chat_id), "at": _now(), "said": said, "used": None}
+    record = {"id": token, "kind": kind, "chat": str(chat_id), "at": _now(), "said": said, "used": None,
+              "letters": [letter for row in rows for letter in row]}
     record.update(target)
     with _BUTTONS_LOCK:
         conn = get_db()
@@ -942,16 +1100,17 @@ def issue_buttons(chat_id: Any, kind: str, said: str, **target: Any) -> Dict[str
             _write_json(conn, BUTTONS_KEY, records[-max(1, int(BUTTONS_KEPT)):])
         finally:
             conn.close()
-    return {"inline_keyboard": [[{"text": BUTTON_LABELS[letter], "callback_data": f"{token}.{letter}"}
-                                 for letter in row] for row in BUTTON_ROWS[kind]]}
+    return {"inline_keyboard": [[{"text": _label(letter), "callback_data": f"{token}.{letter}"}
+                                 for letter in row] for row in rows]}
 
 
 def press(data: Any, chat_id: Any) -> Dict[str, Any]:
     """
     A press of one of the bot's buttons, from the paired chat, in the open
-    profile. Returns {key, answer, edit}: the notice the phone shows, and the
-    message's text to put in its place, its buttons gone, or None to take
-    only the buttons away (an old button, one already used). Acts once.
+    profile. Returns {key, answer, edit, job}: the notice the phone shows,
+    the message's text to put in its place, its buttons gone, or None to
+    take only the buttons away (an old button, one already used), and what
+    is to be written beside the bot's loop, if anything (run_job). Acts once.
     """
     token, _dot, letter = str(data or "").partition(".")
     with _BUTTONS_LOCK:
@@ -959,12 +1118,29 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
         try:
             records = [r for r in _read_json(conn, BUTTONS_KEY, []) if isinstance(r, dict)]
             record = next((r for r in records if token and r.get("id") == token), None)
-            if (record is None or record.get("chat") != str(chat_id)
-                    or not any(letter in row for row in BUTTON_ROWS.get(record.get("kind"), ()))):
+            letters = record.get("letters") if record else None
+            if letters is None and record:
+                # Kept before buttons named their own letters (2.11.0).
+                letters = [x for row in BUTTON_ROWS.get(record.get("kind"), ()) for x in row]
+            if record is None or record.get("chat") != str(chat_id) or letter not in (letters or ()):
                 return {"key": "button_old", "answer": SENTENCES["button_old"], "edit": None}
             if record.get("used"):
                 return {"key": "button_used", "answer": SENTENCES["button_used"], "edit": None}
-            if letter == "u" and record.get("kind") == "item":
+            job = None
+            if letter in ("w", "a") or letter.isdigit():
+                # Something to write: never in the bot's loop, and only with a provider.
+                if not writing.model_gateway.get_current_ai_config().is_configured:
+                    key = "no_provider"
+                elif letter == "a":
+                    key, job = "finding_angles", {"kind": "angles", "item": record.get("item")}
+                else:
+                    angles = record.get("angles") or []
+                    angle = angles[int(letter) - 1] if letter.isdigit() and int(letter) <= len(angles) else None
+                    key, job = "writing", {"kind": "write", "item": record.get("item"), "angle": angle,
+                                           "form": record.get("form")}
+            elif letter == "n":
+                key = "not_today"
+            elif letter == "u" and record.get("kind") in ("item", "item_bare"):
                 key = collection.undo(record.get("item"))
             elif letter == "u":
                 key = _undo(conn, record.get("draft"))
@@ -981,7 +1157,46 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
             conn.close()
     said = str(record.get("said") or "")
     edit = f"{said}\n\n{SENTENCES[key]}" if said else SENTENCES[key]
-    return {"key": key, "answer": SENTENCES[key], "edit": edit}
+    return {"key": key, "answer": SENTENCES[key], "edit": edit, "job": job}
+
+
+def _first_line(text: str) -> str:
+    return next((line.strip() for line in (text or "").splitlines() if line.strip()), "")[:300]
+
+
+def run_job(job: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """
+    What a press asked to be written, in the open profile, beside the bot's
+    loop: Write it up (a draft, from an angle or a morning idea's form when
+    it has one) or the angles. Returns the bot's next message and its
+    buttons. The written words go only with the switch "The bot may send me
+    what it writes from my collection"; otherwise it says only that it is done.
+    """
+    try:
+        if job.get("kind") == "angles":
+            result = writing.angles(job.get("item"))
+        else:
+            result = writing.make_post([job.get("item")], angle=job.get("angle"), form=job.get("form"))
+    except (writing.Refused, LookupError):
+        return SENTENCES["write_failed"], None
+    except writing.ProviderError:
+        return SENTENCES["write_failed"], None
+    status = result.get("status")
+    if status == "no_provider":
+        return SENTENCES["no_provider"], None
+    if status == "refused":
+        return SENTENCES["write_refused"], None
+    words = collection_words_on()
+    if job.get("kind") == "angles":
+        offered = result.get("angles") or []
+        if not words:
+            return SENTENCES["angles_ready"].format(count=len(offered)), None
+        text = SENTENCES["angles_here"] + "\n\n" + "\n".join(f"{n}. {line}" for n, line in enumerate(offered, 1))
+        rows = [[str(n)] for n in range(1, len(offered) + 1)]
+        return text, issue_buttons(chat_id, "angles", text, rows=rows, item=job.get("item"), angles=offered)
+    if not words:
+        return SENTENCES["draft_ready"], None
+    return SENTENCES["draft_ready_words"] + "\n\n" + _first_line(result.get("content") or ""), None
 
 
 def _undo(conn, draft_id: Any) -> str:

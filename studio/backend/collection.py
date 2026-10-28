@@ -345,6 +345,21 @@ def undo(item_id: Any) -> str:
     return "undone_item" if gone else "undo_item_kept"
 
 
+def least_offered(conn) -> Optional[Dict[str, Any]]:
+    """The morning idea's pick: a new item with words, never offered first, then the one offered longest ago."""
+    marks = ", ".join("?" for _ in MATERIAL)
+    row = conn.execute(
+        f"SELECT * FROM collection_items WHERE status = 'new' AND kind IN ({marks}) AND TRIM(text) != '' "
+        "ORDER BY offered_at IS NOT NULL, offered_at, received_at, id LIMIT 1", MATERIAL).fetchone()
+    return _row(conn, row) if row else None
+
+
+def offered(conn, item_id: int) -> None:
+    """The morning idea offered this item now."""
+    with conn:
+        conn.execute("UPDATE collection_items SET offered_at = ? WHERE id = ?", (_now(), int(item_id)))
+
+
 def forget_draft(conn, post_id: str) -> None:
     """A draft taken back with the bot's Undo: the item that recorded it goes with it."""
     conn.execute("DELETE FROM collection_items WHERE post_id = ?", (post_id,))
