@@ -40,8 +40,16 @@ SAID = telegram_bot.SENTENCES
 
 @pytest.fixture
 def notifying(bot, monkeypatch):
-    """The worker checks for something to tell at every turn of its loop, rather than once a minute."""
+    """
+    The worker checks for something to tell at every turn of its loop, rather
+    than once a minute, and the bot's clock reads midday: quiet hours (phase
+    2) are on by default from 23:00 to 07:00, and would hold these
+    notifications whenever the suite runs at night. A test of quiet hours
+    sets the clock itself.
+    """
     monkeypatch.setattr(telegram_bot, "NOTIFY_EVERY_SECONDS", 0.0)
+    midday = datetime.now().astimezone().replace(hour=12, minute=0, second=0, microsecond=0)
+    monkeypatch.setattr(telegram_bot, "local_now", lambda: midday)
     return bot
 
 

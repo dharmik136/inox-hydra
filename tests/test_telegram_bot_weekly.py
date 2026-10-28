@@ -45,9 +45,16 @@ HEAD = "Your week, the seven days to "
 
 @pytest.fixture
 def clock(monkeypatch):
-    """The computer's clock as the bot reads it, now unless a test moves it by whole days."""
+    """
+    The computer's clock as the bot reads it: the moment the test began,
+    held there, so a test that runs across midnight or the hour keeps its
+    week, unless the test moves it by whole days. Moved on the wall clock,
+    as a week later is: across a change of summer time, seven days of
+    hours would land an hour off.
+    """
+    began = datetime.now()
     held = {"shift": timedelta(0)}
-    monkeypatch.setattr(telegram_bot, "local_now", lambda: datetime.now().astimezone() + held["shift"])
+    monkeypatch.setattr(telegram_bot, "local_now", lambda: (began + held["shift"]).astimezone())
 
     def move(days):
         held["shift"] = timedelta(days=days)
@@ -60,7 +67,7 @@ def _weekly(bot, clock, **change):
     moment has just passed; turned on yesterday, so the first one is now due.
     Quiet hours off, so the hour the suite runs at does not hold it.
     """
-    now = datetime.now().astimezone()
+    now = telegram_bot.local_now()
     payload = {"weekly": True, "weekly_day": now.weekday(), "weekly_hour": now.hour, "quiet_hours": False}
     payload.update(change)
     clock(-1)
@@ -176,7 +183,7 @@ def test_the_first_comes_at_the_first_chosen_moment_after_it_was_turned_on(notif
     """Turned on after this week's moment has passed, nothing comes until next week's."""
     bot = notifying
     _saved(bot)
-    now = datetime.now().astimezone()
+    now = telegram_bot.local_now()
     res = bot["client"].post("/api/v1/ingress/options", json={
         "weekly": True, "weekly_day": now.weekday(), "weekly_hour": now.hour, "quiet_hours": False})
     assert res.status_code == 200
@@ -191,7 +198,7 @@ def test_the_first_comes_at_the_first_chosen_moment_after_it_was_turned_on(notif
 def test_the_summary_waits_through_quiet_hours(notifying, clock):
     bot = notifying
     _saved(bot)
-    now = datetime.now().astimezone()
+    now = telegram_bot.local_now()
     _weekly(bot, clock, quiet_hours=True, quiet_from=now.hour, quiet_to=(now.hour + 1) % 24)
     _settle(bot)
     _settle(bot)
