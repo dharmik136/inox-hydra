@@ -59,6 +59,11 @@ export function AccountSwitcher({
   const [newVanity, setNewVanity] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [limit, setLimit] = useState(1);
+  // Whether the profiles and the licence have been read. Before the first
+  // answer the switcher held no profiles against a limit of one, so it offered
+  // Add Creator Profile, which a one-profile licence refuses, and took the
+  // button away when the answer came: focus on it fell to the page behind.
+  const [loaded, setLoaded] = useState(false);
 
   // Deleting removes the profile's folder, database and media, so it asks for
   // the profile's name first. One row at a time.
@@ -76,6 +81,7 @@ export function AccountSwitcher({
       setAccounts(res.accounts);
       setActiveId(res.active_account_id);
       setLimit(res.profile_limit ?? 1);
+      setLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load profiles");
     }
@@ -321,6 +327,11 @@ export function AccountSwitcher({
 
               {/* Account list */}
               <div className="my-2 max-h-64 space-y-1 overflow-y-auto pr-0.5">
+                {!loaded && !error && (
+                  <p role="status" className="text-[11px] leading-snug text-ink-muted">
+                    Reading your profiles and licence.
+                  </p>
+                )}
                 {accounts.map((acc) => {
                   const isActive = acc.id === activeId;
                   return (
@@ -396,8 +407,9 @@ export function AccountSwitcher({
 
               {/* Add account section. At the licence's limit the form is not
                   offered: it used to take a name, headline and vanity and only
-                  then refuse, so the limit is explained up front instead. */}
-              {!creating && atLimit && (
+                  then refuse, so the limit is explained up front instead.
+                  Neither is shown until the profiles and licence are read. */}
+              {!creating && loaded && atLimit && (
                 <p className="mt-1 text-[11px] leading-snug text-ink-muted">
                   {limit === 1
                     ? "Your licence covers one creator profile. More than one needs the Agency licence, entered in Settings, Licence."
@@ -469,7 +481,7 @@ export function AccountSwitcher({
                     </div>
                   </div>
                 </form>
-              ) : atLimit ? null : (
+              ) : !loaded || atLimit ? null : (
                 <button
                   type="button"
                   onClick={() => setCreating(true)}

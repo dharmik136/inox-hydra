@@ -116,29 +116,6 @@ _FILES = sys.modules.get("_inox_database_files")
 # How long one look waits for a lock another connection holds, at most.
 WATCH_BUSY_S = 5.0
 
-# SQLite's file header: the first 16 bytes, and user_version, the schema
-# version the migrations stamp, as four big-endian bytes at offset 60.
-_SQLITE_MAGIC = b"SQLite format 3\x00"
-
-
-def _initialised(path: str) -> bool:
-    """
-    Whether a database file is there and set up, read from its header with
-    plain file reads, never through SQLite. A file init_db is still creating,
-    switching to WAL or migrating has a user_version of 0 until its migrations
-    are written back into it, and it is left alone until then: on Windows
-    another connection on the file while that runs is refused with "database
-    is locked", which is how 2.9.0's Windows run failed on a fresh home, and
-    how creating or switching to a new creator profile would have.
-    """
-    try:
-        with open(path, "rb") as handle:
-            header = handle.read(100)
-    except OSError:
-        return False
-    return len(header) == 100 and header[:16] == _SQLITE_MAGIC and int.from_bytes(header[60:64], "big") > 0
-
-
 def _files_free() -> bool:
     gate = _FILES or sys.modules.get("_inox_database_files")
     return gate is None or gate.free.is_set()
@@ -379,7 +356,8 @@ class _Watch:
             # Let go of the old file before looking at the new one: a home or
             # profile change, or a restore that has just let go.
             self._close_locked()
-            if not _initialised(path):
+            # Left alone until init_db has written its schema (sqlite_open.initialised).
+            if not sqlite_open.initialised(path):
                 return "closed"
             try:
                 # mode=rw opens the file without ever creating it. Closed from
