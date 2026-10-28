@@ -1,5 +1,5 @@
 {
-  "version": "2.9.0",
+  "version": "2.10.0",
   "notes": "Portable Windows distributable. Extract anywhere and run InoxHydra.bat. A portable copy keeps your data in %LOCALAPPDATA%\\InoxHydra, outside its folder, so replacing the folder is safe. If you created app\\studio\\data (true portable mode), or run a source checkout, your data is inside the folder: back up every profile and copy it out first.",
   "releases_url": "https://github.com/dharmik136/inox-hydra/releases"
 }

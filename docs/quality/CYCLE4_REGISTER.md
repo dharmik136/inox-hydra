@@ -50,6 +50,15 @@ helper's variables from the old place, so every capture would have
 answered 500 after its row was saved; it is fixed with a test. Records:
 `docs/quality/cycle4/t1-bridge.md`, `t2-show.md`, `t4-sections.md`.
 
+## In 2.10.0
+
+Track 1's phase 2 (coordination and self-update), track 4's phase b (the
+deeper screens, the demo content and the store screenshots) and track 7's
+phase 2 (the enhancer), each built on 2.9.0 under the owner's direction of
+capability first and merged on a release branch. Ten tabs on one post went
+from 620 requests to 3. Records: `docs/quality/cycle4/t1-phase2.md`,
+`t4-phase-b.md`, `t7-phase2.md`.
+
 ## Carried to 2.9.0, as planned at 2.8.0
 
 | Work | Why it waits |

@@ -5,6 +5,60 @@ asks for an entry per release (`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`
 section 5.5); this file starts with the work since v2.5.2, which was never
 released. Version numbers follow `studio/__version__.py`.
 
+## 2.10.0
+
+The bridge now behaves as one per browser however many LinkedIn tabs you have
+open, keeps itself up to date when you update the studio, and the studio shows
+more of what it keeps.
+
+### Before you use 2.10.0
+
+- **Your database is upgraded** the first time you start it, from schema 33 to
+  35, after the usual automatic backup. A lead's stage change keeps the post it
+  came from, the Queue keeps what it dispatched and missed, and the bridge's
+  heartbeats and capture rows are kept per browser and minute.
+- **Reload the extension by hand one last time** if it was loaded before
+  2.10.0. From 2.10.0 on, an extension loaded from the studio's folder reloads
+  itself when you update the studio and re-reads the LinkedIn tabs you have
+  open. If an upgrade replaced that folder, Health tells you to load it again
+  from the studio's folder.
+
+### New
+
+- **One bridge per browser.** Ten LinkedIn tabs open on one post now send the
+  studio 3 requests instead of 620, write each engagement once instead of ten
+  times, and keep one heartbeat per browser. A tab you are not looking at reads
+  once when you come back to it.
+- **Each capture lands in the right creator profile**, the one whose LinkedIn
+  account read it; a capture for an account no profile holds waits in Health
+  instead of landing in whichever profile is open. Only one tab runs a history
+  import.
+- **From your record** now builds cards from what you follow, voted on and
+  wrote when it matches your topics, keeps one topic per card where it can,
+  shows the day's cards as a strip on Today, has its own block in Health, and
+  adds a Monday line of how last week's cards were used.
+- **Brand and Settings.** Brand opens on your profile as LinkedIn last showed
+  it, each part with the day it was read. Settings opens on an overview (last
+  backup, next cleanup, what left this machine, your licence, the update check
+  and autostart), and your LinkedIn session has one control there.
+- **Posts** show a post's readings as a series for each page they came from,
+  its two-day reading, and who each post brought.
+- **The Queue** has a month calendar, keeps every dispatch decision including
+  missed posts, says how late a due post is and why, and names the post a
+  queued one collides with.
+- **The Composer's "What the model is told"** shows, from the code that builds
+  each request, what your AI provider is sent.
+- **Outbound and Leads** show when you first engaged with an account, your last
+  reaction, the days between your engagement and theirs, and the post a lead's
+  stage change came from.
+
+### Changed
+
+- Today's What worked no longer counts "qualified leads".
+- The demo shows a sample creator's own drafts and queue.
+- The bridge's heartbeat carries fingerprints of your profiles' accounts, never
+  their names.
+
 ## 2.9.0
 
 The studio now shows what the bridge reads the moment it arrives, gives each
