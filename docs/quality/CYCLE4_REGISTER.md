@@ -59,6 +59,18 @@ capability first and merged on a release branch. Ten tabs on one post went
 from 620 requests to 3. Records: `docs/quality/cycle4/t1-phase2.md`,
 `t4-phase-b.md`, `t7-phase2.md`.
 
+## In 2.11.0
+
+The Telegram bot, phases 1 and 2, the standing assignment the owner asked for
+on 2026-10-28 ("a dedicated agent to start making the telegram chat bot
+better and start testing and adding features to it"). The owner's first test
+against the real service showed the path worked and felt dead: the bot never
+replied. It now replies, takes commands, reports the creator's own figures
+and reminds only when asked, and carries buttons, quiet hours and a weekly
+summary. Everything runs against a fake Bot API on 127.0.0.1 in the suite;
+the owner's checklist covers the real service. No migration. Record:
+`docs/quality/cycle4/telegram-bot.md`.
+
 ## In 2.10.2
 
 Network reading retired, on the owner's decision of 2026-10-28: a sanitised

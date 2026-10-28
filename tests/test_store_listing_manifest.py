@@ -26,13 +26,10 @@ EXT_DIR = os.path.join(
 
 # Permissions whose use the grep below cannot see, with the reason. An entry
 # here is a claim a reviewer may ask about, so it names where it is used.
-PERMISSIONS_WITHOUT_A_CHROME_CALL = {
-    # chrome.alarms.clear, in background.js, removes the periodic session sync
-    # an install older than 2.6.0 registered. Alarms outlive the code that
-    # created them, so the clear has to keep shipping while such installs
-    # exist.
-    "alarms": "background.js calls chrome.alarms.clear",
-}
+# Empty since 2.10.0: alarms, the one entry, is now called as
+# chrome.alarms.create (the heartbeat, the drain and the check of the
+# extension's own files) as well as chrome.alarms.clear, so the grep sees it.
+PERMISSIONS_WITHOUT_A_CHROME_CALL = {}
 
 
 def _manifest():

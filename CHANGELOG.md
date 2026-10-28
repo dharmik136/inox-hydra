@@ -5,6 +5,62 @@ asks for an entry per release (`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`
 section 5.5); this file starts with the work since v2.5.2, which was never
 released. Version numbers follow `studio/__version__.py`.
 
+## 2.11.0
+
+The Telegram bot answers you. Until now it saved what your phone sent without
+a word back; it now confirms each message, answers commands, can remind you
+and report your own figures if you ask it to, and puts buttons on what it
+sends.
+
+### Before you use 2.11.0
+
+- **No database upgrade.** The schema stays at 37: the bot's new settings are
+  rows in your settings.
+- **No hand reload.** An extension loaded from the studio's folder reloads
+  itself when the studio is updated.
+- **Try it on your phone** with the help page "Test your Telegram bot", five
+  steps that take about five minutes.
+
+### Added
+
+- **The bot replies to every message**, in fixed sentences that never repeat
+  your words: saved as a draft; Today will ask you to open this post or link;
+  not one of your posts; could not save; paired; not paired yet, with how to
+  pair. On by default ("The bot confirms each message"). A chat that is not
+  yours is answered at most once in ten minutes.
+- **Commands:** /start and /help; /idea, a draft tagged as an idea; /ask, a
+  question for From your record; /status, the studio and the bridge, without
+  figures; /today; and /drafts, how many drafts came from your phone in the
+  last seven days.
+- **Your figures, only if you allow them** ("The bot may answer with your
+  figures", off by default): /today answers with your latest post's figures,
+  each with where and when it was read, the replies waiting as a count, and
+  your next scheduled post's time. A figure nobody read is left out. Once
+  allowed, those figures sit on Telegram's servers, and the panel says so.
+- **Notifications, each off until you turn it on:** a post in your queue is
+  due; your latest post's figures at about 24 hours. Each is sent once,
+  unless you ask to be reminded.
+- **Buttons.** Undo under a saved draft removes it while it is untouched in
+  the studio. Remind me in an hour and Done under a due post: Done only clears
+  the reminder, and nothing ever acts on LinkedIn. A button works once, and
+  only from your paired chat.
+- **Quiet hours.** Notifications wait from 23:00 to 07:00 (change the hours
+  or turn this off in the Telegram panel) and go when quiet hours end.
+  Answers to your own messages and commands are never held.
+- **A weekly summary**, off by default, on the day and hour you pick: the
+  posts the studio recorded as published, drafts from your phone, replies
+  waiting and your next scheduled post; figures only if you allow them.
+- **Send a test message** from the Telegram panel, and the last problem
+  reaching Telegram said in plain words: a token Telegram does not know,
+  another program asking for the same bot, Telegram's own trouble, no
+  connection, or a rate limit with how long the studio waits.
+
+### Fixed
+
+- The store disclosures now say that the extension checks once a minute which
+  LinkedIn tabs are still open, and tells the studio only how many pages of
+  each kind are open.
+
 ## 2.10.2
 
 Network reading is retired, and the Telegram bot's token no longer shows on
