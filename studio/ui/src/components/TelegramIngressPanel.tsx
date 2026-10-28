@@ -10,6 +10,16 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+/** The whole hours quiet hours can start and end on. */
+const HOURS = Array.from({ length: 24 }, (_unused, hour) => hour);
+
+/** A whole hour as the computer's clock shows it: 7 is 07:00. */
+function clock(hour: number): string {
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
+const SELECT = "rounded-md border border-edge bg-ink px-2 py-1 text-[12px] text-ink-primary disabled:opacity-40";
+
 /**
  * Your phone, through Telegram.
  *
@@ -186,6 +196,63 @@ export function TelegramIngressPanel() {
                 disabled={busy}
                 onChange={(on) => void setOption({ notify_24h: on }, on ? "The bot sends your latest post's figures at about 24 hours." : "No message at 24 hours.")}
               />
+              <p className="studio-meta mt-1 text-ink-muted">QUIET HOURS</p>
+              <OptionRow
+                label="Hold notifications during quiet hours"
+                detail="The notifications above wait while it is quiet, and go when quiet hours end, each once. Answers to your own messages and presses are never held."
+                checked={state.options.quiet_hours}
+                disabled={busy}
+                onChange={(on) =>
+                  void setOption(
+                    { quiet_hours: on },
+                    on
+                      ? `Quiet hours: ${clock(state.options.quiet_from)} to ${clock(state.options.quiet_to)}.`
+                      : "Notifications go at any hour.",
+                  )
+                }
+              />
+              <div className="flex flex-wrap items-center gap-2 pl-5 text-[12px] text-ink-secondary">
+                <span>From</span>
+                <select
+                  aria-label="Quiet hours start"
+                  className={SELECT}
+                  value={state.options.quiet_from}
+                  disabled={busy || !state.options.quiet_hours}
+                  onChange={(event) => {
+                    const from = Number(event.target.value);
+                    void setOption({ quiet_from: from }, `Quiet hours: ${clock(from)} to ${clock(state.options.quiet_to)}.`);
+                  }}
+                >
+                  {HOURS.map((hour) => (
+                    <option key={hour} value={hour}>
+                      {clock(hour)}
+                    </option>
+                  ))}
+                </select>
+                <span>to</span>
+                <select
+                  aria-label="Quiet hours end"
+                  className={SELECT}
+                  value={state.options.quiet_to}
+                  disabled={busy || !state.options.quiet_hours}
+                  onChange={(event) => {
+                    const to = Number(event.target.value);
+                    void setOption({ quiet_to: to }, `Quiet hours: ${clock(state.options.quiet_from)} to ${clock(to)}.`);
+                  }}
+                >
+                  {HOURS.map((hour) => (
+                    <option key={hour} value={hour}>
+                      {clock(hour)}
+                    </option>
+                  ))}
+                </select>
+                <span>on this computer&apos;s clock</span>
+              </div>
+              {state.quiet_now && (
+                <p className="studio-meta pl-5 text-ink-muted">
+                  {`QUIET NOW: NOTIFICATIONS WAIT UNTIL ${clock(state.options.quiet_to)}`}
+                </p>
+              )}
             </div>
           )}
           {state.running && state.configured_from === "settings" && (

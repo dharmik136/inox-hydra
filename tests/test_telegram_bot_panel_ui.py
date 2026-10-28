@@ -94,3 +94,39 @@ def test_a_test_message_telegram_refuses_is_said_in_the_panel(page, studio, fake
     expect(page.get_by_text("SET, SEALED")).to_be_visible()
     page.get_by_role("button", name="Send a test message").click()
     expect(page.get_by_text("the bot may be blocked in your chat", exact=False).first).to_be_visible()
+
+
+def _saved_in_the_panel(page, studio):
+    page.goto(studio["url"] + "/#/settings", wait_until="networkidle")
+    page.get_by_role("tab", name="Local security").click()
+    page.fill("input[aria-label='Telegram bot token']", TOKEN)
+    page.fill("input[aria-label='Telegram chat id']", OWNER)
+    page.get_by_role("button", name="Save and start").click()
+    expect(page.get_by_text("SET, SEALED")).to_be_visible()
+
+
+def test_quiet_hours_show_their_defaults_change_and_save(page, studio, fake):
+    """Phase 2: Hold notifications during quiet hours, on by default from 23:00 to 07:00."""
+    _saved_in_the_panel(page, studio)
+    hold = page.get_by_role("checkbox", name="Hold notifications during quiet hours")
+    start = page.get_by_role("combobox", name="Quiet hours start")
+    end = page.get_by_role("combobox", name="Quiet hours end")
+    expect(hold).to_be_checked()
+    expect(start).to_have_value("23")
+    expect(end).to_have_value("7")
+    expect(page.get_by_text("Answers to your own messages and presses are never held", exact=False)).to_be_visible()
+    assert _axe(page, "section:has(input[aria-label='Telegram bot token'])") == []
+
+    start.select_option("22")
+    expect(page.get_by_text("Quiet hours: 22:00 to 07:00.")).to_be_visible()
+    assert telegram_bot.quiet_hours() == {"on": True, "from": 22, "to": 7}
+    end.select_option("22")
+    expect(page.get_by_text("need a start and an end that differ", exact=False)).to_be_visible()
+    assert telegram_bot.quiet_hours() == {"on": True, "from": 22, "to": 7}, "a refused change was saved"
+
+    hold.click()
+    expect(page.get_by_text("Notifications go at any hour.")).to_be_visible()
+    expect(hold).not_to_be_checked()
+    expect(start).to_be_disabled()
+    assert telegram_bot.quiet_hours()["on"] is False
+    assert _axe(page, "section:has(input[aria-label='Telegram bot token'])") == []

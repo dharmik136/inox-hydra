@@ -33,7 +33,7 @@ Before you start: the studio is running on this computer, and you have your bot'
 1. Send `/today`. The bot answers that your figures stay in your studio: they are off until you allow them.
 2. To see them on the phone, tick **The bot may answer with your figures** and send `/today` again: your latest post's figures with where and when each was read, how many replies are waiting, and when your next post is scheduled. Untick it again if you do not want your figures to sit on Telegram's servers.
 
-## Later: the buttons under a due post (optional)
+## Later: the buttons under a due post, and quiet hours (optional)
 
 These need a post to come due, so they take as long as you schedule it ahead.
 
@@ -41,6 +41,7 @@ These need a post to come due, so they take as long as you schedule it ahead.
 2. When it comes due, the bot says "A post in your queue is due now. Open your studio to post it.", with **Remind me in an hour** and **Done** under it.
 3. Press **Remind me in an hour**: the message changes to end "I will remind you in an hour if it is still due." An hour later, if you have not posted it, the bot says "Reminder: a post in your queue is still due. Open your studio to post it."
 4. Press **Done** under the reminder: the message ends "Reminder cleared. Nothing was marked as posted: it stays due in your studio until you post it." In the studio the post is still due: Done changed nothing there.
+5. Quiet hours: set **Hold notifications during quiet hours** to run from this hour to the next, and schedule another post a few minutes ahead. When it comes due no message comes, and the panel says "QUIET NOW". Untick **Hold notifications during quiet hours**: within about a minute the bot says the post is due. Set quiet hours back as you like them.
 
 ## When a step does not match
 

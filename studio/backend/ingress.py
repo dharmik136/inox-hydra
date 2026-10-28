@@ -345,7 +345,12 @@ class TelegramIngressDaemon:
         self.last_error = None
 
     def is_quiet_hours(self, current_time: Optional[datetime] = None) -> bool:
-        """Determines if current time falls within low-power night window (23:00 to 06:00)."""
+        """
+        The poller's night pace: whether the time falls in the low-power night
+        window (23:00 to 06:00), when the studio asks Telegram less often.
+        Not the bot's quiet hours (telegram_bot.in_quiet_hours), the creator's
+        setting, which hold only notifications and never change this pace.
+        """
         now = current_time or datetime.now()
         hour = now.hour
         if self.quiet_hours_start > self.quiet_hours_end:
@@ -477,6 +482,10 @@ class TelegramIngressDaemon:
         chat = self.authorized_chat_id
         try:
             with self._bots_profile():
+                # Quiet hours: nothing is looked at, so nothing is marked as
+                # told, and everything waiting goes at the first check after.
+                if telegram_bot.in_quiet_hours():
+                    return
                 said = telegram_bot.notifications()
         except Exception as error:
             logger.warning("The bot's notifications could not be read: %s", type(error).__name__)
@@ -1190,6 +1199,8 @@ def describe_settings() -> Dict[str, Any]:
         # The bot's switches, and why its last message to Telegram did not
         # go, in plain words (telegram_bot.py).
         "options": telegram_bot.options(),
+        # The bot's notifications are waiting for quiet hours to end.
+        "quiet_now": telegram_bot.in_quiet_hours(),
         "last_send_error": ingress_daemon.outbox.last_error if running_here else None,
         "replies_waiting": ingress_daemon.outbox.waiting() if running_here else 0,
     }

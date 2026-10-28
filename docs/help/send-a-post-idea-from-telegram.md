@@ -89,7 +89,17 @@ Two, each with its own switch in the panel, both off until you tick them:
 | **Tell me when a queued post is due** | "A post in your queue is due now. Open your studio to post it." When several are due at once, how many. Never the post's words. With **Remind me in an hour** and **Done** under it |
 | **Send my latest post's figures at about 24 hours** | Once, when the studio has read your latest post at about a day old (between 20 and 30 hours) while it is under two days old: "Your latest post at about 24 hours: 880 impressions, 31 reactions, 4 comments, read on its analytics page." |
 
-Each is sent once to your paired chat: the studio keeps what it has told, so a restart does not send it again. The studio looks for something to tell about once a minute while it is asking Telegram for messages. The figures then sit on Telegram's servers, as everything in the chat does; never a person's name or a comment.
+Each is sent once to your paired chat: the studio keeps what it has told, so a restart does not send it again. The studio looks for something to tell about once a minute while it is asking Telegram for messages. The figures then sit on Telegram's servers, as everything in the chat does; never a person's name or a comment. During quiet hours they wait: see below.
+
+## Quiet hours
+
+The notifications wait during quiet hours and go when they end, each still sent once: a post that came due at 02:00 is told at 07:00, if it is still due then, and three that came due in the night are told in one message. A reminder you asked for with **Remind me in an hour** waits the same way.
+
+**Hold notifications during quiet hours** is ticked, from 23:00 to 07:00 on this computer's clock, until you change it in the panel: pick whole hours beside **From** and **to**, or untick it to have notifications at any hour. While it is quiet, the panel says "QUIET NOW: NOTIFICATIONS WAIT UNTIL 07:00". A start and an end on the same hour are refused with a sentence, and nothing is saved.
+
+Answers to your own messages, your commands and your presses of a button are never held: the bot answers them at any hour.
+
+Quiet hours are not the studio's slower checking at night. Between 23:00 and 06:00 the studio asks Telegram less often, whatever quiet hours say, so an answer at night can take up to two minutes (see [What happens to text](#what-happens-to-text)). Quiet hours never change how often the studio asks, and the slower checking never holds a notification back.
 
 ## Buttons you can press
 
@@ -164,7 +174,7 @@ Each accepted message is saved in the local database as a post with status draft
 - Press Ctrl+K and look under **Posts**. See [Search everything with Ctrl+K](use-the-command-palette.md).
 - Or reload the page. The Composer opens the draft you created most recently, which may or may not be this one. See [Start a new post, or find one you wrote earlier](start-a-new-post-or-find-an-earlier-one.md).
 
-Each check asks Telegram to wait up to 30 seconds for a new message, so a message sent during a check arrives straight away. Between checks the studio pauses about 2 seconds, 120 seconds between 23:00 and 06:00 local time, and up to 60 seconds after errors. When Telegram asks it to slow down, it waits as long as Telegram says.
+Each check asks Telegram to wait up to 30 seconds for a new message, so a message sent during a check arrives straight away. Between checks the studio pauses about 2 seconds, 120 seconds between 23:00 and 06:00 local time, and up to 60 seconds after errors. When Telegram asks it to slow down, it waits as long as Telegram says. This night-time pause is fixed, and separate from [quiet hours](#quiet-hours), which hold only notifications.
 
 ## Check it is running
 

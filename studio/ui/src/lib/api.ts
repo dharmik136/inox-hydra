@@ -3881,6 +3881,11 @@ export interface IngressOptions {
   notify_due: boolean;
   /** Send the latest post's figures at about 24 hours, once. Off unless turned on. */
   notify_24h: boolean;
+  /** Notifications wait during quiet hours and go when they end. On unless turned off. */
+  quiet_hours: boolean;
+  /** Quiet hours, whole hours on the computer's clock: from 23 to 7 unless changed. */
+  quiet_from: number;
+  quiet_to: number;
 }
 
 export interface IngressSettings {
@@ -3921,6 +3926,8 @@ export interface IngressSettings {
   /** The server's own sentence until then; null once a message from your chat has been saved. */
   not_yet_tested: string | null;
   options: IngressOptions;
+  /** Quiet hours are on and it is now inside them: the bot's notifications wait. */
+  quiet_now: boolean;
   /** Why the bot's last message to Telegram did not go, in plain words; null when it went. */
   last_send_error: string | null;
   replies_waiting: number;

@@ -72,6 +72,13 @@ REMIND_KEY = "telegram_remind"           # due posts the creator asked to be rem
 REMIND_KEPT = 20
 # Remind me in an hour.
 REMIND_AFTER_SECONDS = 3600.0
+# Quiet hours, the creator's: the notifications wait while they are on, and
+# go when they end. Whole hours on the computer's own clock, {on, from, to};
+# on by default from 23:00 to 07:00. Answers to the creator's own messages,
+# commands and presses are never held. Not the poller's night pace
+# (ingress.is_quiet_hours), which changes only how often Telegram is asked.
+QUIET_KEY = "telegram_quiet"
+QUIET_FROM, QUIET_TO = 23, 7
 
 # The buttons, by the one letter a button's data ends with, and which a
 # message of each kind carries.
@@ -493,20 +500,72 @@ def notify_24h_on() -> bool:
     return (_setting(NOTIFY_24H_KEY) or "off") == "on"
 
 
+def local_now() -> datetime:
+    """The computer's own clock, with its time zone: what quiet hours are read against."""
+    return datetime.now().astimezone()
+
+
+def _hour(value: Any, default: int) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 23 else default
+
+
+def quiet_hours() -> Dict[str, Any]:
+    """Quiet hours in the open profile: {on, from, to}, whole hours. On from 23:00 to 07:00 unless changed."""
+    try:
+        held = json.loads(_setting(QUIET_KEY) or "{}")
+    except (TypeError, ValueError):
+        held = {}
+    held = held if isinstance(held, dict) else {}
+    start, end = _hour(held.get("from"), QUIET_FROM), _hour(held.get("to"), QUIET_TO)
+    if start == end:
+        start, end = QUIET_FROM, QUIET_TO
+    return {"on": held.get("on") is not False, "from": start, "to": end}
+
+
+def in_quiet_hours(now: Optional[datetime] = None) -> bool:
+    """Whether the notifications wait now: quiet hours are on and the hour is inside them, across midnight too."""
+    quiet = quiet_hours()
+    if not quiet["on"]:
+        return False
+    hour = (now or local_now()).hour
+    start, end = quiet["from"], quiet["to"]
+    return start <= hour < end if start < end else (hour >= start or hour < end)
+
+
 def options() -> Dict[str, Any]:
     """The bot's switches, as the panel shows them."""
+    quiet = quiet_hours()
     return {"replies": replies_on(), "figures": figures_on(), "notify_due": notify_due_on(),
-            "notify_24h": notify_24h_on()}
+            "notify_24h": notify_24h_on(), "quiet_hours": quiet["on"], "quiet_from": quiet["from"],
+            "quiet_to": quiet["to"]}
 
 
 def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
-                 notify_due: Optional[bool] = None, notify_24h: Optional[bool] = None) -> Dict[str, Any]:
-    """Saves the switches the panel sent; a switch not sent is left as it is."""
+                 notify_due: Optional[bool] = None, notify_24h: Optional[bool] = None,
+                 quiet: Optional[bool] = None, quiet_from: Optional[int] = None,
+                 quiet_to: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Saves the switches the panel sent; a switch not sent is left as it is.
+    Quiet hours run from one whole hour to another that differs from it;
+    anything else raises ValueError with the sentence the panel shows, and
+    nothing is saved.
+    """
     changes = {}
     for key, value in ((REPLIES_KEY, replies), (FIGURES_KEY, figures), (NOTIFY_DUE_KEY, notify_due),
                        (NOTIFY_24H_KEY, notify_24h)):
         if value is not None:
             changes[key] = "on" if value else "off"
+    if quiet is not None or quiet_from is not None or quiet_to is not None:
+        held = quiet_hours()
+        start = held["from"] if quiet_from is None else quiet_from
+        end = held["to"] if quiet_to is None else quiet_to
+        if _hour(start, -1) < 0 or _hour(end, -1) < 0:
+            raise ValueError("Quiet hours run from one whole hour to another, 00:00 to 23:00. Nothing was saved.")
+        if start == end:
+            raise ValueError("Quiet hours need a start and an end that differ. To have none, untick Hold "
+                             "notifications during quiet hours. Nothing was saved.")
+        changes[QUIET_KEY] = json.dumps({"on": held["on"] if quiet is None else bool(quiet), "from": start,
+                                         "to": end})
     if changes:
         conn = get_db()
         try:

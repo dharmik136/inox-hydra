@@ -39,6 +39,9 @@ class IngressOptionsPayload(BaseModel):
     figures: Optional[bool] = Field(None, description="The bot may answer /today with your own figures")
     notify_due: Optional[bool] = Field(None, description="Tell the paired chat when a queued post is due")
     notify_24h: Optional[bool] = Field(None, description="Send the latest post's figures at about 24 hours")
+    quiet_hours: Optional[bool] = Field(None, description="Hold notifications during quiet hours")
+    quiet_from: Optional[int] = Field(None, ge=0, le=23, description="Quiet hours start, a whole hour")
+    quiet_to: Optional[int] = Field(None, ge=0, le=23, description="Quiet hours end, a whole hour")
 
 
 class IngressSettingsPayload(BaseModel):
@@ -74,9 +77,17 @@ def post_ingress_test_message():
 
 @router.post("/api/v1/ingress/options", tags=["Phone"])
 def post_ingress_options(payload: IngressOptionsPayload):
-    """The bot's switches for this profile. A switch not sent is left as it is."""
-    telegram_bot.save_options(replies=payload.replies, figures=payload.figures, notify_due=payload.notify_due,
-                              notify_24h=payload.notify_24h)
+    """
+    The bot's switches for this profile. A switch not sent is left as it is.
+    Quiet hours whose start and end are the same hour are refused with a
+    sentence, and nothing is saved.
+    """
+    try:
+        telegram_bot.save_options(replies=payload.replies, figures=payload.figures, notify_due=payload.notify_due,
+                                  notify_24h=payload.notify_24h, quiet=payload.quiet_hours,
+                                  quiet_from=payload.quiet_from, quiet_to=payload.quiet_to)
+    except ValueError as refused:
+        raise HTTPException(status_code=400, detail=str(refused))
     return ingress.describe_settings()
 
 

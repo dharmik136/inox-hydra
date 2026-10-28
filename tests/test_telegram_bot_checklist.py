@@ -73,3 +73,11 @@ def test_the_buttons_it_promises_are_the_ones_the_bot_shows():
         assert f"**{label}**" in article, label
     for key in ("undone", "due_one", "remind_set", "due_again_one", "done"):
         assert telegram_bot.SENTENCES[key] in article, key
+
+
+def test_the_quiet_hours_it_names_are_the_panels():
+    """Phase 2: the optional check of quiet hours names the panel's own words."""
+    panel = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "TelegramIngressPanel.tsx"),
+                 encoding="utf-8").read()
+    for words in ("Hold notifications during quiet hours", "QUIET NOW"):
+        assert words in _article() and words in panel, words
