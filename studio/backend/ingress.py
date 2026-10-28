@@ -295,6 +295,10 @@ class TelegramIngressDaemon:
         # chat id -> {chat_id, count, first_at, last_at, first}: the chats
         # refused since this bot was set, newest last, in memory only.
         self.refused_chats: Dict[str, Dict[str, Any]] = {}
+        # What the bot says back (telegram_bot.py): waiting replies, and when
+        # each refused chat was last answered.
+        self.outbox = telegram_bot.Outbox()
+        self._answered_refusals: Dict[str, float] = {}
 
     def configure(self, bot_token: str, authorized_chat_id: str, origin: Optional[str],
                   profile_id: Optional[str] = None) -> None:
@@ -311,8 +315,11 @@ class TelegramIngressDaemon:
             # the old offset confirmed the new bot's waiting messages unread.
             self.last_update_id = 0
             self._failed_updates = {}
-            # Who wrote to the old bot says nothing about who writes to this one.
+            # Who wrote to the old bot says nothing about who writes to this one,
+            # and its replies are not this bot's to send.
             self.refused_chats = {}
+            self.outbox.clear()
+            self._answered_refusals = {}
         self.bot_token = token
         self.authorized_chat_id = authorized_chat_id or ""
         # A chat now saved is no longer asked about.
@@ -379,6 +386,43 @@ class TelegramIngressDaemon:
         self.refused_chats[chat_id] = held
         while len(self.refused_chats) > REFUSED_CHATS_KEPT:
             self.refused_chats.pop(next(iter(self.refused_chats)))
+
+    def _bots_profile(self):
+        """The bot's own profile to read its switches in, or the open one for a maintainer's bot."""
+        if self.profile_id and self.profile_id in paths.profile_ids():
+            return paths.using_profile(self.profile_id)
+        return nullcontext()
+
+    def _reply(self, chat_id: str, text: Optional[str]) -> None:
+        """Queues one of the bot's fixed sentences for a chat, when the bot confirms messages."""
+        if not text or not chat_id or not self.bot_token:
+            return
+        try:
+            with self._bots_profile():
+                if not telegram_bot.replies_on():
+                    return
+        except Exception:
+            return
+        self.outbox.put(chat_id, text)
+
+    def _answer_refusal(self, chat_id: str, key: str) -> None:
+        """A refused chat is told why, at most once in a while, so a stranger cannot make the bot talk on."""
+        now = time.monotonic()
+        last = self._answered_refusals.get(chat_id)
+        if last is not None and now - last < telegram_bot.REFUSAL_REPLY_EVERY_SECONDS:
+            return
+        self._answered_refusals[chat_id] = now
+        # Bounded like the refused chats themselves.
+        while len(self._answered_refusals) > 4 * REFUSED_CHATS_KEPT:
+            self._answered_refusals.pop(next(iter(self._answered_refusals)))
+        self._reply(chat_id, telegram_bot.SENTENCES[key].format(chat_id=chat_id))
+
+    def flush_replies(self) -> None:
+        """Sends the bot's waiting replies. Never raises: a reply is never worth a lost poll."""
+        try:
+            self.outbox.flush(self.bot_token)
+        except Exception as error:
+            logger.warning("The bot's replies could not be sent: %s", type(error).__name__)
 
     def refused(self) -> List[Dict[str, Any]]:
         """The chats refused since this bot was set, newest first, each saying whether it can be paired."""
@@ -451,6 +495,7 @@ class TelegramIngressDaemon:
         if from_telegram:
             if not self.authorized_chat_id:
                 self._remember_refusal(chat_id, message)
+                self._answer_refusal(chat_id, "not_paired")
                 self.last_error = (
                     "TELEGRAM_CHAT_ID is not set, so every incoming message is "
                     "refused. Set it to your own numeric chat id to accept drafts "
@@ -466,6 +511,7 @@ class TelegramIngressDaemon:
 
             if chat_id != str(self.authorized_chat_id):
                 self._remember_refusal(chat_id, message)
+                self._answer_refusal(chat_id, "other_chat")
                 logger.warning(f"Unauthorized ingress attempt from chat_id: {chat_id}")
                 return None
 
@@ -473,6 +519,8 @@ class TelegramIngressDaemon:
             if "voice" in message:
                 text = "[Voice Memo Received: Local transcription pending]"
             else:
+                if from_telegram:
+                    self._reply(chat_id, telegram_bot.SENTENCES["no_text"])
                 return None
 
         # A message from Telegram is saved in the profile its bot was set up
@@ -487,7 +535,9 @@ class TelegramIngressDaemon:
             stored = self._store(text)
             if from_telegram and stored is not None:
                 _note_heard()
-            return stored
+        if from_telegram:
+            self._reply(chat_id, telegram_bot.answer_for(stored))
+        return stored
 
     def _store(self, text: str) -> Optional[Dict[str, Any]]:
         """Saves one accepted message: a desk request for a post link, a draft for any text."""
@@ -596,6 +646,10 @@ class TelegramIngressDaemon:
                                "Telegram for its messages. Set the bot up again in the profile you use.")
             return []
 
+        # Replies that had to wait (a 429, a network fault) get their turn
+        # before the next question to Telegram.
+        self.flush_replies()
+
         token = self.bot_token
         url = telegram_bot.method_url(token, "getUpdates")
         params = {
@@ -663,11 +717,16 @@ class TelegramIngressDaemon:
                                 update_id, attempts,
                             )
                             self._failed_updates.pop(update_id, None)
+                            # Said to the chat it came from, if it is the paired one.
+                            sender = str(((update.get("message") or {}).get("chat") or {}).get("id", ""))
+                            if sender and sender == str(self.authorized_chat_id):
+                                self._reply(sender, telegram_bot.SENTENCES["not_saved"])
 
                         if isinstance(update_id, int) and update_id > self.last_update_id:
                             self.last_update_id = update_id
                     self.total_messages_processed += len(processed)
                     self.last_error = None
+                    self.flush_replies()
                     return processed
                 else:
                     self.last_error = self._redact(
@@ -882,7 +941,17 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
     finally:
         conn.close()
     apply_settings()
+    if chat and chat != held["chat_id"] and _asking_for_this_profile():
+        # The chat is told at once that it is paired (This is me, or a chat id typed in).
+        ingress_daemon._reply(chat, telegram_bot.SENTENCES["paired"])
+        ingress_daemon.flush_replies()
     return describe_settings()
+
+
+def _asking_for_this_profile() -> bool:
+    """Whether the worker is asking Telegram for the open profile's own bot."""
+    return (bool(ingress_daemon.is_running) and ingress_daemon.configured_from == "settings"
+            and ingress_daemon.profile_id == paths.get_active_profile_id())
 
 
 def describe_settings() -> Dict[str, Any]:
@@ -930,4 +999,9 @@ def describe_settings() -> Dict[str, Any]:
         # A message from the chat saved here has been saved here.
         "tested_against_real_service": bool(heard),
         "not_yet_tested": None if heard else NOT_YET_TESTED,
+        # The bot's switches, and why its last message to Telegram did not
+        # go, in plain words (telegram_bot.py).
+        "options": telegram_bot.options(),
+        "last_send_error": ingress_daemon.outbox.last_error if running_here else None,
+        "replies_waiting": ingress_daemon.outbox.waiting() if running_here else 0,
     }

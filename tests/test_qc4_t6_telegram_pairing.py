@@ -84,11 +84,26 @@ def studio(tmp_path, monkeypatch):
 
     monkeypatch.setattr(ingress.requests, "get", fake_get)
     monkeypatch.setattr(ingress._egress, "require", lambda url, category: None)
+    # The bot answers each message (2.11.0): sendMessage is simulated too.
+    replies = []
+
+    class Sent:
+        status_code = 200
+
+        def json(self):
+            return {"ok": True, "result": {"message_id": len(replies)}}
+
+    def fake_post(url, json=None, timeout=None):
+        replies.append(json)
+        return Sent()
+
+    import telegram_bot
+    monkeypatch.setattr(telegram_bot.requests, "post", fake_post)
     from database import init_db
     import app as app_module
     init_db()
     return {"client": TestClient(app_module.app), "daemon": daemon, "started": started, "telegram": waiting,
-            "calls": calls}
+            "calls": calls, "replies": replies}
 
 
 def _send(studio, *messages):

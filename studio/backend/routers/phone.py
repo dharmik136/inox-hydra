@@ -18,11 +18,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 try:
-    from .. import desk_requests, ingress
+    from .. import desk_requests, ingress, telegram_bot
     from ..database import get_db
 except (ImportError, ValueError):
     import desk_requests
     import ingress
+    import telegram_bot
     from database import get_db
 
 router = APIRouter()
@@ -31,6 +32,10 @@ router = APIRouter()
 class DeskLandingPayload(BaseModel):
     request_id: int = Field(..., ge=1, description="The request named by the #inox-desk-<id> fragment the page kept")
     activity_urn: str = Field(..., min_length=1, max_length=80, description="The post the page names")
+
+
+class IngressOptionsPayload(BaseModel):
+    replies: Optional[bool] = Field(None, description="The bot confirms each message with a short fixed sentence")
 
 
 class IngressSettingsPayload(BaseModel):
@@ -56,6 +61,13 @@ def post_ingress_settings(payload: IngressSettingsPayload):
     if result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result["message"])
     return result
+
+
+@router.post("/api/v1/ingress/options", tags=["Phone"])
+def post_ingress_options(payload: IngressOptionsPayload):
+    """The bot's switches for this profile. A switch not sent is left as it is."""
+    telegram_bot.save_options(replies=payload.replies)
+    return ingress.describe_settings()
 
 
 @router.post("/api/v1/desk-requests/{request_id}/dismiss", tags=["Phone"])

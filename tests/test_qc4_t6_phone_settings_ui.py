@@ -45,6 +45,17 @@ def recorded(monkeypatch):
     monkeypatch.setattr(daemon, "configured_from", None)
     monkeypatch.setattr(daemon, "profile_id", None)
     monkeypatch.setattr(daemon, "refused_chats", {})
+    # The bot answers (2.11.0): Paired. is sent when a chat is saved, so
+    # sendMessage is answered here and never reaches Telegram.
+    import telegram_bot
+
+    class Sent:
+        status_code = 200
+
+        def json(self):
+            return {"ok": True}
+
+    monkeypatch.setattr(telegram_bot.requests, "post", lambda url, json=None, timeout=None: Sent())
     return started
 
 

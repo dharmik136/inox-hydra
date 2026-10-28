@@ -3871,6 +3871,12 @@ export interface RefusedChat {
   own_chat: boolean;
 }
 
+/** The bot's switches, each kept in the profile the bot belongs to. */
+export interface IngressOptions {
+  /** The bot confirms each message with a short fixed sentence. On unless turned off. */
+  replies: boolean;
+}
+
 export interface IngressSettings {
   profile: string;
   /** Both the token and the chat id are set, so the studio asks Telegram for messages. */
@@ -3908,6 +3914,10 @@ export interface IngressSettings {
   tested_against_real_service: boolean;
   /** The server's own sentence until then; null once a message from your chat has been saved. */
   not_yet_tested: string | null;
+  options: IngressOptions;
+  /** Why the bot's last message to Telegram did not go, in plain words; null when it went. */
+  last_send_error: string | null;
+  replies_waiting: number;
 }
 
 export async function fetchIngressSettings(): Promise<IngressSettings> {
@@ -3919,6 +3929,11 @@ export async function fetchIngressSettings(): Promise<IngressSettings> {
  * what is held: a token alone starts pairing, and a chat id alone (This is
  * me) pairs that chat with the token already saved.
  */
+/** Saves the switches sent; a switch left out keeps its value. */
+export async function saveIngressOptions(options: Partial<IngressOptions>): Promise<IngressSettings> {
+  return call<IngressSettings>("/api/v1/ingress/options", { method: "POST", body: JSON.stringify(options) });
+}
+
 export async function saveIngressSettings(bot_token: string, chat_id: string): Promise<IngressSettings> {
   return call<IngressSettings>("/api/v1/ingress/settings", {
     method: "POST",

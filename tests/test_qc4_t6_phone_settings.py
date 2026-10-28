@@ -301,6 +301,9 @@ def _fake_telegram(monkeypatch, answers, calls, during=None):
         return _Answer(answers.pop(0) if answers else [])
     monkeypatch.setattr(ingress.requests, "get", fake_get)
     monkeypatch.setattr(ingress._egress, "require", lambda url, category: None)
+    # The bot's replies (2.11.0) are answered here too, never sent.
+    import telegram_bot
+    monkeypatch.setattr(telegram_bot.requests, "post", lambda url, json=None, timeout=None: _Answer({}))
 
 
 def test_a_new_bot_is_polled_from_its_own_beginning(monkeypatch):

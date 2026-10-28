@@ -6,7 +6,7 @@ Make a Telegram bot of your own, set it up under Local security, and the message
 
 - It is optional and off until you set it up. The studio asks Telegram for your bot's messages while it is running, and opens no port. Each request is counted under the `ingress` row of **What has left this machine** under **Local security** in **Settings**.
 - The phone sends a link, never a figure. Nothing you send is written as a reading: a post link becomes a request to read that post here, where the extension reads the real page.
-- The bot never replies. You get no confirmation in Telegram.
+- The bot answers each message with one short fixed sentence, so you can tell it arrived. See [What the bot says back](#what-the-bot-says-back).
 - Your message text passes through Telegram's servers. See [What leaves this machine, and when](what-leaves-this-machine.md).
 - The bot belongs to the creator profile you set it up in, and its messages are saved there whichever profile is open. One bot is asked at a time: the one saved most recently, or when the studio starts, the first profile that has one. A profile whose bot is not the one being asked says so in its panel.
 
@@ -56,6 +56,24 @@ Any `#hashtag` in the text also becomes a tag, up to 30. An em dash in your mess
 > `Schedule <when>:` does not schedule anything. The time is read but not stored, and the post is saved as an ordinary draft. Voice notes are not transcribed.
 
 The `Schedule` prefix is recognised only in a one-line message whose `<when>` uses just letters, digits, spaces, colons and hyphens, followed by `:` or `|`. Otherwise the whole message, prefix included, is saved as plain text. If your text contains another colon, everything before the last colon is taken as `<when>` and dropped.
+
+## What the bot says back
+
+Each message gets one short sentence back, the same words every time. None carries your words, your figures or anything about anyone else:
+
+| What became of your message | The bot says |
+| --- | --- |
+| Saved as a draft | Saved as a draft in your studio. |
+| A link to one of your posts | Today will ask you to open this post's analytics at your computer. |
+| A short `lnkd.in` link | Today will ask you to open this link at your computer. |
+| A link to a post that is not yours | That is not one of your posts, so your studio will not read it. |
+| A photo, a sticker or anything with no text | That message had no text, so nothing was saved. |
+| A message your studio could not save, after three tries | Your studio could not save that message. Open the studio to see why. |
+| You pressed **This is me**, or saved a chat id | Paired. Messages from this chat now arrive in your studio. Send /help to see what I do. |
+| A message before any chat is paired | Not paired yet. In your studio, open Settings, then Local security, and press This is me beside chat 487215963. (Your own chat's number.) |
+| A message from a chat that is not the paired one | This bot takes messages only from the chat its owner paired. |
+
+A chat that is refused is answered at most once in ten minutes. The answers are on by default; to stop them, untick **The bot confirms each message** in the panel. Your messages are still saved. If a sentence cannot be sent, the panel says why under **Last message the bot could not send**, and the studio tries again after a network fault or when Telegram asks it to wait.
 
 ## What happens to a post link
 

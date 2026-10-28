@@ -219,12 +219,26 @@ def test_a_short_link_polled_from_the_simulated_telegram_becomes_a_request(monke
 
     monkeypatch.setattr(ingress.requests, "get", fake_get)
     monkeypatch.setattr(ingress._egress, "require", lambda url, category: fetched.append(("egress", url)))
+    # The bot's reply (2.11.0) is simulated as well: the short link is never what is sent.
+    replies = []
+
+    class Sent:
+        status_code = 200
+
+        def json(self):
+            return {"ok": True}
+
+    import telegram_bot
+    monkeypatch.setattr(telegram_bot.requests, "post",
+                        lambda url, json=None, timeout=None: replies.append(json) or Sent())
     daemon = _daemon()
     processed = daemon.poll_once()
     assert len(processed) == 1 and processed[0]["kind"] == "desk_request"
     assert all("api.telegram.org" in (u[1] if isinstance(u, tuple) else u) for u in fetched)
     assert not [u for u in fetched if "lnkd.in" in str(u)], "the studio fetched the short link"
     assert _requests()[0]["link"] == SHORT
+    assert [r["text"] for r in replies] == [telegram_bot.SENTENCES["short"]]
+    assert "lnkd.in" not in replies[0]["text"]
 
 
 def test_the_studio_never_contacts_lnkd_in(monkeypatch):

@@ -427,8 +427,12 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # /api/analytics/page-figures does. Total 224 -> 226, reached 177 -> 178,
 # unreachable 47 -> 48.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 226
-REACHED_BY_INTERFACE = 178
+# 2.11.0, the Telegram bot: the bot's switches (/api/v1/ingress/options),
+# which the Telegram panel saves. Total 226 -> 227, reached 178 -> 179,
+# unreachable stays 48.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 227
+REACHED_BY_INTERFACE = 179
 UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

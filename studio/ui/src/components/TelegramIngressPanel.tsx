@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { fetchIngressSettings, saveIngressSettings, type IngressSettings } from "@/lib/api";
+import {
+  fetchIngressSettings,
+  saveIngressOptions,
+  saveIngressSettings,
+  type IngressOptions,
+  type IngressSettings,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /**
@@ -21,6 +27,10 @@ import { cn } from "@/lib/utils";
  * The sentence saying the bot has not been seen working on this computer
  * comes from the server too, and goes once a message from the saved chat has
  * been saved here.
+ *
+ * The bot answers (2.11.0): each message gets a short fixed sentence back,
+ * which says what became of it and carries none of the creator's words or
+ * figures. On by default; its switch is here.
  */
 export function TelegramIngressPanel() {
   const [state, setState] = useState<IngressSettings | null>(null);
@@ -51,6 +61,19 @@ export function TelegramIngressPanel() {
     }, 4000);
     return () => window.clearInterval(timer);
   }, [pairing]);
+
+  async function setOption(change: Partial<IngressOptions>, said: string) {
+    setBusy(true);
+    setNote(null);
+    try {
+      setState(await saveIngressOptions(change));
+      setNote(said);
+    } catch (caught) {
+      setNote(caught instanceof Error ? caught.message : "The switch was not saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function save(nextToken: string, nextChat: string, said: string) {
     setBusy(true);
@@ -108,7 +131,25 @@ export function TelegramIngressPanel() {
                 <dd className="studio-meta text-signal-orange-text">{state.last_error}</dd>
               </div>
             )}
+            {state.last_send_error && (
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="text-[12px] text-ink-secondary">Last message the bot could not send</dt>
+                <dd className="studio-meta text-signal-orange-text">{state.last_send_error}</dd>
+              </div>
+            )}
           </dl>
+          {state.has_token && (
+            <div className="mt-3 flex flex-col gap-2">
+              <p className="studio-meta text-ink-muted">WHAT THE BOT SAYS BACK</p>
+              <OptionRow
+                label="The bot confirms each message"
+                detail="A short fixed sentence back, such as Saved as a draft in your studio, or Today will ask you to open this post's analytics. Never your words, never your figures."
+                checked={state.options.replies}
+                disabled={busy}
+                onChange={(on) => void setOption({ replies: on }, on ? "The bot confirms each message." : "The bot no longer confirms messages.")}
+              />
+            </div>
+          )}
           {state.running && state.configured_from === "settings" && (
             <p className="mt-2 text-[12px] leading-relaxed text-ink-secondary">
               Messages to this bot are saved in this profile, whichever profile is open.
@@ -240,5 +281,36 @@ export function TelegramIngressPanel() {
         </p>
       </div>
     </section>
+  );
+}
+
+/** One of the bot's switches: a labelled checkbox with what it means beneath. */
+function OptionRow({
+  label,
+  detail,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  detail: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  return (
+    <label className="flex items-start gap-2 text-[12px] leading-relaxed">
+      <input
+        type="checkbox"
+        className="mt-0.5"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className="min-w-0">
+        <span className="text-ink-primary">{label}</span>
+        <span className="block text-ink-secondary">{detail}</span>
+      </span>
+    </label>
   );
 }
