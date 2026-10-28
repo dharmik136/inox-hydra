@@ -78,6 +78,9 @@ def test_start_and_help_say_what_the_bot_does_how_to_pair_and_what_it_never_send
     assert answer == telegram_bot.HELP
     for words in ("/idea", "/ask", "/status", "This is me", "never"):
         assert words in answer, words
+    # Phase 3: with the words switch on, the bot does send the creator's words, so it says when.
+    assert "your own words back only if you allow it" in answer
+    assert "never read or transcribed" in answer
 
 
 def test_idea_keeps_an_idea_in_the_collection(bot):

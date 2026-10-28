@@ -4,11 +4,13 @@ import {
   draftFromCollection,
   fetchCollection,
   fetchDraftById,
+  photoToMediaLibrary,
   removeCollectionItem,
   setCollectionStatus,
   writeFromCollection,
   type CollectionItem,
   type CollectionKind,
+  type CollectionMedia,
   type CollectionListing,
   type CollectionStatus,
 } from "@/lib/api";
@@ -46,6 +48,8 @@ const KIND_CHOICES: [CollectionKind | "", string][] = [
   ["bookmark", "Bookmarks"],
   ["post", "Your posts"],
   ["link", "Links"],
+  ["photo", "Photos"],
+  ["voice", "Voice notes"],
 ];
 
 export function CollectionPanel({
@@ -293,6 +297,7 @@ export function CollectionPanel({
                 {item.topic && <span>topic: {item.topic}</span>}
                 {item.tags.length > 0 && <span>{item.tags.map((tag) => `#${tag}`).join(" ")}</span>}
               </p>
+              {item.media && <KeptAsItIs item={item} media={item.media} />}
               {item.text && (
                 <p className="mt-1 whitespace-pre-line text-[13px] leading-relaxed text-ink-primary">{item.text}</p>
               )}
@@ -362,6 +367,22 @@ export function CollectionPanel({
                     {angleCount ? `${angleCount} angles` : "Angles"}
                   </button>
                 )}
+                {item.kind === "photo" && item.media && !item.became && (
+                  <button
+                    type="button"
+                    disabled={busy === item.id}
+                    onClick={() =>
+                      void act(
+                        item,
+                        () => photoToMediaLibrary(item.id),
+                        "In your media library: the Composer's Media tab lists it with your other images.",
+                      )
+                    }
+                    className="rounded-md border border-edge px-2 py-0.5 hover:text-ink-primary disabled:opacity-40"
+                  >
+                    Add to your media library
+                  </button>
+                )}
                 {item.text && (
                   <button
                     type="button"
@@ -422,5 +443,48 @@ export function CollectionPanel({
         </ul>
       )}
     </section>
+  );
+}
+
+/** Bytes as a person reads them. */
+function sizeOf(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * A photo or a voice note as it was sent (phase 3, item 4): shown or played
+ * from the profile's own folder, and never read. No text is taken from a
+ * photo and no words from a voice note; a caption is the creator's own.
+ */
+function KeptAsItIs({ item, media }: { item: CollectionItem; media: CollectionMedia }) {
+  const facts = [
+    media.width && media.height ? `${media.width} x ${media.height}` : null,
+    media.duration ? `${media.duration} s` : null,
+    sizeOf(media.bytes),
+  ].filter(Boolean);
+  return (
+    <div className="mt-1.5 flex flex-col gap-1">
+      {item.kind === "photo" ? (
+        <img
+          src={media.path}
+          alt={item.text ? `Your photo: ${item.text.split("\n")[0]}` : "A photo you sent your bot"}
+          loading="lazy"
+          className="max-h-48 max-w-full self-start rounded-md border border-edge object-contain"
+        />
+      ) : (
+        <audio
+          controls
+          preload="none"
+          src={media.path}
+          aria-label={media.duration ? `Your voice note, ${media.duration} seconds` : "Your voice note"}
+          className="max-w-full"
+        />
+      )}
+      <p className="studio-meta text-[10px] text-ink-muted">
+        {facts.join(" · ")} · KEPT AS IT IS: {item.kind === "photo" ? "NEVER READ" : "NEVER TRANSCRIBED"}
+      </p>
+    </div>
   );
 }

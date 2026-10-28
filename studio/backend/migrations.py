@@ -2265,6 +2265,26 @@ def _migrate_things_to_remember(cursor: sqlite3.Cursor) -> None:
         cursor.execute("ALTER TABLE posts ADD COLUMN made_with TEXT")
 
 
+def _migrate_phone_media(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 40 (phase 3 of the Telegram bot, item 4):
+    A photo or a voice note sent to the bot is kept as it is, beside its item.
+
+    collection_items.media: JSON naming the file in the profile's assets
+    folder (assets/phone), its type and size, and a photo's width and height
+    or a voice note's length. Never what is in it: nothing is read.
+    collection_items.media_asset_id: the media library's copy of a photo,
+    once the creator puts it there. Both NULL for every other item, as for
+    every row before this one.
+    """
+    cursor.execute("PRAGMA table_info(collection_items)")
+    held = {row[1] for row in cursor.fetchall()}
+    if "media" not in held:
+        cursor.execute("ALTER TABLE collection_items ADD COLUMN media TEXT")
+    if "media_asset_id" not in held:
+        cursor.execute("ALTER TABLE collection_items ADD COLUMN media_asset_id TEXT")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -2320,6 +2340,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
      _migrate_collection_box),
     (39, "Things to remember about the creator, and what each draft the studio writes was written from",
      _migrate_things_to_remember),
+    (40, "A photo or a voice note sent to the bot is kept as it is, beside the item it made",
+     _migrate_phone_media),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

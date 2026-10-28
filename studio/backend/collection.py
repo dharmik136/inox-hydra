@@ -37,11 +37,12 @@ from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import unquote
 
 try:
-    from . import changes, desk_requests, post_identity
+    from . import changes, desk_requests, phone_media, post_identity
     from .database import get_db
 except ImportError:
     import changes
     import desk_requests
+    import phone_media
     import post_identity
     from database import get_db
 
@@ -76,6 +77,9 @@ BECAME_SAID = {
     "sent": "Published",
 }
 GONE_SAID = "A draft since deleted in the studio"
+# A photo put in the media library, where the images for a post are kept.
+MEDIA_SAID = "In your media library"
+MEDIA_GONE_SAID = "Put in your media library, and since deleted there"
 
 
 class Refused(ValueError):
@@ -142,6 +146,11 @@ def _row(conn, row) -> Dict[str, Any]:
         item["angles"] = json.loads(item.get("angles") or "[]")
     except (TypeError, ValueError):
         item["angles"] = []
+    try:
+        media = json.loads(item.get("media") or "null")
+    except (TypeError, ValueError):
+        media = None
+    item["media"] = media if isinstance(media, dict) else None
     item["kind_said"] = KIND_SAID.get(item["kind"], item["kind"])
     item["became"] = became(conn, item)
     return item
@@ -153,6 +162,9 @@ def became(conn, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         post = conn.execute("SELECT status FROM posts WHERE id = ?", (item["post_id"],)).fetchone()
         said = BECAME_SAID.get(post[0], BECAME_SAID["draft"]) if post else GONE_SAID
         return {"kind": "draft", "post_id": item["post_id"], "said": said}
+    if item.get("media_asset_id"):
+        held = conn.execute("SELECT 1 FROM media_assets WHERE id = ?", (item["media_asset_id"],)).fetchone()
+        return {"kind": "media", "said": MEDIA_SAID if held else MEDIA_GONE_SAID}
     if item.get("desk_request_id"):
         request = conn.execute("SELECT id, activity_urn, state, link FROM desk_requests WHERE id = ?",
                                (item["desk_request_id"],)).fetchone()
@@ -182,7 +194,7 @@ def get(conn, item_id: int) -> Optional[Dict[str, Any]]:
 def add(kind: str, text: str = "", *, link: Optional[str] = None, activity_urn: Optional[str] = None,
         desk_request_id: Optional[int] = None, status: str = "new", post_id: Optional[str] = None,
         source: str = "telegram", origin_ref: Optional[str] = None, tags: Optional[List[str]] = None,
-        conn=None) -> Dict[str, Any]:
+        media: Optional[Dict[str, Any]] = None, conn=None) -> Dict[str, Any]:
     """
     One item in the collection, and its publication on the change stream.
     A message already recorded (the same origin_ref) is not written twice:
@@ -205,11 +217,11 @@ def add(kind: str, text: str = "", *, link: Optional[str] = None, activity_urn: 
         with conn:
             item_id = conn.execute(
                 "INSERT INTO collection_items (received_at, kind, text, link, activity_urn, desk_request_id, tags, "
-                "topic, status, post_id, source, origin_ref, updated_at, used_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "topic, status, post_id, source, origin_ref, updated_at, used_at, media) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (now, kind, words, link, activity_urn, desk_request_id, json.dumps(tags),
                  topic_of(conn, words, tags), status, post_id, source, origin_ref, now,
-                 now if status == "used" else None)).lastrowid
+                 now if status == "used" else None, json.dumps(media) if media else None)).lastrowid
         item = get(conn, item_id)
     finally:
         if own:
@@ -280,16 +292,52 @@ def set_status(item_id: int, status: str) -> Dict[str, Any]:
 
 
 def remove(item_id: int) -> bool:
-    """Removes an item for good. Says whether there was one. A draft made from it stays a draft."""
+    """
+    Removes an item for good, with its photo or voice note. Says whether
+    there was one. A draft made from it stays a draft, and a photo put in the
+    media library stays there.
+    """
     conn = get_db()
     try:
+        row = conn.execute("SELECT media FROM collection_items WHERE id = ?", (int(item_id),)).fetchone()
         with conn:
             gone = conn.execute("DELETE FROM collection_items WHERE id = ?", (int(item_id),)).rowcount
     finally:
         conn.close()
     if gone:
+        phone_media.discard(row["media"] if row else None)
         changes.publish("collection")
     return bool(gone)
+
+
+def to_library(item_id: int) -> Dict[str, Any]:
+    """
+    Add to your media library: a copy of a photo where the images for a post
+    are kept. The item is then used, and says so. Once is enough: asked
+    again, it is where it was.
+    """
+    conn = get_db()
+    try:
+        item = get(conn, item_id)
+        if not item:
+            raise LookupError("That item is no longer in your collection.")
+        if item["kind"] != "photo" or not item.get("media"):
+            raise Refused("Only a photo goes into your media library; a voice note stays in your collection.")
+        if item.get("became") and item["became"]["kind"] == "media" and item["became"]["said"] == MEDIA_SAID:
+            return item
+        now = _now()
+        with conn:
+            try:
+                asset_id = phone_media.to_library(conn, item["media"])
+            except FileNotFoundError:
+                raise Refused("The photo is no longer on this computer, so it cannot go into your media library.")
+            conn.execute("UPDATE collection_items SET media_asset_id = ?, status = 'used', used_at = ?, updated_at = ? "
+                         "WHERE id = ?", (asset_id, now, now, int(item_id)))
+        item = get(conn, item_id)
+    finally:
+        conn.close()
+    changes.publish("collection")
+    return item
 
 
 def mark_used(conn, item_ids: Iterable[int], post_id: str) -> None:
@@ -338,7 +386,7 @@ def undo(item_id: Any) -> str:
         return "undo_item_gone"
     conn = get_db()
     try:
-        row = conn.execute("SELECT status FROM collection_items WHERE id = ?", (item_id,)).fetchone()
+        row = conn.execute("SELECT status, media FROM collection_items WHERE id = ?", (item_id,)).fetchone()
         if not row:
             return "undo_item_gone"
         with conn:
@@ -347,6 +395,7 @@ def undo(item_id: Any) -> str:
     finally:
         conn.close()
     if gone:
+        phone_media.discard(row["media"])
         changes.publish("collection")
     return "undone_item" if gone else "undo_item_kept"
 
@@ -444,8 +493,12 @@ def offered(conn, item_id: int) -> None:
 
 
 def forget_draft(conn, post_id: str) -> None:
-    """A draft taken back with the bot's Undo: the item that recorded it goes with it."""
+    """A draft taken back with the bot's Undo: the item that recorded it goes with it, and any file of its."""
+    files = [row[0] for row in conn.execute("SELECT media FROM collection_items WHERE post_id = ? AND media IS NOT NULL",
+                                            (post_id,))]
     conn.execute("DELETE FROM collection_items WHERE post_id = ?", (post_id,))
+    for media in files:
+        phone_media.discard(media)
 
 
 def drafts_made(conn, start: datetime, end: datetime) -> int:
@@ -463,5 +516,6 @@ def drafts_made(conn, start: datetime, end: datetime) -> int:
 
 
 def forget(conn) -> None:
-    """Delete everything: every item the creator sent."""
+    """Delete everything: every item the creator sent, and every photo and voice note with them."""
     conn.execute("DELETE FROM collection_items")
+    phone_media.forget()

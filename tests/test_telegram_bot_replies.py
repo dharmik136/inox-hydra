@@ -117,8 +117,9 @@ def test_another_chat_is_told_the_bot_is_its_owners_once(bot):
 
 
 def test_a_message_with_no_text_says_nothing_was_saved(bot):
+    """A sticker. A photo and a voice note are kept as they are since phase 3 (tests/test_phone_media.py)."""
     _saved(bot)
-    bot["fake"].push(OWNER, None, photo=[{"file_id": "x"}])
+    bot["fake"].push(OWNER, None, sticker={"file_id": "x"})
     assert _until(lambda: _texts(bot) == [SAID["no_text"]]), _texts(bot)
 
 

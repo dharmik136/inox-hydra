@@ -41,12 +41,14 @@ import time
 
 try:
     from .database import get_db, create_draft, get_draft
-    from . import collection, desk_requests, paths, post_identity, remembered, secret_settings, telegram_bot
+    from . import (collection, desk_requests, paths, phone_media, post_identity, remembered, secret_settings,
+                   telegram_bot)
 except ImportError:
     from database import get_db, create_draft, get_draft
     import collection
     import desk_requests
     import paths
+    import phone_media
     import remembered
     import post_identity
     import secret_settings
@@ -648,9 +650,12 @@ class TelegramIngressDaemon:
                 logger.warning(f"Unauthorized ingress attempt from chat_id: {chat_id}")
                 return None
 
-        if not text:
-            # A photo, a voice note, a sticker: nothing of it is kept, and the
-            # chat is told. (A voice note used to leave a placeholder draft
+        # A photo or a voice note is kept as it is (phase 3, item 4), never
+        # read. Only from Telegram: the local route has no file to fetch.
+        media = phone_media.wanted(message) if from_telegram else None
+        if not text and not media:
+            # A sticker, a document, a video: nothing of it is kept, and the
+            # chat is told. (A voice note once left a placeholder draft
             # promising a transcription that never came.)
             if from_telegram:
                 self._reply(chat_id, telegram_bot.SENTENCES["no_text"])
@@ -667,14 +672,17 @@ class TelegramIngressDaemon:
             return None
         with (paths.using_profile(pinned) if pinned else nullcontext()):
             # A forwarded "/help" is someone else's words, not the creator's command.
-            command = None if forwarded else telegram_bot.parse_command(text)
-            if command:
+            command = None if forwarded or media else telegram_bot.parse_command(text)
+            if media:
+                stored = self._store_media(media, message.get("caption"), _origin(update, from_telegram))
+                question, answer = False, telegram_bot.answer_for(stored)
+            elif command:
                 stored, answer, question = self._command(command, update, from_telegram)
             else:
                 stored = self._store(text, origin=_origin(update, from_telegram), from_telegram=from_telegram,
                                      forwarded=forwarded)
                 question, answer = False, telegram_bot.answer_for(stored)
-            if from_telegram and stored is not None:
+            if from_telegram and stored is not None and stored.get("kind") not in ("too_big", "media_failed"):
                 _note_heard()
         if from_telegram:
             self._reply(chat_id, answer, always=question, draft_id=telegram_bot.draft_of(stored),
@@ -777,6 +785,36 @@ class TelegramIngressDaemon:
                 return done, telegram_bot.SENTENCES["empty_ask"], False
             return {"kind": "ask", "id": kept.get("id")}, telegram_bot.SENTENCES["ask"], False
         return done, telegram_bot.SENTENCES["unknown_command"], False
+
+    def _store_media(self, media: Dict[str, Any], caption: Any, origin: Optional[str]) -> Dict[str, Any]:
+        """
+        A photo or a voice note, kept as it is (phase 3, item 4): fetched from
+        Telegram through the egress check, into the profile's assets folder,
+        and listed in the collection with its caption as the creator's words.
+        Never read. Handled again, it is not fetched twice. A file too big,
+        or one Telegram will not hand over, is said and nothing is kept; a
+        network fault raises, so the update is tried again.
+        """
+        held = collection.by_origin(origin) if origin else None
+        if held:
+            return {"kind": "collected", "archetype": held["kind"], "item": held, "desk_request": None}
+        try:
+            kept = phone_media.fetch(self.bot_token, media)
+        except phone_media.TooBig:
+            return {"kind": "too_big"}
+        except phone_media.Unfetched as failure:
+            if not failure.lasting:
+                raise
+            # Why, in Telegram's words of status only: never the token, never the file.
+            logger.warning("Telegram did not hand over a file the paired chat sent: %s", failure)
+            return {"kind": "media_failed"}
+        words = str(caption or "").replace(chr(0x2014), " -- ").replace(chr(0x2013), "-")
+        try:
+            item = collection.add(media["kind"], words, media=kept, origin_ref=origin, source="telegram")
+        except BaseException:
+            phone_media.discard(kept)
+            raise
+        return {"kind": "collected", "archetype": media["kind"], "item": item, "desk_request": None}
 
     def _store(self, text: str, links: bool = True, origin: Optional[str] = None, from_telegram: bool = True,
                forwarded: bool = False) -> Optional[Dict[str, Any]]:

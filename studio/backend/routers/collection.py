@@ -72,6 +72,12 @@ def post_collection_draft(item_id: int):
     return _answer(lambda: collection.use_as_draft(item_id))
 
 
+@router.post("/api/v1/collection/{item_id}/media", tags=["Collection"])
+def post_collection_media(item_id: int):
+    """Add to your media library: a copy of a photo from the phone, where a post's images are kept."""
+    return _answer(lambda: {"status": "success", "item": collection.to_library(item_id)})
+
+
 @router.post("/api/v1/collection/related", tags=["Collection"])
 def post_collection_related(payload: RelatedPayload):
     """The Composer's "From your collection": new items whose words the draft shares, matched locally."""

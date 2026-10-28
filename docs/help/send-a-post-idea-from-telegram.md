@@ -47,18 +47,20 @@ Send the bot a message. You can start it with a prefix, in any letter case. Noth
 | A link to someone else's post, or to a post the studio does not hold | A bookmark in your collection: the post's address rebuilt from its number (never the name and words the address you shared carries), with your own words. The studio never opens it |
 | A short `lnkd.in` link, which the LinkedIn app's **Copy link** gives, alone or with text around it | A post sent from your phone: Today shows "You sent a post from your phone", and your collection lists it. Nothing else in that message is kept, so send an idea in a message of its own. See below |
 | A link to a profile, or any other address | Kept in the words of your note |
-| A photo, a voice note, a file, a sticker or other message with no text | Nothing, yet. It is skipped, and so is any caption |
+| A photo, with or without a caption | Your collection, as a photo, kept as it is and never read: no text is taken from it. Its caption is your words, with **Write it up** and the angles when it has one. See [Photos and voice notes](#photos-and-voice-notes) |
+| A voice note | Your collection, as a voice note, kept as it is and never transcribed |
+| A file, a video, a sticker or other message with no text | Nothing. It is skipped, and so is any caption |
 
 Any `#hashtag` in the text is one of the item's tags, up to 30, and its topic is the first of your own topics from Setup ("What you write about") that its words name, or else its first hashtag. An em dash in your message is saved as ` -- `.
 
 > [!WARNING]
-> `Schedule <when>:` does not schedule anything. The time is read but not stored, and the post is saved as an ordinary draft. Voice notes are not kept, and not transcribed.
+> `Schedule <when>:` does not schedule anything. The time is read but not stored, and the post is saved as an ordinary draft. Voice notes are kept as they are, and never transcribed.
 
 The `Schedule` prefix is recognised only in a one-line message whose `<when>` uses just letters, digits, spaces, colons and hyphens, followed by `:` or `|`. Otherwise the whole message, prefix included, is saved as plain text. If your text contains another colon, everything before the last colon is taken as `<when>` and dropped.
 
 ## Your collection
 
-Everything you send your bot lands in **From your record**, on its **Your collection** level, the moment it arrives: the page shows it without a reload. Each item says what it is (Note, Idea, Forwarded, Bookmark, Your post or Link), when it came, its words, its tags and topic, and what it became.
+Everything you send your bot lands in **From your record**, on its **Your collection** level, the moment it arrives: the page shows it without a reload. Each item says what it is (Note, Idea, Forwarded, Bookmark, Your post, Link, Photo or Voice note), when it came, its words, its tags and topic, and what it became.
 
 - **New**, **Not now**, **Used** and **All** show the items of each kind of status, each with how many; **Every kind** and **Find a word** narrow the list.
 - **Use as a draft** makes a Composer draft of the item's words as they are, and opens it. The item is then used, and says "Became: A draft in the Composer", with **Open it**.
@@ -68,6 +70,13 @@ Everything you send your bot lands in **From your record**, on its **Your collec
 **Make a post**, **Angles** and **Combine** write from your items through your own AI provider. See [Make something out of it](#make-something-out-of-it).
 
 A link to one of your posts, and a short link, are also requests on Today, and the item says what became of the request. A link to someone else's post is a bookmark, which the studio never opens; your own browser does, if you click it. What you sent before this version is listed too, as used: each message the bot saved as a draft, and each link it asked Today to open.
+
+### Photos and voice notes
+
+A photo or a voice note you send is downloaded from Telegram as it is, into your studio's media folder, and listed in your collection: a photo is shown, and a voice note has a player. Neither is read: no text is taken from a photo, a voice note is never transcribed, and nothing of either is sent anywhere. A photo's caption is your words, and can be written up like any note. Telegram sends the largest size of a photo it holds; a file over 20 MB is not downloaded, and the bot says so.
+
+- **Add to your media library**, under a photo, copies it into the Composer's **Media** tab, with your other images, to use in a post. The item is then used, and says "In your media library". The copy stays there even if you remove the item.
+- **Undo** under the bot's answer, and **Remove** in the box, take the file with the item. Deleting everything the studio holds about you deletes every photo and voice note you sent, but not a copy you added to your media library, which is yours like anything you upload.
 
 Your unused items come back while you write. In the Composer, **From your collection**, folded above the editor beside **What worked, from your own posts**, lists up to three new items whose words your draft shares, matched on this computer as you type, and says how many on its folded line. **Add to the draft** puts an item's words at the end of your draft, and the item is then used, with your draft as what it became; on a post you have not saved yet, that happens when you save it, if its words are still there. **UNDO** beside it takes the words back out, and the item is new again. The **You asked** card in **From your record** may draw an unused idea too, and the weekly summary counts them.
 
@@ -123,7 +132,7 @@ Send a command as a message on its own, as Telegram's menu does. Letter case doe
 
 | You send | What happens |
 | --- | --- |
-| `/start` or `/help` | The bot says what it does, what **Undo** does, how to pair a chat and what it never sends |
+| `/start` or `/help` | The bot says what it does, what **Undo** does, how to pair a chat, and that it sends your words and figures only if you allow them, and nothing about anyone else |
 | `/idea your idea` | Your idea is kept in your collection as an idea, as `Idea: your idea` is. A link inside it stays part of the idea |
 | `/ask what to remember` | It is remembered as an ask in **From your record**, with the source Telegram, and listed under **What the studio knows** there, where you can change or remove it. It takes effect on tomorrow's cards. It is not kept in your collection |
 | `/status` | Whether your studio is running, and whether the bridge in your browser is connected. No figures |
@@ -227,7 +236,10 @@ Each message gets one short sentence back, the same words every time. None carri
 | A short `lnkd.in` link | Saved to your collection. Today will ask you to open this link at your computer. |
 | A link to a post that is not yours | Saved to your collection as a bookmark. Your studio never opens other people's posts. |
 | A `Draft:` message | Saved as a draft in your studio. (With **Undo** under it.) |
-| A photo, a sticker or anything with no text | That message had no text, so nothing was saved. |
+| A photo or a voice note | Saved to your collection. (With **Undo** under it, and **Write it up** and the angles when a photo has a caption.) |
+| A photo or a voice note over 20 MB | That file is larger than your studio keeps from the phone (20 MB), so nothing was saved. |
+| A photo or a voice note Telegram would not hand over | Telegram did not hand that file over, so nothing was saved. Send it again. |
+| A sticker, a file, a video or anything else with no text | That message had no text, so nothing was saved. |
 | A message your studio could not save, after three tries | Your studio could not save that message. Open the studio to see why. |
 | You pressed **This is me**, or saved a chat id | Paired. Messages from this chat now arrive in your studio. Send /help to see what I do. |
 | A message before any chat is paired | Not paired yet. In your studio, open Settings, then Local security, and press This is me beside chat 487215963. (Your own chat's number.) |

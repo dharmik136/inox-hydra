@@ -25,6 +25,12 @@ What it does, as the Bot API does:
                change a message the bot sent, as the phone then shows it;
                an edit that changes nothing is refused ("message is not
                modified"), as Telegram refuses it
+  getFile      a file a test added with `add_file`: its size and the path
+               it is served at; an unknown file_id is refused as Telegram
+               refuses it
+  /file/bot<token>/<path>
+               the file's bytes, as api.telegram.org serves a file a bot
+               may download; recorded as a call to "file"
 
 A press of an inline button is a callback_query update, pushed with
 `press` (any data, from any chat) or `press_button` (a button the phone
@@ -71,6 +77,8 @@ class FakeTelegram:
         self.answered: List[Dict[str, Any]] = []
         self.edits: List[Dict[str, Any]] = []
         self._plans: Dict[str, List[tuple]] = {}
+        # Files the phone sent, by file_id: their bytes and the path getFile names.
+        self.files: Dict[str, Dict[str, Any]] = {}
         self._cond = threading.Condition()
         self._server: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
@@ -122,6 +130,13 @@ class FakeTelegram:
             self._updates.append({"update_id": update_id, "message": body})
             self._cond.notify_all()
         return update_id
+
+    def add_file(self, file_id: str, data: bytes, file_path: Optional[str] = None,
+                 file_size: Optional[int] = None) -> None:
+        """A file the phone sent, which getFile then names and the file address serves."""
+        with self._cond:
+            self.files[file_id] = {"data": bytes(data), "file_path": file_path or f"files/{file_id}.bin",
+                                   "file_size": len(data) if file_size is None else file_size}
 
     def press(self, chat_id: Any, data: str, message_id: Optional[int] = None, from_id: Any = None) -> int:
         """
@@ -225,6 +240,8 @@ class FakeTelegram:
 
     def _serve(self, handler) -> None:
         parts = urlsplit(handler.path).path.strip("/").split("/")
+        if len(parts) >= 3 and parts[0] == "file" and parts[1].startswith("bot"):
+            return self._serve_file(handler, parts[1][3:], "/".join(parts[2:]))
         if len(parts) != 2 or not parts[0].startswith("bot"):
             return self._answer(handler, 404, {"ok": False, "error_code": 404, "description": "Not Found"})
         token, method = parts[0][3:], parts[1]
@@ -260,7 +277,40 @@ class FakeTelegram:
             return self._answer_callback_query(handler, params)
         if method in ("editMessageText", "editMessageReplyMarkup"):
             return self._edit(handler, method, params)
+        if method == "getFile":
+            return self._get_file(handler, params)
         return self._answer(handler, 404, {"ok": False, "error_code": 404, "description": "Not Found"})
+
+    def _get_file(self, handler, params: Dict[str, Any]) -> None:
+        file_id = str(params.get("file_id") or "")
+        with self._cond:
+            held = self.files.get(file_id)
+        if held is None:
+            return self._answer(handler, 400, {"ok": False, "error_code": 400,
+                                               "description": "Bad Request: invalid file_id"})
+        return self._answer(handler, 200, {"ok": True, "result": {
+            "file_id": file_id, "file_unique_id": f"u{file_id}", "file_size": held["file_size"],
+            "file_path": held["file_path"]}})
+
+    def _serve_file(self, handler, token: str, file_path: str) -> None:
+        with self._cond:
+            self.calls.append({"method": "file", "params": {"file_path": file_path}, "at": time.monotonic()})
+            planned = self._plans.get("file") or []
+            failure = planned.pop(0) if planned else None
+            held = next((f for f in self.files.values() if f["file_path"] == file_path), None)
+            self._cond.notify_all()
+        if token != self.token:
+            return self._answer(handler, 401, {"ok": False, "error_code": 401, "description": "Unauthorized"})
+        if failure and failure[0] == "status":
+            return self._answer(handler, failure[1], {"ok": False, "error_code": failure[1],
+                                                      "description": failure[2]})
+        if held is None:
+            return self._answer(handler, 404, {"ok": False, "error_code": 404, "description": "Not Found"})
+        handler.send_response(200)
+        handler.send_header("Content-Type", "application/octet-stream")
+        handler.send_header("Content-Length", str(len(held["data"])))
+        handler.end_headers()
+        handler.wfile.write(held["data"])
 
     def _get_updates(self, handler, params: Dict[str, Any]) -> None:
         offset = int(params.get("offset") or 0)

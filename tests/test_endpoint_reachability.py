@@ -451,8 +451,12 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # /api/v1/collection/related and presses /api/v1/collection/{item_id}/used.
 # Total 235 -> 239, reached 187 -> 191, unreachable stays 48.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 239
-REACHED_BY_INTERFACE = 191
+# Item 4: Add to your media library on a photo from the phone
+# (/api/v1/collection/{item_id}/media), which the collection level presses.
+# Total 239 -> 240, reached 191 -> 192, unreachable stays 48.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 240
+REACHED_BY_INTERFACE = 192
 UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

@@ -3761,8 +3761,10 @@ export interface CollectionItem {
   topic: string | null;
   status: CollectionStatus;
   source: "telegram" | "studio";
-  /** A draft, and where it is now; or the request on Today, and its state; null while it is material. */
-  became: { kind: "draft" | "request"; said: string; post_id?: string } | null;
+  /** A draft, and where it is now; the request on Today, and its state; a photo in the media library; or null. */
+  became: { kind: "draft" | "request" | "media"; said: string; post_id?: string } | null;
+  /** A photo or a voice note as it was sent, kept in the profile's assets folder; never read. */
+  media: CollectionMedia | null;
   /** Opening lines Angles found for it, kept for the box and the bot. */
   angles: string[];
 }
@@ -3793,6 +3795,24 @@ export async function draftFromCollection(id: number): Promise<{ id: string; con
 
 export async function removeCollectionItem(id: number): Promise<void> {
   await call(`/api/v1/collection/${id}`, { method: "DELETE" });
+}
+
+/** A photo or a voice note sent to the bot, as the studio keeps it. */
+export interface CollectionMedia {
+  /** Served by the studio, under /assets/phone/. */
+  path: string;
+  mime: string;
+  bytes: number;
+  width?: number;
+  height?: number;
+  /** A voice note's length, in seconds. */
+  duration?: number;
+}
+
+/** A photo from the phone, copied into the media library, where a post's images are kept. */
+export async function photoToMediaLibrary(id: number): Promise<CollectionItem> {
+  const data = await call<{ item: CollectionItem }>(`/api/v1/collection/${id}/media`, { method: "POST" });
+  return data.item;
 }
 
 /** What writing from the collection made, or why nothing was written. */

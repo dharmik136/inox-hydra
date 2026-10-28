@@ -18,7 +18,7 @@ Before you start: the studio is running on this computer, and you have your bot'
 
 ## 3. The bot answers (two minutes)
 
-1. Send `/help`. The bot says what it does, how to pair and what it never sends.
+1. Send `/help`. The bot says what it does, how to pair, and what it sends only if you allow it.
 2. Send `Idea: testing the bot`. The bot answers "Saved to your collection." In the studio, open **From your record**, then **Your collection**: it is there, without a reload. (A message starting `Draft:` still goes straight to a draft: "Saved as a draft in your studio.")
 3. Send `/status`. The bot answers "Your studio is running." and whether the bridge in your browser is connected.
 4. In the LinkedIn app, open one of your own posts, use **Copy link**, and send the link to the bot. The bot answers "Today will ask you to open this link at your computer.", and **Today** shows "You sent a post from your phone". Press **Not now** there if you do not want to open it.
@@ -49,6 +49,7 @@ These need a post to come due, or an hour to come round, so they take as long as
 10. Things to remember: send `/remember offer: a workshop for small studios`. The bot answers "Kept in your things to remember.", with **Undo** under it, and **Brand**, then **Writing**, lists it under **Things to remember** without a reload. Press **Write it up** under an idea again: the new draft says, above it in the Composer under **What this draft was written from**, that "a workshop for small studios" went with it. Send `/forget workshop`: "Forgotten: one thing you asked me to remember.", and the list in Brand empties.
 11. Send `/recall pricing`. The bot says how many items in your collection hold the word; their first lines come too only while **The bot may send me what it writes from my collection** is on.
 12. In the Composer, start a new post that mentions pricing and open **From your collection** above the editor: your unused idea about pricing is there. Press **Add to the draft**, save, and **Your collection** lists it as used, with the draft as what it became.
+13. Photos and voice notes: send a photo with a caption. The bot answers "Saved to your collection.", and **Your collection** shows the photo with your caption under it and "KEPT AS IT IS: NEVER READ". Press **Add to your media library**: the item says "In your media library", and the Composer's **Media** tab lists the photo. Send a voice note: it is listed with a player, and plays at this computer; it is never transcribed.
 
 ## When a step does not match
 

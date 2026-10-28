@@ -41,7 +41,7 @@ The collection needs a table. Each item has a kind, its words, a status the crea
 
 - Migration 38, with item 1: `collection_items`. What was already sent from the phone (each `mobile-ingress` draft, each request from Telegram) is recorded in it once, as used, so the box shows everything sent and the counts carry on. Re-runnable: `IF NOT EXISTS`, and each recorded row keyed so it is written once.
 - Migration 39, with item 3: `remembered`, the things to remember, and `posts.made_with`, what a draft was written from and with which things to remember.
-- Item 4, if built, adds the media columns in a migration of its own.
+- Migration 40, with item 4: `collection_items.media` (where a photo's or a voice note's file is kept, its type and size, and a photo's width and height or a voice note's length; never what is in it) and `collection_items.media_asset_id` (the media library's copy of a photo, once the creator puts it there).
 
 ## The items, as they will be built
 
@@ -87,6 +87,8 @@ Resurfacing: the Composer shows "From your collection", the unused items whose w
 ### 4. Photos and voice notes, kept as they are (if budget allows)
 
 Downloaded with getFile under the `ingress` category, counted under an address without the token; kept in the profile's assets folder; shown or played in the box; a photo can be a post's image. Never read: no OCR and no transcription.
+
+As built: the largest size of a photo, or the voice note, is fetched (getFile, then the file, each through `egress.require` under `ingress`, counted as `.../bot<token>/getFile` and `.../file/bot<token>/<file>`), refused before it is fetched over 20 MB, and kept under `assets/phone` by a random name, never Telegram's own path. A caption is the creator's words, so a photo with one can be written up. A post's image, in this product, is an image in the media library: the Composer attaches no file to a post, and the creator adds it on LinkedIn, so **Add to your media library** copies a photo there (`POST /api/v1/collection/{item_id}/media`), where it stays even if the item is removed. Undo, Remove and Delete everything take the files with the items.
 
 ## Preferences
 

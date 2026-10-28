@@ -131,6 +131,9 @@ SENTENCES = {
                    "beside chat {chat_id}."),
     "other_chat": "This bot takes messages only from the chat its owner paired.",
     "no_text": "That message had no text, so nothing was saved.",
+    # Phase 3, item 4: a photo or a voice note, kept as it is.
+    "too_big": "That file is larger than your studio keeps from the phone (20 MB), so nothing was saved.",
+    "media_failed": "Telegram did not hand that file over, so nothing was saved. Send it again.",
     "not_saved": "Your studio could not save that message. Open the studio to see why.",
     "ask": "Remembered. Your studio uses it when it picks what to write about, from tomorrow's cards.",
     "empty_idea": "Send /idea with your idea after it, for example /idea pricing for a small studio.",
@@ -222,6 +225,7 @@ HELP = "\n".join((
     "- /idea and your idea: kept in your collection as an idea",
     "- a link to one of your LinkedIn posts: Today asks you to open its analytics",
     "- a link to someone else's post: kept as a bookmark, never opened",
+    "- a photo or a voice note: kept as it is in your collection, never read or transcribed",
     "- Draft: and your post: saved straight as a draft",
     "- /ask and what your studio should remember when it picks what to write about",
     "- /status: whether your studio and its bridge are running",
@@ -236,7 +240,8 @@ HELP = "\n".join((
     "",
     "To pair a chat: in your studio, open Settings, then Local security, and press This is me beside it.",
     "",
-    "I never send your posts, your drafts, your words, or anything about other people.",
+    "I send your own words back only if you allow it in your studio, your figures only if you allow them, and "
+    "never anything about other people.",
 ))
 
 # Commands answered whatever the confirmations switch says: they are questions.
@@ -289,6 +294,16 @@ EGRESS_OFF = ("Requests to Telegram are turned off on this computer (INOX_ALLOW_
 def method_url(token: str, method: str) -> str:
     """The address of one Bot API method for this bot. It carries the token: never logged or shown."""
     return f"{API_BASE}/bot{token}/{method}"
+
+
+def file_url(token: str, file_path: str) -> str:
+    """The address of a file a bot may download, as getFile names it. It carries the token: never logged or shown."""
+    return f"{API_BASE}/file/bot{token}/{file_path}"
+
+
+def ledger_file_url() -> str:
+    """A file's download as the egress ledger records it: without the token, and without Telegram's own path."""
+    return f"{API_BASE}/file/bot<token>/<file>"
 
 
 def ledger_url(method: str) -> str:
@@ -873,6 +888,8 @@ def answer_for(record: Optional[Dict[str, Any]]) -> Optional[str]:
     """The sentence that confirms what became of an accepted message, from what was stored."""
     if not record:
         return None
+    if record.get("kind") in ("too_big", "media_failed"):
+        return SENTENCES[record["kind"]]
     if _item(record):
         kind = _item(record).get("kind")
         if kind == "bookmark":
