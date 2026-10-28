@@ -4,9 +4,10 @@ exact and named as the export's.
 ==========================================================================
 
 Built against LinkedIn's documented export (Help a701208, a704175) and this
-track's best understanding of its sheets, in tests/linkedin_export_fixtures.py,
-because no real file has been supplied. So the rules held here are the ones
-that do not depend on the guess being right:
+track's best understanding of its sheets, in tests/linkedin_export_fixtures.py.
+A real aggregate export met the importer on 2026-10-28; its sheet names and
+its demographics header are in the fixtures exactly, its values are not. So
+the rules held here are the ones that do not depend on the guess being right:
 
 - nothing is written until the creator has previewed it;
 - a sheet or a column the studio does not know is reported as not
@@ -111,8 +112,8 @@ def test_the_preview_names_every_sheet_and_writes_nothing(studio):
     assert "Something, else" in unknown["note"], "the preview does not show what it could not read"
     assert _sheet(preview, "DEMOGRAPHICS")["importable"] is False
     assert preview["range"] == {"start": "2026-09-26", "end": "2026-10-25", "from": "the file's name"}
-    assert preview["verified_against_real_file"] is False
-    assert "not yet" in preview["verification"]
+    assert preview["verified_against_real_file"] is True
+    assert "2026-10-28" in preview["verification"] and "post's own export has not been checked" in preview["verification"]
     assert _rows(studio["db"], "SELECT * FROM analytics_daily") == []
     assert _rows(studio["db"], "SELECT * FROM post_metric_observations") == []
 
@@ -388,9 +389,9 @@ def _read(path):
         return handle.read()
 
 
-def test_the_help_says_it_has_not_been_checked_against_a_real_file():
+def test_the_help_says_when_it_was_checked_and_that_the_unknown_is_left_out():
     article = _read("docs/help/import-linkedins-analytics-export.md")
-    assert "Verified against a real file: not yet." in article
+    assert "Verified against a real file: yes, on 2026-10-28" in article
     assert "not recognised" in article
 
 
@@ -564,6 +565,7 @@ def test_a_copy_older_than_a_day_is_removed_when_the_studio_starts(studio):
     assert not os.path.exists(old), "a copy older than a day outlived the studio's start"
 
 
+
 # ---------------------------------------------------------------------------
 # The real aggregate export (2.10.1): MOST RECENT POSTS and the demographics
 # ---------------------------------------------------------------------------
@@ -714,3 +716,19 @@ def test_deleting_everything_forgets_the_exports_demographics(studio):
     import onboarding
     onboarding.forget_identity()
     assert _demographics(studio) == []
+
+
+def test_the_preview_and_the_help_say_a_real_export_was_checked():
+    import analytics_export as module
+    assert module.VERIFIED_AGAINST_REAL_FILE is True
+    assert "2026-10-28" in module.VERIFICATION and "AUDIENCE DEMOGRAPHICS" in module.VERIFICATION
+    article = " ".join(_read("docs/help/import-linkedins-analytics-export.md").split())
+    assert "Verified against a real file: yes, on 2026-10-28" in article
+    for sheet in ("DISCOVERY", "ENGAGEMENT", "MOST RECENT POSTS", "TOP POSTS", "FOLLOWERS",
+                  "AUDIENCE DEMOGRAPHICS", "CONTENT DEMOGRAPHICS"):
+        assert sheet in article, f"the help does not name {sheet}"
+
+
+def test_the_policy_names_the_demographics_the_export_keeps():
+    policy = " ".join(_read("docs/PRIVACY_POLICY.md").split())
+    assert "the demographics of your audience and of who engaged with your posts" in policy

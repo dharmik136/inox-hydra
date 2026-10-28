@@ -48,11 +48,18 @@ has always put LinkedIn's engagements card and where the Analytics screen
 reads Engagements: one definition for one figure. One row is one source: a
 day the analytics page already read is kept as it was read, and said so.
 
-Verified against a real file: not yet. LinkedIn documents neither the sheets
-nor the columns, and no real export has been supplied, so every sheet and
-column name here is this module's best understanding, treated as
-unverified. A sheet or column it does not recognise is reported in the
-preview as not recognised and left out, never guessed at.
+Verified against a real file: yes, on 2026-10-28. LinkedIn's aggregate
+export (AggregateAnalytics_<name>_<start>_<end>.xlsx) met the importer on
+the owner's install, which imported 399 days of exact daily figures from
+it; its preview named the sheets DISCOVERY, ENGAGEMENT, MOST RECENT POSTS,
+TOP POSTS, FOLLOWERS, AUDIENCE DEMOGRAPHICS and CONTENT DEMOGRAPHICS, the
+last two headed Top Demographics, Value, Percentage. What that preview did
+not show is still this module's understanding: the columns of MOST RECENT
+POSTS (at least two of a post's figure names, as the preview's refusal
+shows), and whether a share is written 12%, 0.12 shown as a percentage, or
+12. A post's own export has not been checked. A sheet or column it does not
+recognise is reported in the preview as not recognised and left out, never
+guessed at.
 
 Strict Invariants:
 - Zero em-dashes in any code, docstring or comment.
@@ -105,13 +112,19 @@ AUDIENCE_SOURCE = "linkedin_export_audience"
 CONTENT_SOURCE = "linkedin_export_content"
 DEMOGRAPHIC_SOURCES = {"audience_demographics": AUDIENCE_SOURCE, "content_demographics": CONTENT_SOURCE}
 
-VERIFIED_AGAINST_REAL_FILE = False
-VERIFICATION = ("Checked against a real LinkedIn export: not yet. The sheet and column names the studio looks for "
-                "are its best understanding of LinkedIn's export; anything it does not recognise is listed as not "
-                "recognised and left out, never guessed at.")
+VERIFIED_AGAINST_REAL_FILE = True
+VERIFIED_ON = "2026-10-28"
+REAL_SHEETS = ("DISCOVERY", "ENGAGEMENT", "MOST RECENT POSTS", "TOP POSTS", "FOLLOWERS", "AUDIENCE DEMOGRAPHICS",
+               "CONTENT DEMOGRAPHICS")
+VERIFICATION = (f"Checked against a real LinkedIn export on {VERIFIED_ON}: LinkedIn's aggregate export, whose sheets "
+                f"are {', '.join(REAL_SHEETS[:-1])} and {REAL_SHEETS[-1]}. A post's own export has not been checked "
+                "yet. Anything the studio does not recognise is listed as not recognised and left out, never "
+                "guessed at.")
 
-# Offered from Downloads by name (unverified: LinkedIn's file names are not
-# documented either; the dashboard's is reported as Content_<start>_<end>_<name>).
+# Offered from Downloads by name. LinkedIn documents none of its file names:
+# the aggregate export checked on 2026-10-28 is named
+# AggregateAnalytics_<name>_<start>_<end>.xlsx, and an older one is reported
+# as Content_<start>_<end>_<name>.xlsx.
 EXPORT_SUFFIX = ".xlsx"
 NAME_HINTS = ("content_", "linkedin", "analytics", "postanalytics", "post_analytics")
 NAME_RANGE = re.compile(r"(\d{4}-\d{2}-\d{2})[_ ](\d{4}-\d{2}-\d{2})")
@@ -147,7 +160,8 @@ BUSY_MESSAGE = "The studio is already importing an analytics export. Wait for it
 NOT_YOURS = "not one of your recorded posts; import your posts first"
 
 # ---------------------------------------------------------------------------
-# The layout, every name unverified
+# The layout: the aggregate export's sheet names and its demographics header
+# as checked on 2026-10-28, the rest this module's understanding
 # ---------------------------------------------------------------------------
 
 SHEET_NAMES = {

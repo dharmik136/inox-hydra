@@ -229,8 +229,13 @@ on, in which case the AI row below says exactly what goes.
 If you import LinkedIn's analytics export, the .xlsx file LinkedIn writes when
 you press Export on your analytics page, Inox Hydra reads it on your computer
 and keeps the figures it recognises in that database, each marked as read from
-LinkedIn's export. A copy you chose by hand is kept only until it is imported
-or set aside, or for a day, and nothing in the file is sent anywhere.
+LinkedIn's export: your figures by day, your recorded posts' figures, and the
+demographics of your audience and of who engaged with your posts. Those
+demographics are shares, such as the percentage of your audience with one job
+title or in one location, kept with the last day the export covers; they name
+no one, and nothing else in those sheets is kept. A copy you chose by hand is
+kept only until it is imported or set aside, or for a day, and nothing in the
+file is sent anywhere.
 
 If you keep more than one creator profile, each profile is a separate folder
 with its own database, under `profiles/` inside that same folder, and nothing

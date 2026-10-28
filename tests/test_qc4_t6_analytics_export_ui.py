@@ -126,7 +126,7 @@ def _axe(page, selector):
 
 def test_setup_previews_the_export_sheet_by_sheet_and_imports_what_is_ticked(page, studio):
     block = _setup(page, studio)
-    expect(block.get_by_text("CHECKED AGAINST A REAL LINKEDIN EXPORT: NOT YET", exact=False)).to_be_visible()
+    expect(block.get_by_text("CHECKED AGAINST A REAL LINKEDIN EXPORT ON 2026-10-28", exact=False)).to_be_visible()
     data = fx.build(fx.dashboard_sheets() + [("Sheet9", [["Something", "else"], [1, 2]])])
     page.set_input_files('input[aria-label="Choose your LinkedIn analytics export"]',
                          files=[{"name": fx.DASHBOARD_NAME, "mimeType": XLSX, "buffer": data}])
