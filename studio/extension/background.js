@@ -1597,9 +1597,19 @@ function contentKey(kind) {
   return (item, account) => hashOf([kind, account || "", stableJson(item)]);
 }
 
+// A reader's run, reported by every tab reading the same kind of page: the
+// studio keeps one row per browser, reader and minute, so the same run
+// shape from another tab in the same minute is not sent at all.
+function runKey(body, account) {
+  const drift = Array.isArray(body.drift) && body.drift.length ? "drift:" + body.drift.join(",") : "clean";
+  return hashOf(["run", account || "", String(body.extractor || ""), String(body.page_kind || ""), drift,
+    new Date().toISOString().slice(0, 16)]);
+}
+
 // The paths whose captures can be the same capture from another tab, and
 // where a body lists its items.
 const COALESCED_PATHS = {
+  "/api/v1/bridge/capture": { keyOf: runKey },
   "/api/v1/crm/interactions/ingest": { list: "items", keyOf: engagementKey },
   "/api/v1/self/posts/ingest": { list: "posts", keyOf: contentKey("posts") },
   "/api/v1/self/outbound/ingest": { list: "items", keyOf: contentKey("outbound") },

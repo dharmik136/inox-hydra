@@ -251,3 +251,20 @@ def test_a_tab_the_readers_could_not_reach_is_reported_as_needing_a_reload():
       process.stdout.write(JSON.stringify({ beat: w.sent.filter((s) => s.path === "/api/v1/bridge/heartbeat")[0].body }));
     """)
     assert out["beat"]["tabs_needing_reload"] == 1
+
+
+def test_ten_tabs_reporting_one_readers_run_in_a_minute_send_one_report():
+    out = run("""
+      const w = boot(WORKER, { storage: { signedInVanity: "test-creator" } });
+      const reports = [];
+      for (let tab = 1; tab <= 10; tab += 1) {
+        reports.push(w.relay("/api/v1/bridge/capture", { extractor: "engagers", page_kind: "feed", items_seen: 30 + tab,
+          items_kept: 30, drift: null, duration_ms: tab }, { id: tab }));
+      }
+      await Promise.all(reports);
+      const drifted = await w.relay("/api/v1/bridge/capture", { extractor: "engagers", page_kind: "feed", items_seen: 3,
+        items_kept: 0, drift: ["commenter_name"] }, { id: 11 });
+      await w.tick(50);
+      process.stdout.write(JSON.stringify({ sent: w.sent.filter((s) => s.path === "/api/v1/bridge/capture").length }));
+    """)
+    assert out["sent"] == 2, f"{out['sent']} run reports for one reader in one minute, and a drifted one"
