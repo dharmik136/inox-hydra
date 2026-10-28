@@ -27,6 +27,8 @@ Where each sheet goes, every figure exact, source 'linkedin_export':
   FOLLOWERS     new followers by day, and the total   -> analytics_daily
   TOP POSTS     impressions and engagements of each   -> post_metric_observations,
                 of your posts published in the range     dated at the range's end
+  MOST RECENT   each listed post's figures, read the  -> post_metric_observations,
+  POSTS         way TOP POSTS is                         dated at the range's end
   a post's own  its figures, each under its name      -> post_metric_observations,
   export                                                 dated when it was exported
   DISCOVERY     totals over the range                 -> the import's own record
@@ -133,6 +135,7 @@ SHEET_NAMES = {
     "discovery": "discovery",
     "engagement": "engagement", "engagements": "engagement",
     "top posts": "top_posts",
+    "most recent posts": "recent_posts", "recent posts": "recent_posts",
     "followers": "followers", "new followers": "followers",
     "demographics": "demographics", "top demographics": "demographics",
     "performance": "post", "post performance": "post", "post analytics": "post",
@@ -153,6 +156,11 @@ VOCABULARY: Dict[str, Dict[str, Tuple[str, ...]]] = {
              "reactions": ("reactions",), "comments": ("comments",), "reposts": ("reposts", "shares"),
              "saves": ("saves",), "sends": ("sends", "sends on linkedin"), "engagements": ("engagements",)},
 }
+# MOST RECENT POSTS lists posts as rows. The real file's columns were not
+# shown, only that its header carries at least two of a post's figure names
+# (its preview refused it as a post's own export with three rows), so its
+# columns are read by a post's names, each figure under its own.
+VOCABULARY["recent_posts"] = VOCABULARY["post"]
 
 # Labels a LinkedIn export is reported to carry that the studio keeps no
 # figure for yet: listed as left out with that reason, not as unrecognised.
@@ -160,11 +168,14 @@ NO_HOME_YET = ("profile viewers from this post", "followers gained from this pos
                "link visits", "link clicks", "premium button clicks", "premium custom button clicks")
 
 POST_FIGURES = ("impressions", "members_reached", "reactions", "comments", "reposts", "saves", "sends", "engagements")
+# The figures each list of posts is read for.
+LISTED_FIGURES = {"top_posts": ("engagements", "impressions"), "recent_posts": POST_FIGURES}
 
 LABELS = {
     "engagement": "Impressions and engagements by day",
     "followers": "New followers by day, and your follower total",
     "top_posts": "Your top posts of the range",
+    "recent_posts": "Your most recent posts",
     "discovery": "Totals over the range",
     "demographics": "Audience demographics",
     "post": "One post's own figures",
@@ -175,12 +186,16 @@ WRITES = {
     "top_posts": ("A reading of each of your recorded posts that was published inside the export's range: its "
                   "impressions and engagements up to the range's last day. A post published before the range "
                   "is left out, because the figure covers only part of its life."),
+    "recent_posts": ("A reading of each of your recorded posts in the list that was published inside the export's "
+                     "range, each figure under its own name, dated at the range's last day, as for your top posts. "
+                     "A post the studio does not hold is left out, never created."),
     "discovery": "Kept with the record of this import, as read. A total over the range is not a day's figure.",
     "post": ("A reading of the post the file names, dated when it was exported, with each figure under its own "
              "name."),
 }
 DEMOGRAPHICS_NOTE = "Recognised, not imported: the studio keeps no audience demographics from exports."
-DEFAULTS = {"engagement": True, "followers": True, "top_posts": True, "discovery": True, "post": True}
+DEFAULTS = {"engagement": True, "followers": True, "top_posts": True, "recent_posts": True, "discovery": True,
+            "post": True}
 
 
 class ExportError(ValueError):
@@ -774,21 +789,28 @@ def _followers_total(rows: List[List[Any]], within: Optional[Tuple[date, date]],
     return None
 
 
-def _top_posts(rows: List[List[Any]]) -> Dict[str, Any]:
+def _listed_posts(rows: List[List[Any]], kind: str) -> Dict[str, Any]:
     """
-    Each post's figures, from one or more tables side by side under one
-    header row: each table is read on its own, by its own post column, and
-    the figures are joined by post. A row is never read across two tables.
+    Each listed post's figures (TOP POSTS, MOST RECENT POSTS), from one or
+    more tables side by side under one header row: each table is read on its
+    own, by its own post column, and the figures are joined by post. A row
+    is never read across two tables.
     """
-    vocabulary = VOCABULARY["top_posts"]
+    vocabulary = VOCABULARY[kind]
+    wanted = LISTED_FIGURES[kind]
+    unlinked = False
     for at, row in enumerate(rows[:HEADER_SCAN]):
         tables = []
         unknown: List[str] = []
+        no_home: List[str] = []
         for start, end in _blocks(row):
             found, extra = _header(row, vocabulary, start, end)
-            if "url" in found and ({"engagements", "impressions"} & set(found)):
+            if "url" in found and (set(wanted) & set(found)):
                 tables.append(found)
-                unknown += extra
+                unknown += [c for c in extra if _norm(c) not in NO_HOME_YET]
+                no_home += [c for c in extra if _norm(c) in NO_HOME_YET]
+            elif set(wanted) & set(found):
+                unlinked = True
         if not tables:
             continue
         posts: Dict[str, Dict[str, Any]] = {}
@@ -800,8 +822,7 @@ def _top_posts(rows: List[List[Any]]) -> Dict[str, Any]:
                 if url is None or str(url).strip() == "":
                     continue
                 urn = _urn(str(url))
-                figures = {f: _count(r[i]) for f, i in found.items()
-                           if f in ("engagements", "impressions") and i < len(r)}
+                figures = {f: _count(r[i]) for f, i in found.items() if f in wanted and i < len(r)}
                 figures = {f: v for f, v in figures.items() if v is not None}
                 if not urn or not figures:
                     skipped += 1
@@ -811,10 +832,11 @@ def _top_posts(rows: List[List[Any]]) -> Dict[str, Any]:
                 if "published" in found and found["published"] < len(r):
                     entry["published"] = entry["published"] or r[found["published"]]
         recognised = sorted({f for found in tables for f in found})
-        return {"posts": posts, "recognised": recognised, "unknown": unknown, "problem": None,
+        return {"posts": posts, "recognised": recognised, "unknown": unknown, "no_home": no_home, "problem": None,
                 "rows": len(posts), "skipped": skipped, "tables": len(tables)}
-    return {"posts": {}, "recognised": [], "unknown": [], "rows": 0, "skipped": 0, "tables": 0,
-            "problem": "none of its columns are the ones the studio knows"}
+    return {"posts": {}, "recognised": [], "unknown": [], "no_home": [], "rows": 0, "skipped": 0, "tables": 0,
+            "problem": ("it gives figures without a link to each post, so which of your posts a row is cannot be "
+                        "told" if unlinked else "none of its columns are the ones the studio knows")}
 
 
 def _urn(url: str) -> Optional[str]:
@@ -935,10 +957,11 @@ def _understand(name: str, workbook: Dict[str, Any], modified: Optional[datetime
             problem = read["problem"]
             if not problem:
                 daily_dates.extend(read["days"])
-        elif kind == "top_posts":
-            read = _top_posts(rows)
+        elif kind in LISTED_FIGURES:
+            read = _listed_posts(rows, kind)
             read["epoch"] = epoch
-            entry.update(recognised=read["recognised"], not_recognised=read["unknown"], rows=read["rows"])
+            entry.update(recognised=read["recognised"], not_recognised=read["unknown"], left_out=read["no_home"],
+                         rows=read["rows"])
             entry["read"] = read
             problem = read["problem"]
         elif kind == "discovery":
@@ -1115,14 +1138,26 @@ def _held(conn, urn: str) -> bool:
     return bool(conn.execute("SELECT 1 FROM own_posts WHERE activity_urn = ?", (urn,)).fetchone())
 
 
-def _write_top_posts(conn, read: Dict[str, Any], span: Dict[str, Any], columns: set) -> Tuple[Dict[str, Any], List[str]]:
-    if not span.get("start") or not span.get("end"):
+def _range_end(span: Dict[str, Any]) -> Optional[datetime]:
+    """
+    When a reading over the range is dated: the end of the range's last day,
+    or now when that is still to come, because a reading dated in the future
+    would stand as the newest until then. One instant for the whole import,
+    so a post in two lists gets one reading.
+    """
+    if not span.get("end"):
+        return None
+    end = date.fromisoformat(span["end"])
+    return min(datetime(end.year, end.month, end.day, 23, 59, 59, tzinfo=timezone.utc), datetime.now(timezone.utc))
+
+
+def _write_listed_posts(conn, read: Dict[str, Any], span: Dict[str, Any], at: Optional[datetime],
+                        columns: set) -> Tuple[Dict[str, Any], List[str]]:
+    """TOP POSTS and MOST RECENT POSTS: a reading of each held post published inside the range. No post is made."""
+    if not span.get("start") or not span.get("end") or at is None:
         return {"left_out": "the range the export covers could not be read, so whether a figure covers a post's "
                             "whole life cannot be told"}, []
     start, end = date.fromisoformat(span["start"]), date.fromisoformat(span["end"])
-    # The end of the range's last day, or now when that is still to come: a
-    # reading dated in the future would stand as the post's newest until then.
-    at = min(datetime(end.year, end.month, end.day, 23, 59, 59, tzinfo=timezone.utc), datetime.now(timezone.utc))
     added = not_yours = before = undated = 0
     urns = []
     for urn, entry in read["posts"].items():
@@ -1189,6 +1224,7 @@ def import_export(source: str, include: Optional[List[str]] = None) -> Dict[str,
         conn = get_db()
         try:
             columns = _columns(conn, "post_metric_observations")
+            at = _range_end(understood["range"])
             summary: Dict[str, Any] = {}
             refreshed: List[str] = []
             days: Dict[date, Dict[str, int]] = {}
@@ -1212,8 +1248,9 @@ def import_export(source: str, include: Optional[List[str]] = None) -> Dict[str,
                         elif total:
                             tally["total_followers"] = {"left_out": total["problem"]}
                         summary[entry["name"]] = tally
-                    elif kind == "top_posts":
-                        summary[entry["name"]], urns = _write_top_posts(conn, read, understood["range"], columns)
+                    elif kind in LISTED_FIGURES:
+                        summary[entry["name"]], urns = _write_listed_posts(conn, read, understood["range"], at,
+                                                                           columns)
                         refreshed += urns
                     elif kind == "post":
                         summary[entry["name"]], urns = _write_post(conn, read, modified, columns)

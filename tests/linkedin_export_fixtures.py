@@ -3,11 +3,12 @@ LinkedIn analytics exports, built the way this track understands them.
 =====================================================================
 
 Fixtures for tests/test_qc4_t6_analytics_export.py and its browser test.
-No real export has been supplied (PRD 5.3, an owner action), so every sheet
-name, column name and layout here is this track's best understanding of
-LinkedIn's export, the same understanding studio/backend/analytics_export.py
-reads. When a real file arrives, it replaces these as the reference, and
-VERIFIED_AGAINST_REAL_FILE changes with it.
+A real export met the importer on 2026-10-28, on the owner's install; it was
+not shared, and what its preview reported is all this file knows of it: its
+name, its seven sheets, and the demographics sheets' header. aggregate_sheets
+below carries exactly those, with invented values. Everything else here is
+this track's best understanding of LinkedIn's export, the same understanding
+studio/backend/analytics_export.py reads.
 
 The dashboard export, as reported (Content_<start>_<end>_<name>.xlsx):
 
@@ -58,6 +59,10 @@ def slash(day: date) -> str:
     return f"{day.month}/{day.day}/{day.year}"
 
 
+class Pct(float):
+    """A share written as a number with a percent format, as Excel stores 32% (0.32)."""
+
+
 def _column(index: int) -> str:
     name = ""
     index += 1
@@ -82,6 +87,8 @@ def build(sheets: Sequence[Tuple[str, List[List[Any]]]], inline: bool = False, d
             return ""
         if isinstance(value, bool):
             return f'<c r="{ref}" t="b"><v>{int(value)}</v></c>'
+        if isinstance(value, Pct):
+            return f'<c r="{ref}" s="1"><v>{float(value)}</v></c>'
         if isinstance(value, (int, float)):
             return f'<c r="{ref}"><v>{value}</v></c>'
         text = str(value)
@@ -123,6 +130,11 @@ def build(sheets: Sequence[Tuple[str, List[List[Any]]]], inline: bool = False, d
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             f'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="{len(shared)}" '
             f'uniqueCount="{len(shared)}">{items}</sst>')
+    # One cell style beyond the default: number format 9, Excel's built-in "0%".
+    parts["xl/styles.xml"] = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        '<cellXfs count="2"><xf numFmtId="0"/><xf numFmtId="9" applyNumberFormat="1"/></cellXfs></styleSheet>')
     parts["[Content_Types].xml"] = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -182,3 +194,65 @@ def post_sheets(urn: str = INSIDE, with_url: bool = True) -> List[Tuple[str, Lis
         ["Sends on LinkedIn", 1],
     ]
     return [("PERFORMANCE", rows), ("TOP DEMOGRAPHICS", [["Category", "Value", "Percentage"]])]
+
+
+# ---------------------------------------------------------------------------
+# The aggregate export, as a real one was reported on 2026-10-28
+# ---------------------------------------------------------------------------
+#
+# A real file met the importer on the owner's install: named
+# AggregateAnalytics_<Creator Name>_<start>_<end>.xlsx, with the sheets
+# DISCOVERY, ENGAGEMENT, MOST RECENT POSTS, TOP POSTS, FOLLOWERS, AUDIENCE
+# DEMOGRAPHICS and CONTENT DEMOGRAPHICS, the last two each headed "Top
+# Demographics, Value, Percentage". These carry exactly those names and that
+# header; every value is invented, and MOST RECENT POSTS' columns are this
+# track's understanding.
+
+AGG_START = date(2025, 9, 24)
+AGG_END = date(2026, 10, 28)
+AGGREGATE_NAME = "AggregateAnalytics_Sample Creator_2025-09-24_2026-10-28.xlsx"
+DEMOGRAPHICS_HEADER = ["Top Demographics", "Value", "Percentage"]
+
+RECENT_A = urn_on(date(2026, 10, 20), 11)
+RECENT_B = urn_on(date(2026, 10, 10), 12)
+
+AUDIENCE = [
+    ["Job titles", "Software Engineer", "12%"],
+    ["Job titles", "Product Manager", "6.5%"],
+    ["Locations", "Bengaluru", "18%"],
+    ["Industries", "IT Services and IT Consulting", "22%"],
+    ["Seniority", "Senior", "31%"],
+    ["Company size", "10,001+ employees", "< 1%"],
+]
+CONTENT = [
+    ["Job titles", "Founder", "9%"],
+    ["Locations", "Mumbai", "14%"],
+    ["Industries", "Software Development", "27%"],
+]
+
+
+def aggregate_sheets(end: date = AGG_END, audience=None, content=None) -> List[Tuple[str, List[List[Any]]]]:
+    span = (end - AGG_START).days + 1
+    engagement = [["Date", "Impressions", "Engagements"]]
+    followers = [[f"Total followers on {slash(end)}:", 2104], [], ["Date", "New followers"]]
+    for n in range(span):
+        day = AGG_START + timedelta(days=n)
+        engagement.append([slash(day), 500 + n % 90, 10 + n % 13])
+        followers.append([slash(day), n % 5])
+    recent = [["Post URL", "Post publish date", "Impressions", "Engagements"],
+              [feed_url(RECENT_A), "10/20/2026", 1830, 61],
+              [feed_url(RECENT_B), "10/10/2026", 2410, 77],
+              [feed_url(STRANGER), "10/5/2026", 999, 12]]
+    top = [["Maximum of 50 posts available to include in this list"], [],
+           ["Post URL", "Post publish date", "Engagements", None, "Post URL", "Post publish date", "Impressions"],
+           [feed_url(RECENT_B), "10/10/2026", 77, None, feed_url(RECENT_B), "10/10/2026", 2410]]
+    return [
+        ("DISCOVERY", [["Overall Performance", f"{slash(AGG_START)} - {slash(end)}"], ["Impressions", 412345],
+                       ["Members reached", 171234]]),
+        ("ENGAGEMENT", engagement),
+        ("MOST RECENT POSTS", recent),
+        ("TOP POSTS", top),
+        ("FOLLOWERS", followers),
+        ("AUDIENCE DEMOGRAPHICS", [DEMOGRAPHICS_HEADER] + (audience if audience is not None else AUDIENCE)),
+        ("CONTENT DEMOGRAPHICS", [DEMOGRAPHICS_HEADER] + (content if content is not None else CONTENT)),
+    ]

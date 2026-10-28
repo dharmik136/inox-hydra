@@ -562,3 +562,53 @@ def test_a_copy_older_than_a_day_is_removed_when_the_studio_starts(studio):
     with TestClient(app_module.app):
         pass
     assert not os.path.exists(old), "a copy older than a day outlived the studio's start"
+
+
+# ---------------------------------------------------------------------------
+# The real aggregate export (2.10.1): MOST RECENT POSTS and the demographics
+# ---------------------------------------------------------------------------
+
+def _hold(studio, *posts):
+    """The creator's recorded posts, as the posts import or the archive would hold them."""
+    conn = studio["db"]()
+    with conn:
+        for urn, day in posts:
+            conn.execute(
+                "INSERT OR REPLACE INTO own_posts (activity_urn, text, published_at, published_at_source, "
+                "first_seen_at, last_seen_at) VALUES (?, ?, ?, 'urn', ?, ?)",
+                (urn, f"A post of mine from {day}", f"{day.isoformat()}T12:00:00+00:00",
+                 "2026-10-28T00:00:00+00:00", "2026-10-28T00:00:00+00:00"))
+    conn.close()
+
+
+def test_most_recent_posts_are_read_like_top_posts(studio):
+    """
+    The real file's MOST RECENT POSTS was refused as a post's own export with
+    three rows. It is a list of the creator's recent posts, one per row: each
+    is matched to a recorded post by its link, never creating one.
+    """
+    _hold(studio, (fx.RECENT_A, date(2026, 10, 20)), (fx.RECENT_B, date(2026, 10, 10)))
+    end = date(2026, 10, 25)
+    name = f"AggregateAnalytics_Sample Creator_2025-09-24_{end.isoformat()}.xlsx"
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets(end=end)), name=name).json()
+    res = studio["client"].post("/api/v1/analytics-export/import",
+                                json={"source": preview["source"], "include": ["MOST RECENT POSTS"]})
+    summary = res.json()["summary"]["MOST RECENT POSTS"]
+    assert summary["added"] == 2 and summary["not_yours"] == 1
+    readings = {r["activity_urn"]: r for r in _rows(
+        studio["db"], "SELECT * FROM post_metric_observations WHERE source = 'linkedin_export'")}
+    assert set(readings) == {fx.RECENT_A, fx.RECENT_B}, "a post the studio does not hold was written"
+    a = readings[fx.RECENT_A]
+    assert (a["impressions"], a["engagements"], a["precision"]) == (1830, 61, "exact")
+    assert a["observed_at"].startswith("2026-10-25T23:59:59"), "not dated by the export's end"
+    held = [r["activity_urn"] for r in _rows(studio["db"], "SELECT activity_urn FROM own_posts")]
+    assert fx.STRANGER not in held, "a post was created from the export"
+
+
+def test_a_list_of_posts_without_their_links_is_not_matched_by_anything_else(studio):
+    """A row is one of the creator's posts only by its link: not by its date, not by its figures."""
+    recent = [["Post publish date", "Impressions", "Engagements"], ["10/20/2026", 1830, 61]]
+    sheets = [(n, recent if n == "MOST RECENT POSTS" else rows) for n, rows in fx.aggregate_sheets()]
+    preview = _upload(studio["client"], fx.build(sheets), name=fx.AGGREGATE_NAME).json()
+    sheet = _sheet(preview, "MOST RECENT POSTS")
+    assert sheet["importable"] is False and "without a link to each post" in sheet["note"]
