@@ -201,7 +201,7 @@ export function TelegramIngressPanel() {
               />
               <OptionRow
                 label="Send me a weekly summary"
-                detail="Once a week: how many posts you published, drafts saved from your phone and replies waiting, and when your next post is scheduled. Your figures too, each with where and when it was read, only while the figures switch above is on. Never anyone's name or words."
+                detail="Once a week: how many posts the studio recorded as published, drafts saved from your phone and replies waiting, and when your next post is scheduled. Your figures too, each with where and when it was read, only while the figures switch above is on. Never anyone's name or words."
                 checked={state.options.weekly}
                 disabled={busy}
                 onChange={(on) =>
