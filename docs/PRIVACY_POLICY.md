@@ -1,6 +1,6 @@
 # Privacy policy: Inox Hydra Bridge
 
-**Last updated: 28 October 2026. Applies to Inox Hydra Bridge version 2.11.0.**
+**Last updated: 29 October 2026. Applies to Inox Hydra Bridge version 2.12.0.**
 
 Inox Hydra Bridge is a browser extension that connects the LinkedIn pages you
 open to Inox Hydra, a program that runs on your own computer. The extension has

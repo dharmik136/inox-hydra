@@ -59,6 +59,18 @@ capability first and merged on a release branch. Ten tabs on one post went
 from 620 requests to 3. Records: `docs/quality/cycle4/t1-phase2.md`,
 `t4-phase-b.md`, `t7-phase2.md`.
 
+## In 2.12.0
+
+The Telegram bot, phase 3, on the owner's direction of 2026-10-29: one bot for
+one person as the single collection box, made into posts in real time and
+remembered ("make something out of those things and remember them"), with
+every choice in the AI work the creator's preference ("do not hardcode
+things"). Three migrations (38 to 40), rehearsed on a copy of the owner's live
+database before release: integrity ok, every count unchanged, the two phone
+drafts already held appearing in the collection. Records:
+`docs/quality/cycle4/collection-box.md` (the PRD) and the phase 3 section of
+`docs/quality/cycle4/telegram-bot.md`.
+
 ## In 2.11.0
 
 The Telegram bot, phases 1 and 2, the standing assignment the owner asked for

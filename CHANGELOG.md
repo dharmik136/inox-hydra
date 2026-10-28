@@ -5,6 +5,57 @@ asks for an entry per release (`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`
 section 5.5); this file starts with the work since v2.5.2, which was never
 released. Version numbers follow `studio/__version__.py`.
 
+## 2.12.0
+
+Everything you send the bot lands in one collection, the studio makes posts
+from it the way you set it to write, and it remembers what you tell it.
+
+### Before you use 2.12.0
+
+- **Your database is upgraded** the first time you start it, from schema 37 to
+  40, after the usual automatic backup: your collection, the things to
+  remember, and the photos and voice notes from your phone. What your phone
+  already sent appears in the collection.
+- **No hand reload.** An extension loaded from the studio's folder reloads
+  itself when the studio is updated.
+
+### Added
+
+- **Your collection**, in From your record: every idea, note, link, forwarded
+  text, photo and voice note you send the bot, as it arrives, without a
+  reload. Each item shows its kind, its tags, whether you used it and what it
+  became. A link to someone else's post is kept only as a plain link rebuilt
+  from the post's id, with your own words; a forward keeps its text, never
+  who it came from.
+- **Make something out of it.** On any item, Make a post writes a draft in
+  your voice through your own AI provider; Combine makes one draft from
+  several; Angles offers hooks to choose from. On the bot, Write it up and the
+  angles button sit under "Saved to your collection". The bot sends back what
+  it wrote only if you tick "The bot may send me what it writes from my
+  collection" (off by default); otherwise it says the draft is ready in your
+  studio.
+- **How the studio writes is yours to set**, in Brand, Writing: draft length,
+  tone, language, opening line, emojis, hashtags, line breaks, ending, words to
+  avoid, how many angles, and which things to remember go with a request. What
+  ideas draw on (your collection, your posts, your asks) and how many daily
+  ideas are asked for are settings too. None of it is fixed in code.
+- **Things to remember.** Tell the studio about you, your audience, your offers
+  and your dates in Brand, Writing, or with /remember from your phone (with
+  Undo); /forget removes one. They go with every writing request you allow,
+  and a draft written from your collection shows what it was written from and
+  which of them went with it.
+- **What you collected comes back.** From your collection in the Composer
+  offers related items to add to the draft you are writing; unused ideas
+  return in your daily cards and your weekly summary; /recall says what you
+  saved on a word.
+- **A morning idea**, off by default, on the days and at the hour you choose:
+  one unused item with an angle drawn from what worked in your own posts, with
+  Write it up and Not today.
+- **Photos and voice notes** you send the bot are kept as they are, shown or
+  playable in your collection, never read or transcribed. Add to your media
+  library copies a photo there. A file over 20 MB is refused before it is
+  downloaded.
+
 ## 2.11.0
 
 The Telegram bot answers you. Until now it saved what your phone sent without
