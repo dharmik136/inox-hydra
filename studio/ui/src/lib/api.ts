@@ -3623,6 +3623,17 @@ export async function fetchRecordEvaluation(): Promise<RecordEvaluation> {
   return call<RecordEvaluation>("/api/v1/record/evaluation");
 }
 
+/** From your record on Health: each part as the studio holds it, with its sentence. */
+export interface RecordHealth {
+  job: { today_built: boolean; carried_from: string | null; sentence: string; checked: string };
+  model: { configured: boolean; stage: string; spent_today_usd: number | null; ceiling_usd: number; sentence: string };
+  library: { state: "none" | "verified" | "key_not_held"; entries: number; sentence: string };
+}
+
+export async function fetchRecordHealth(): Promise<RecordHealth> {
+  return call<RecordHealth>("/api/v1/record/health");
+}
+
 /** The creator pressed Fetch: one request for the signed Inox library, carrying nothing of theirs. */
 export async function fetchLibraryBundle(): Promise<{ status: string; message: string }> {
   return call("/api/v1/record/library/fetch", { method: "POST" });

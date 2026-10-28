@@ -76,7 +76,7 @@ Everything the section holds about you, on one page, each part changeable:
 - **From your LinkedIn archive**: how many saved posts, follows, poll votes, articles, reposts and searches your archive brought.
 - **How long the daily cards are kept**: 90 days, 365 days (the default) or for good. A day that a mark or a draft refers to is never removed. Nothing removes an ask or a mark on its own: an ask goes with **Remove for good**, a keep when you press **Kept**, a hide with **Unhide all**.
 - **Your own model** and **The Inox library**, below.
-- **The daily batch**: when the cards were last made.
+- **The daily batch**: when the cards were last made. **Health** says the same, beside the model stage's spend and the library's signature.
 
 Deleting everything the studio holds about you, under **Your profile** in **Setup**, also removes your asks, the daily cards, your marks and your notes.
 

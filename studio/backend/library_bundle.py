@@ -337,6 +337,28 @@ def status() -> Dict[str, Any]:
             "keys": sorted(PUBLIC_KEYS)}
 
 
+def signature_state() -> Dict[str, Any]:
+    """
+    For Health: whether a signed library is held, and whether the key it was
+    signed with is one this studio still ships. What is held was verified
+    before it was kept; a key since removed means a new copy signed with it
+    would be refused.
+    """
+    held = status()
+    if not held["entries"]:
+        return {**held, "state": "none",
+                "sentence": "No library is held: nothing has been fetched or imported, and the fifth card waits for "
+                            "your own model."}
+    said = (f"{held['entries']} entries, bundle {held['version']}, signed {held['signed_at']} with {held['key_id']}"
+            f", {held['source']}")
+    if held["key_id"] in PUBLIC_KEYS:
+        return {**held, "state": "verified",
+                "sentence": f"{said}: a key this studio ships, and the signature was checked before anything was kept."}
+    return {**held, "state": "key_not_held",
+            "sentence": f"{said}: a key this studio no longer ships. What is held was checked when it was kept; a new "
+                        f"copy signed with that key would be refused."}
+
+
 # ---------------------------------------------------------------------------
 # Matching, on this machine
 # ---------------------------------------------------------------------------

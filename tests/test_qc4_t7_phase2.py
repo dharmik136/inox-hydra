@@ -328,3 +328,67 @@ def test_a_week_without_cards_is_said_not_counted(conn):
 def test_the_monday_strip_says_the_summary():
     surface = io.open(os.path.join(UI, "components", "RecordSurface.tsx"), encoding="utf-8").read()
     assert "record_week" in surface
+
+
+# ---------------------------------------------------------------------------
+# 4. The daily job on Health
+# ---------------------------------------------------------------------------
+
+def run_row(conn, day, carried_from=None, cost=None, dropped=0, status="not_run", note="built from your record"):
+    conn.execute("INSERT INTO daily_run (day, input_signature, started_at, finished_at, local_ok, carried_from, seed, "
+                 "model_status, estimated_cost_usd, price_date, dropped_cards, note) VALUES (?, 's', ?, ?, 1, ?, 1, ?, ?, "
+                 "'2026-10-26', ?, ?)", (day, day + "T06:00:00+00:00", day + "T06:00:01+00:00", carried_from, status,
+                                         cost, dropped, note))
+    conn.commit()
+
+
+def test_the_health_read_says_when_the_job_ran_and_whether_it_carried_forward(conn):
+    import record_daily
+    import record_health
+
+    today = record_daily.local_today().isoformat()
+    first = record_health.health()
+    assert first["job"]["today_built"] is False and first["job"]["sentence"].startswith("Not built yet")
+    run_row(conn, today, carried_from="2026-10-27", dropped=1)
+    answer = record_health.health()
+    assert answer["job"]["today_built"] is True and answer["job"]["carried_from"] == "2026-10-27"
+    assert "carried forward from" in answer["job"]["sentence"] and "1 card failed a check" in answer["job"]["sentence"]
+
+
+def test_the_health_read_sets_the_spend_against_the_ceiling(conn):
+    import record_daily
+    import record_health
+
+    today = record_daily.local_today().isoformat()
+    assert record_health.health()["model"]["sentence"].startswith("No AI provider is connected")
+    for key, value in (("ai_provider", "openai"), ("ai_model", "gpt-5-mini"), ("ai_api_key", "not-a-real-key-for-a-test")):
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+    conn.commit()
+    run_row(conn, today, cost=0.0021, status="ran")
+    model = record_health.health()["model"]
+    assert model["spent_today_usd"] == pytest.approx(0.0021) and model["ceiling_usd"] == pytest.approx(0.10)
+    assert model["sentence"].startswith("$0.0021 of the $0.10 daily ceiling spent today")
+
+
+def test_the_library_signature_state_is_said(conn, monkeypatch):
+    import library_bundle
+    import record_health
+
+    assert record_health.health()["library"]["state"] == "none"
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("INSERT INTO library_entries (entry_id, kind, title, text, tags_json, author, bundle_version, signed_at, "
+                 "key_id, fetched_at) VALUES ('form-a', 'form', 'A form', 'Write it.', '[]', 'Inox Hydra', '2026.10.1', "
+                 "'2026-10-26', ?, ?)", (sorted(library_bundle.PUBLIC_KEYS)[0], now))
+    conn.commit()
+    held = record_health.health()["library"]
+    assert held["state"] == "verified" and "a key this studio ships" in held["sentence"]
+    monkeypatch.setattr(library_bundle, "PUBLIC_KEYS", {"another-key": "AAAA"})
+    gone = record_health.health()["library"]
+    assert gone["state"] == "key_not_held" and "would be refused" in gone["sentence"]
+
+
+def test_health_draws_the_daily_job_block():
+    surface = io.open(os.path.join(UI, "components", "HealthSurface.tsx"), encoding="utf-8").read()
+    assert "fetchRecordHealth" in surface and 'title="From your record, the daily cards"' in surface
+    api = io.open(os.path.join(UI, "lib", "api.ts"), encoding="utf-8").read()
+    assert '"/api/v1/record/health"' in api
