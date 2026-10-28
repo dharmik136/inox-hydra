@@ -99,46 +99,32 @@ LinkedIn's own "Start a post" control to open it, and then types your draft
 into it. Nothing is posted for you; you still press LinkedIn's own Post
 button.
 
-### Only if you switch "Read LinkedIn's network responses" on
+### Network reading, retired in 2.10.2
 
-This setting is in the extension's popup and is **off when you install the
-extension**. It stays off until you switch it on, and switching it off stops
-the behaviour at once.
+Earlier versions had a setting in the extension's popup, "Read LinkedIn's
+network responses", off when the extension was installed. While it was on, a
+script inside LinkedIn's own page context (`voyager_interceptor.js`) wrapped
+the page's `fetch` function to copy the figures LinkedIn's own application had
+already downloaded for your own posts and your follower count, and the
+extension noted the addresses of LinkedIn's internal data requests, through
+the browser's `webRequest` permission.
 
-While it is on, two further things happen:
+LinkedIn's site no longer sends the data it read: its 2026 web app makes none
+of those requests, and loads its data in a form the extension cannot read. So
+network reading was retired in Inox Hydra Bridge 2.10.2. The setting, the
+script and the observer are gone, and the extension no longer asks for the
+`webRequest` permission. No part of the extension wraps the page's `fetch` or
+`XMLHttpRequest`, or watches LinkedIn's requests. When it is installed or
+updated, and when the browser starts, it removes the script an earlier version
+had registered in your browser, and the stored setting. A LinkedIn tab that
+was open with the setting on keeps the old wrapper, which sends nothing
+anywhere, until you reload or close it.
 
-1. A script runs inside LinkedIn's own page context
-   (`voyager_interceptor.js`) and wraps the page's `fetch` function so that it
-   can copy the JSON of two kinds of response LinkedIn's own application has
-   **already** downloaded for the page you are looking at: feed updates and
-   your creator analytics. From a feed response Inox Hydra keeps the figures of
-   your own posts only: every other post in it is dropped before anything is
-   written, and only how many were dropped is recorded. From your creator
-   analytics it keeps your follower count, for the account you confirmed in
-   Inox Hydra. Responses about other members, such as profiles, reactions on
-   posts and comments, are not copied, and Inox Hydra refuses them if they
-   arrive. The figures are exact rather than rounded, which is the reason the
-   option exists. The script never issues a request of its own and never
-   modifies a request or a response.
-2. The extension notes which of LinkedIn's internal data requests a page made
-   (`background.js`, using `chrome.webRequest.onCompleted`): the address, cut
-   before any part that would name a member and with any LinkedIn id in it
-   blanked, the HTTP status and the method. **Not the contents.** Each LinkedIn page you
-   open also counts the data requests it made, by address and query name,
-   and hands the counts to the extension, which sends Inox Hydra those of the
-   page you looked at last with its check-in once a minute: an address is kept
-   only as words from a fixed list of the words LinkedIn's data addresses use,
-   with every other part written as a blank, and a query name only in
-   LinkedIn's own form, otherwise as "other". Never a query string. Inox Hydra
-   keeps those counts for seven days. These records are what it uses to tell
-   you when LinkedIn has changed something and a reading has stopped working.
-
-While the setting is off, the first script is not registered in your browser at
-all, and Inox Hydra refuses the two data paths that feed from it.
-
-Wrapping the page's `fetch` function is something LinkedIn may regard as
-automation. That is written beside the switch in the extension, in those words,
-before you turn it on.
+What network reading kept while it ran stays in Inox Hydra's database until
+you remove it: the figures of your own posts, marked as read by network
+reading, your follower count, and the record of its runs. Inox Hydra keeps
+nothing new from it: an extension that has not been updated is answered, and
+what it sends is not written.
 
 ### Cookies
 
@@ -167,50 +153,50 @@ previous account.
 
 ## What is stored, and where
 
-**In the browser**, under the extension's own storage: whether network reading
-is on; the profile name of the LinkedIn account this browser is signed in to;
-that member's LinkedIn id; the cookie digest described above; a random
-identifier the extension makes the first time it runs in this browser, which
-says nothing about you or the browser and lets Inox Hydra tell two browsers
-apart; a one-way digest (SHA-256) of each LinkedIn account your creator
-profiles in Inox Hydra have confirmed, never the account's name, so that a
-capture held for one of those accounts is sent as soon as it has a home; the
-version number the extension found in its own files at its last look, whether
-it could read them, and when; a record of the last capture, saying what kind of
-thing it was, when, what Inox Hydra answered and which tab it came from, never
-who; this session's count of captures per tab, for the toolbar badge; when
-network reading last stored something; and, until the browser closes, the last
-notice that a part of the capture could not read a page (naming the part, the
-kind of page and the fields) and the last notice a LinkedIn page had for you,
-in Inox Hydra's own words, which the side panel shows instead of drawing it
-into LinkedIn's page; a list of the LinkedIn tabs open, each with the kind of
-page it shows, whether it is in view, the version of the extension's readers it
-carries and its network reading counts, and which tabs could not be given new
-readers after an update; and a one-way digest (SHA-256) of each capture it
-sent, never the capture itself, which it uses for ten seconds so that the same
-capture read in two tabs is sent once; and the captures Inox Hydra did not take, so that
-your own activity is not lost. A capture is held when Inox Hydra is
-not running, when its database is busy and it asks to be tried again, and when it
-refuses this browser because the browser has not been paired with it yet. A
-capture is also held when it was read while this browser is signed in to a
-LinkedIn account that none of your creator profiles has confirmed: Inox Hydra
-writes it into no profile, and the extension keeps it, marked with that
-account's profile name, until a profile confirms the account. Those held
-captures contain the same engagement details described above, including the
-name, profile address, headline and comment of a person who engaged with your
-post. They are sent to Inox Hydra on this computer at the next successful
-contact (one held for an account, once a profile has confirmed it) and then
-removed, at most 200 are held, the oldest going first, and removing the
-extension removes all of it. Inox Hydra's Today screen says how many are
-waiting, once the extension has reported, and its Health screen says how many
-are held for which account.
+**In the browser**, under the extension's own storage: the profile name of the
+LinkedIn account this browser is signed in to; that member's LinkedIn id; the
+cookie digest described above; a random identifier the extension makes the
+first time it runs in this browser, which says nothing about you or the browser
+and lets Inox Hydra tell two browsers apart; a one-way digest (SHA-256) of each
+LinkedIn account your creator profiles in Inox Hydra have confirmed, never the
+account's name, so that a capture held for one of those accounts is sent as
+soon as it has a home; the version number the extension found in its own files
+at its last look, whether it could read them, and when; a record of the last
+capture, saying what kind of thing it was, when, what Inox Hydra answered and
+which tab it came from, never who; this session's count of captures per tab,
+for the toolbar badge; and, until the browser closes, the last notice that a
+part of the capture could not read a page (naming the part, the kind of page
+and the fields) and the last notice a LinkedIn page had for you, in Inox
+Hydra's own words, which the side panel shows instead of drawing it into
+LinkedIn's page; a list of the LinkedIn tabs open, each with the kind of page
+it shows, whether it is in view and the version of the extension's readers it
+carries, and which tabs could not be given new readers after an update; and a
+one-way digest (SHA-256) of each capture it sent, never the capture itself,
+which it uses for ten seconds so that the same capture read in two tabs is sent
+once; and the captures Inox Hydra did not take, so that your own activity is
+not lost. A capture is held when Inox Hydra is not running, when its database
+is busy and it asks to be tried again, and when it refuses this browser because
+the browser has not been paired with it yet. A capture is also held when it was
+read while this browser is signed in to a LinkedIn account that none of your
+creator profiles has confirmed: Inox Hydra writes it into no profile, and the
+extension keeps it, marked with that account's profile name, until a profile
+confirms the account. Those held captures contain the same engagement details
+described above, including the name, profile address, headline and comment of a
+person who engaged with your post. They are sent to Inox Hydra on this computer
+at the next successful contact (one held for an account, once a profile has
+confirmed it) and then removed, at most 200 are held, the oldest going first,
+and removing the extension removes all of it. Inox Hydra's Today screen says
+how many are waiting, once the extension has reported, and its Health screen
+says how many are held for which account.
 
 **On your computer**, in Inox Hydra's own folder (its location is shown in the
 app, and is set by `INOX_HYDRA_HOME`): a SQLite database file holding
 your posts, drafts, queue, post readings, leads and their engagement, your
 comments and reactions, any connections you imported from your own LinkedIn
 data archive, daily analytics, logs and settings; your media files; the network
-readings log, as a separate file; and the daily backups folder.
+readings log, as a separate file, which holds a copy of each analytics reading
+the extension sends and, from before network reading was retired, what it
+noted of LinkedIn's requests; and the daily backups folder.
 
 **What you ask of it, and what it works out for you**, in that same database:
 the text of the asks you make of the studio and choose to keep (the topics,

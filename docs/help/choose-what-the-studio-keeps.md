@@ -24,7 +24,7 @@ When you forget people or a cleanup removes rows, the space they took stays insi
 | What | Default | Choices | Never removed |
 | --- | --- | --- | --- |
 | Daily backup | On | On, Off | The newest backup |
-| Network readings log (what the extension saw of LinkedIn's network requests) | 30 days | 7, 30 or 90 days | |
+| Network readings log (a copy of each analytics reading the extension sent, and, from before 2.10.2, what network reading noted of LinkedIn's network requests) | 30 days | 7, 30 or 90 days | |
 | Post readings | Every reading for 30 days, then the first and the last reading of each day | 30, 90 or 365 days; Off | The first and the last reading of each day, every reading from 36 to 72 hours after a post went out, and everything recent |
 | Reactions older than 24 months | Folded into counts | On, Off | Comments, all of them; how many people reacted to each post; how many old reactions each person made |
 | People silent for 24 months | Listed for you to review | List them, Do not list them | Everyone you have not chosen to forget |

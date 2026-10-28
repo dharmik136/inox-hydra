@@ -20,13 +20,7 @@ When the bridge runs in more than one browser, or a browser holds captures for a
 
 ## Readers, last 7 days
 
-Over the table, one sentence says which of three states network reading is in, as the bridge last reported it. Network reading is off unless you turn it on in the extension's popup.
-
-- "Network reading is off.", with a grey dot.
-- "Network reading is on and seeing N LinkedIn data calls, K matched.", with a green dot.
-- "Network reading is on and matching nothing", in orange, with the count of data calls the LinkedIn tab that last reported saw and none matched. It adds "reload that tab" when that tab does not carry the reader, and "turn the switch off and on" when the browser has not registered it.
-
-An extension that has not reported the state says "not reported by this extension version" rather than "off". The same sentence is in Setup's step 1 and in the extension's side panel, under **Health**.
+Over the table there used to be a sentence on network reading, the switch in the extension's popup that read LinkedIn's network responses. Network reading was retired in 2.10.2, and where it had ever run, one sentence over the table says so: "Network reading was retired in 2.10.2: LinkedIn's site no longer sends the data it read." Setup's step 1 says the same. Where it never ran, nothing is said.
 
 One row per reader. The studio keeps a week of runs, which is why the table says **last 7 days**: a run older than that is gone from the log, except each reader's latest run and its latest run that worked, which are kept so the last two columns can always be answered.
 
@@ -67,13 +61,12 @@ The table lists these eight parts:
 | Creator analytics | The figures in **Analytics** |
 | Your posts' analytics pages | The figures on one of your own posts' analytics pages, such as members reached, saves and sends, and where the page shows them followers gained, profile viewers, link visits, the share of impressions from inside and outside your network, and the viewer demographics. Only your recorded posts are read. Only a missing impressions, members reached, reactions, comments, reposts, saves or sends figure marks this reader as not reading the page. LinkedIn may not show the others to every member or on every post, so a missing one stores nothing and is not counted against the reader; if one never appears, the label may have changed |
 
-Network reading is off unless you turn it on in the extension's popup. While it is on, and once either has run, two more parts are listed: **Network reading: your posts' figures** and **Network reading: creator analytics**. They are not listed while the switch is off and neither has run, because opening a page cannot start them. Network reading keeps the figures of your own posts and your follower count, and nothing else: the other posts in LinkedIn's feed response are dropped before anything is written, and the profiles, reactions and comments LinkedIn's page also downloads are not sent to the studio at all.
+Network reading's two parts, **Network reading: your posts' figures** and **Network reading: creator analytics**, are no longer listed: network reading was retired in 2.10.2. Their runs from before stay in the capture log, and the figures they kept stay with your posts and in **Analytics**, marked as read by network reading.
 
 ## The blocks on the right
 
 - **Bridge heartbeats, last 7 days**: how many times the bridge was heard from, the first and last time, the longest silence between two heartbeats and when it ended, and each extension version seen with its first and last heartbeat. A machine that slept or a browser that was closed shows as a silence; with a version before 2.10, so does closing the last LinkedIn tab.
 - **Waiting captures and refusals, since the studio started**: the captures the extension is holding for a studio that was busy, as it last said, and how many captures each refusal reason turned away. Both are counted from the moment the studio started, and say so.
-- **Network reading and drift**: the newest drift events the network reader recorded, each with the response it could not read and when. While network reading is off there are none, and the block says so.
 - **Post analytics fields**: for each figure the reader of your posts' analytics pages started looking for in this version (such as followers gained and profile viewers), when one of those pages last carried it, or on how many it was not read, for example "not read on any of the last 12 post analytics pages". LinkedIn does not show every figure to every member or on every post, so a figure that is missing is not counted as the reader failing; this is where one that never appears shows.
 - **Database schema**: the database's version against the version this studio expects, and what will happen on the next restart if they differ.
 - **Backup schedule**: whether the daily backup is on, the newest backup and when the next is due, and whether the schedule has stopped producing backups. See [Back up, restore and export](back-up-restore-and-export.md).
