@@ -33,6 +33,7 @@ import { useRefresh, type Listen, type StudioChangeNote } from "@/lib/refresh";
 import { ratioTone } from "@/lib/results";
 import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { RecordTodayBlock } from "./RecordTodayBlock";
 
 /**
  * Today: what to do in the next hour, as one command centre.
@@ -650,6 +651,9 @@ export function TodaySurface({
           />
         </div>
       </div>
+
+      {/* From your record (track 7): today's cards, one line each, once today's batch exists. */}
+      <RecordTodayBlock />
 
       {/* Context rather than a decision, so one strip under the three columns
           instead of a column's worth of the eye. */}

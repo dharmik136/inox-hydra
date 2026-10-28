@@ -723,6 +723,7 @@ HELP_SECTIONS = [
             "quality/cycle4/t1-bridge.md",
             "quality/cycle4/t5-derive.md",
             "quality/cycle4/t7-ideas.md",
+            "quality/cycle4/t7-phase2.md",
             "quality/cycle4/t3-honesty.md",
             "quality/cycle4/t6-posture.md",
             "quality/cycle4/t4-sections.md",

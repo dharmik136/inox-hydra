@@ -399,9 +399,15 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Track 2 (the show path) merged into track 4 after track 1, for 2.9.0,
 # measured on the merged tree: 215 paths, 167 reached, 48 unreachable. Track
 # 4's 214 and 166 with /api/v1/events, which the window opens.
+#
+# Track 7, phase 2 (2.10.0): GET /api/v1/record/health, the daily job's
+# last run, the model stage's spend and the library's signature, which
+# Health reads. Total 215 -> 216, reached 167 -> 168, unreachable stays 48.
+# Then GET /api/v1/record/lines, today's cards one line each, which Today's
+# block reads. Total 216 -> 217, reached 168 -> 169, unreachable stays 48.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 215
-REACHED_BY_INTERFACE = 167
+TOTAL_API_PATHS = 217
+REACHED_BY_INTERFACE = 169
 UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

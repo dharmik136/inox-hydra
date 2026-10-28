@@ -19,12 +19,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 try:
-    from .. import changes, library_bundle, record_daily, record_evaluation, record_model, record_store
+    from .. import changes, library_bundle, record_daily, record_evaluation, record_health, record_model, record_store
 except (ImportError, ValueError):
     import changes
     import library_bundle
     import record_daily
     import record_evaluation
+    import record_health
     import record_model
     import record_store
 
@@ -155,6 +156,18 @@ def get_record_knows():
     """What the studio knows: asks, Setup fields, marks, archive records, settings and the job's state."""
     return {**record_store.knows(), "job": record_daily.status(), "model": record_model.state(),
             "library": library_bundle.status()}
+
+
+@router.get("/api/v1/record/lines")
+def get_record_lines():
+    """For Today: today's cards, one line each, only once today's batch exists. A read: nothing is built."""
+    return record_daily.lines_today()
+
+
+@router.get("/api/v1/record/health")
+def get_record_health():
+    """For Health: the daily job's last run and carry-forward, the model stage's spend, the library's signature."""
+    return record_health.health()
 
 
 @router.post("/api/v1/record/asks")

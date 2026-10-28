@@ -6,6 +6,7 @@ import {
   fetchHealthReader,
   fetchHealthReaders,
   fetchPostFieldSightings,
+  fetchRecordHealth,
   fetchSchemaStatus,
   fetchUpdateStatus,
   runUpdateCheck,
@@ -16,6 +17,7 @@ import {
   type HealthReaderDetail,
   type HealthReaders,
   type PostFieldSightings,
+  type RecordHealth,
   type SchemaStatus,
   type UpdateStatus,
 } from "@/lib/api";
@@ -66,6 +68,7 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
   const [backups, setBackups] = useState<BackupSchedule | null>(null);
   const [updates, setUpdates] = useState<UpdateStatus | null>(null);
   const [sightings, setSightings] = useState<PostFieldSightings | null>(null);
+  const [record, setRecord] = useState<RecordHealth | null>(null);
   /** The parts of the screen whose route did not answer on the last read. */
   const [unanswered, setUnanswered] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -76,13 +79,14 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
   // Five routes, read together. One failing leaves the others on screen and
   // its own block saying so, rather than blanking the whole section.
   const load = useCallback(async () => {
-    const [r, e, s, b, u, f] = await Promise.allSettled([
+    const [r, e, s, b, u, f, d] = await Promise.allSettled([
       fetchHealthReaders(),
       fetchExtensionHealth(),
       fetchSchemaStatus(),
       fetchBackupSchedule(),
       fetchUpdateStatus(),
       fetchPostFieldSightings(),
+      fetchRecordHealth(),
     ]);
     const missing: string[] = [];
     if (r.status === "fulfilled") setReaders(r.value);
@@ -99,6 +103,8 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
     else missing.push("updates");
     if (f.status === "fulfilled") setSightings(f.value);
     else missing.push("post analytics fields");
+    if (d.status === "fulfilled") setRecord(d.value);
+    else missing.push("From your record");
     setUnanswered(missing);
     setLoaded(true);
   }, []);
@@ -466,6 +472,22 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
                     value={`stopped: no backup for ${Math.round(backups.age_hours ?? 0)} hours, while the daily backup is on`}
                   />
                 )}
+              </dl>
+            )}
+          </Block>
+
+          {/* From your record (track 7): the daily job's last run and whether it
+              carried forward, the model stage's spend against its ceiling, and
+              the library's signature, each in the studio's own sentence
+              (record_health.py). */}
+          <Block title="From your record, the daily cards">
+            {!record ? (
+              <Muted>Not answered on the last read.</Muted>
+            ) : (
+              <dl className="flex flex-col gap-1">
+                <Row label="Daily batch" value={record.job.sentence} />
+                <Row label="Model stage" value={record.model.sentence} />
+                <Row label="Inox library" value={record.library.sentence} />
               </dl>
             )}
           </Block>

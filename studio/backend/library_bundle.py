@@ -43,7 +43,7 @@ import sqlite3
 import urllib.error
 import urllib.request
 from datetime import date, datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 from urllib.parse import urlsplit
 
 try:
@@ -337,11 +337,32 @@ def status() -> Dict[str, Any]:
             "keys": sorted(PUBLIC_KEYS)}
 
 
+def signature_state() -> Dict[str, Any]:
+    """
+    For Health: whether a signed library is held, and whether the key it was
+    signed with is one this studio still ships. What is held was verified
+    before it was kept; a key since removed means a new copy signed with it
+    would be refused.
+    """
+    held = status()
+    if not held["entries"]:
+        return {**held, "state": "none",
+                "sentence": "No library is held: nothing has been fetched or imported."}
+    said = (f"{held['entries']} entries, bundle {held['version']}, signed {held['signed_at']} with {held['key_id']}"
+            f", {held['source']}")
+    if held["key_id"] in PUBLIC_KEYS:
+        return {**held, "state": "verified",
+                "sentence": f"{said}: a key this studio ships, and the signature was checked before anything was kept."}
+    return {**held, "state": "key_not_held",
+            "sentence": f"{said}: a key this studio no longer ships. What is held was checked when it was kept; a new "
+                        f"copy signed with that key would be refused."}
+
+
 # ---------------------------------------------------------------------------
 # Matching, on this machine
 # ---------------------------------------------------------------------------
 
-def match_card(conn, day: date, seed: int) -> Optional[Dict[str, Any]]:
+def match_card(conn, day: date, seed: int, avoid: Optional[Set[str]] = None) -> Optional[Dict[str, Any]]:
     """
     The open slot's card from the library: an entry whose tags and title go
     under one of the creator's own recurring words, drawn by the same rule as
@@ -373,7 +394,7 @@ def match_card(conn, day: date, seed: int) -> Optional[Dict[str, Any]]:
         if topic == evidence_briefing.OTHER_TOPIC:
             continue
         items.append((f"lib:{row['entry_id']}", (row, topic), counts.get(topic, 1) / total))
-    drawn = record_cards._draw(items, record_cards._history(conn, day), day, seed + 5)
+    drawn = record_cards._draw(items, record_cards._history(conn, day), day, seed + 5, avoid, lambda item: item[1])
     if not drawn:
         return None
     card_id, (row, topic) = drawn

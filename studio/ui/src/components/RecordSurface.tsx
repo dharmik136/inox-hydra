@@ -215,6 +215,9 @@ export function RecordSurface({
                 {monday.payload.figure_sentence}.{" "}
                 <span className="text-ink-muted">Counts of your own rows, compared with nothing.</span>
               </p>
+              {monday.payload.record_week && (
+                <p className="mt-1 text-[12px] text-ink-secondary">{monday.payload.record_week.sentence}</p>
+              )}
             </section>
           )}
 

@@ -4,7 +4,7 @@ Open **From your record** for five cards a day, drawn from your own posts, your 
 
 ## Where it is
 
-**From your record** is on the rail, after **Today**. The buttons at the top right switch between its four views: **Today's cards**, **Kept**, **What the studio knows** and **Did these help?**
+**From your record** is in the rail's **Now** group, after **Today** and **Replies**, and once today's cards are built, **Today** lists them, one line each, with a link here. The buttons at the top right switch between its four views: **Today's cards**, **Kept**, **What the studio knows** and **Did these help?**
 
 It needs no AI provider and, without one, sends nothing anywhere. Import your LinkedIn archive in **Setup** and it has cards from the first day. See [Set up the studio from your LinkedIn](set-up-the-studio-from-your-linkedin.md).
 
@@ -18,19 +18,21 @@ When nothing the cards are made from has changed since the last day (your posts 
 
 - **Suggest new** draws today's cards again, once a day. Your marks on the earlier cards still count, and a card you kept stays in **Kept**.
 - **Day**, once there is more than one, shows the cards of each of the last 14 days that had them, as they were. On an earlier day you can keep a card or open its post, nothing else.
-- Each Monday, **Your week** above the cards counts what the studio recorded in the seven days before: posts published, comments and reactions you gave, pages the bridge read and replies answered. Counts only, compared with nothing. A count the studio does not record reads "not measured", never 0.
+- Each Monday, **Your week** above the cards counts what the studio recorded in the seven days before: posts published, comments and reactions you gave, pages the bridge read and replies answered. A second line counts the section's own week: how many of last week's cards were shown, and how many you kept, skipped, hid, drafted from and posted; a week with no card shown says so instead. Counts only, compared with nothing. A count the studio does not record reads "not measured", never 0.
 
 ## The five cards
 
 | Card | What it shows | How it is chosen |
 | --- | --- | --- |
 | **Working for you**: What worked | The post of yours that did best against your usual reactions, with its figures and the page and date they were read from | Settled posts only, against your own median, ranked the way **Posts** ranks them. Until three of your posts have settled with figures, it says how many have, for example "Not enough settled posts yet: 1 of 3." |
-| **Working for you**: On this day, or Opener to reuse | A post of yours from this date in an earlier year; when there is none, the first line of one of your posts | The opener comes from the top quarter of your ranked posts once eight are ranked, otherwise from all of them, each with the chance of its topic's share of your posts. A line once shown is held back 7 days, then 14, then 28, and its chance halves each time. |
+| **Working for you**: On this day, Opener to reuse, or An article of yours | A post of yours from this date in an earlier year, the first line of one of your posts, or an article you published, from your archive, whose title goes under one of your recurring words. The post of the date comes up twice as often as each of the other two, so on a day there is one you still see the others in turn | The opener comes from the top quarter of your ranked posts once eight are ranked, otherwise from all of them, each with the chance of its topic's share of your posts. A line or article once shown is held back 7 days, then 14, then 28, and its chance halves each time. |
 | **You asked** | Something you asked for, with up to three of your own posts that share its words, and the section of the studio's playbook that shares at least half of them, with **Open it in Docs** | Your asks in turn. With nothing asked yet, one of the words that recur across your posts. |
-| **You engaged with** | A comment you left on someone else's post: your own words, the date and a link to the post. Without comments, a post you reacted to, reposted or saved, as a link and a date | Your own activity in turn. The other person's words are never put on a card. |
+| **You engaged with** | A comment you left on someone else's post: your own words, the date and a link to the post. Or a poll you voted in, or a company or member you follow, when it goes under one of your recurring words; or a post you reacted to, reposted or saved, as a link and a date | A comment comes up twice as often as each of the other three kinds. The other person's words are never put on a card: a poll shows its topic and its link, never its options, and a follow shows the name and the date your archive holds, with nothing read about the account. |
 | The fifth card | One idea from your own AI provider, or an entry of the Inox library that suits one of your topics | See the two sections below. Until either is set up, the card says how to fill it. |
 
 Every card shows, beside its title, how it was arrived at (for example "measured" or "resurfaced, not measured"), your own words in quotation marks where it has any, figures only where a page was read, and a line that starts "Because". **Why this?** opens the whole rule, the rows each figure was read from, and the card's label: MEASURED (read from a row, with when), DERIVED (worked out from measured rows by the stated rule), TYPED (sorted by a rule such as shared words, with nothing measured behind it), SUGGESTED (written by your model, then checked) or CURATED (from the Inox library). Before a card is shown, every row it cites is looked up; a card whose row is gone is dropped and counted under the title, never shown.
+
+The cards that are drawn keep to different topics. Each takes one of your recurring topics that no earlier card of the day shows, when it has one to take, so five cards are not five takes on one theme; a repeat comes only when everything a slot could show goes under a topic already there. **What worked** follows your record and is never changed for it, and **Why this?** says the rule.
 
 A card that cannot be filled yet is dashed and reads NOT YET, with a sentence saying what is missing and what fills it. It is never padded with another card.
 
@@ -62,7 +64,7 @@ An ask is matched to your posts from the next day's cards.
 
 ## Kept
 
-Every card you kept, newest first: your own posts, openers, asks, comments and library entries. **Keep** is the one way in, and a card you hid is left out.
+Every card you kept, newest first: your own posts, openers, articles, asks, comments, votes, follows and library entries. **Keep** is the one way in, and a card you hid is left out.
 
 ## What the studio knows
 
@@ -74,7 +76,7 @@ Everything the section holds about you, on one page, each part changeable:
 - **From your LinkedIn archive**: how many saved posts, follows, poll votes, articles, reposts and searches your archive brought.
 - **How long the daily cards are kept**: 90 days, 365 days (the default) or for good. A day that a mark or a draft refers to is never removed. Nothing removes an ask or a mark on its own: an ask goes with **Remove for good**, a keep when you press **Kept**, a hide with **Unhide all**.
 - **Your own model** and **The Inox library**, below.
-- **The daily batch**: when the cards were last made.
+- **The daily batch**: when the cards were last made. **Health** says the same, beside the model stage's spend and the library's signature.
 
 Deleting everything the studio holds about you, under **Your profile** in **Setup**, also removes your asks, the daily cards, your marks and your notes.
 

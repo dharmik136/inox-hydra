@@ -3379,6 +3379,8 @@ export interface RecordCardPayload {
   quote?: string;
   /** The section of the studio's playbook that shares an ask's words: its heading and its document in Docs. */
   playbook?: { document_id: string; section: string } | null;
+  /** On the Monday card: last week's cards and the marks on them, as counts, in a sentence. */
+  record_week?: { shown: number; kept: number; skipped: number; hidden: number; drafted: number; posted: number; sentence: string };
 }
 
 export interface RecordCard {
@@ -3619,6 +3621,30 @@ export interface RecordEvaluation {
 
 export async function fetchRecordEvaluation(): Promise<RecordEvaluation> {
   return call<RecordEvaluation>("/api/v1/record/evaluation");
+}
+
+/** From your record on Today: today's cards, one line each, once today's batch exists. */
+export interface RecordLines {
+  day: string;
+  built: boolean;
+  computed_at?: string | null;
+  not_yet: number;
+  lines: { slot: number; card_id: string; label: string; block_label: string | null; title: string | null; line: string }[];
+}
+
+export async function fetchRecordLines(): Promise<RecordLines> {
+  return call<RecordLines>("/api/v1/record/lines");
+}
+
+/** From your record on Health: each part as the studio holds it, with its sentence. */
+export interface RecordHealth {
+  job: { today_built: boolean; carried_from: string | null; sentence: string; checked: string };
+  model: { configured: boolean; stage: string; spent_today_usd: number | null; ceiling_usd: number; sentence: string };
+  library: { state: "none" | "verified" | "key_not_held"; entries: number; sentence: string };
+}
+
+export async function fetchRecordHealth(): Promise<RecordHealth> {
+  return call<RecordHealth>("/api/v1/record/health");
 }
 
 /** The creator pressed Fetch: one request for the signed Inox library, carrying nothing of theirs. */
