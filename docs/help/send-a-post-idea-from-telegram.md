@@ -11,22 +11,23 @@ Make a Telegram bot of your own, set it up under Local security, and the message
 - The bot belongs to the creator profile you set it up in, and its messages are saved there whichever profile is open. One bot is asked at a time: the one saved most recently, or when the studio starts, the first profile that has one. A profile whose bot is not the one being asked says so in its panel.
 
 > [!NOTE]
-> This has not yet been tested against the real Telegram service, only against a simulated one. The panel says so until it has been.
+> First tested against the real Telegram service on 2026-10-28, on the owner's computer: the studio asked Telegram for messages, refused a chat that was not the one saved, and saved a message once the right chat was paired. Until a message from your own chat has been saved on your computer, the panel says it has not been seen working there.
 
 ## What you need
 
-Your own bot token and your own numeric chat id. Creating a bot and finding your chat id are done with Telegram's own tools; the studio does not guide you.
+Your own bot token. Creating a bot is done with Telegram's own tools (BotFather); the studio does not guide you. You do not need to find your chat id, which Telegram never shows you: the studio learns it from your first message when you press **This is me**.
 
 ## Set it up
 
 1. Open **Settings** from the rail, then **Local security**.
-2. Under **Your phone, through Telegram**, paste the bot token into **Bot token** and your chat id into **Your numeric chat id**.
-3. Click **Save and start**. The panel reads **SET, SEALED** beside the token, your chat id beside **Your chat id**, and **YES** beside **Asking Telegram for messages**.
+2. Under **Your phone, through Telegram**, paste the bot token into **Bot token**, leave **Your numeric chat id** empty, and click **Save and start**. The panel reads **SET, SEALED** beside the token and **YES** beside **Asking Telegram for messages**.
+3. On your phone, message the bot once. Anything will do: that message only says which chat is yours, and it is not saved.
+4. Within a few seconds the panel lists it under **CHATS THE BOT REFUSED**, for example "1 message refused from chat 487215963, first: 'hello'. Is that you?". If that is your message, press **This is me**. Your chat id is saved, and from then on every message you send the bot arrives in the studio.
 
-The token is sealed before it is stored, like your AI key, and is never shown again. A token or chat id of the wrong shape is refused with a sentence and nothing is stored.
+If you know your chat id already, you can type it into **Your numeric chat id** instead. The token is sealed before it is stored, like your AI key, and is never shown again. A token or chat id of the wrong shape is refused with a sentence and nothing is stored.
 
 > [!IMPORTANT]
-> Both values are needed. Without a chat id the bot has no way to tell you from anybody else, so every message is refused, and a refused message is not delivered again later. Messages from any other chat are dropped. A group's chat id, which starts with a minus sign, is refused, because anyone in the group could then file drafts in your studio.
+> Until a chat id is saved, the bot cannot tell you from anybody else, so every message is refused, and a refused message is not delivered again later. Only **This is me** pairs a chat: the studio never pairs one by itself, so a stranger who finds your bot is refused and listed, and stays refused. Messages from any other chat than the one saved are dropped. A group's chat id, which starts with a minus sign, cannot be saved, because anyone in the group could then file drafts in your studio. The chats refused are kept in memory only, until the studio stops: each chat's id, how many messages, when, and the first 60 characters of the first one. Nothing of a refused message is written to the database, and the log keeps only its chat id.
 
 For maintainers, the older way still works: `INOX_DEV_MODE=1`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the environment the studio starts from (`PRUDENT_TELEGRAM_BOT_TOKEN` and `PRUDENT_TELEGRAM_CHAT_ID` are also accepted), read once at startup. A token in the environment alone, without dev mode, starts nothing.
 
@@ -90,7 +91,8 @@ Click **Remove the bot** in the panel. The token and chat id are removed from th
 
 | You see | What to do |
 | --- | --- |
-| **Save and start** stays disabled | Both fields are needed |
+| **Save and start** stays disabled | Paste the bot token: it is the one value needed to start |
+| No chat appears under **CHATS THE BOT REFUSED** after you message the bot | Check **Asking Telegram for messages** reads YES, and that you messaged the bot whose token you saved. The list is kept in memory, so it starts empty each time the studio starts |
 | A sentence under the buttons says the token or chat id is not the right shape | Paste the token exactly as BotFather gave it, and the chat id as digits only |
 | **Asking Telegram for messages** reads NO after saving | Reload the page. If it stays NO, see [The studio will not open or shows an error](the-studio-will-not-open.md) |
 | Nothing arrives, no error | Check the chat id is yours, then search with Ctrl+K instead of waiting for the page |

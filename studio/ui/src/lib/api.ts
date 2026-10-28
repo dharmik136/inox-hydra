@@ -3849,10 +3849,24 @@ export async function importLibraryBundle(text: string): Promise<{ status: strin
 // Your phone, through Telegram: the settings behind Local security
 // -------------------------------------------------------------
 
+/** A chat the bot refused since it was set, kept by the studio in memory only, for "Is that you?". */
+export interface RefusedChat {
+  chat_id: string;
+  count: number;
+  first_at: string;
+  last_at: string;
+  /** The first characters of the first message refused from this chat. */
+  first: string;
+  /** Your own chat with a bot is a positive number; a group's can never be saved. */
+  own_chat: boolean;
+}
+
 export interface IngressSettings {
   profile: string;
   /** Both the token and the chat id are set, so the studio asks Telegram for messages. */
   configured: boolean;
+  /** A token and no chat id yet: every message is refused, and the chats that wrote are listed to pair one. */
+  pairing: boolean;
   /** Whether a token is held. The token itself is sealed and never answered. */
   has_token: boolean;
   chat_id: string;
@@ -3875,16 +3889,23 @@ export interface IngressSettings {
     state: "open" | "read" | "expired" | "dismissed" | "refused";
     said: string;
   }[];
+  /** The chats this profile's bot refused, newest first; This is me saves one. */
+  refused_chats: RefusedChat[];
+  /** A message from the chat saved here has been saved on this computer. */
   tested_against_real_service: boolean;
-  /** The server's own sentence, shown until the owner has tested against the real service. */
-  not_yet_tested: string;
+  /** The server's own sentence until then; null once a message from your chat has been saved. */
+  not_yet_tested: string | null;
 }
 
 export async function fetchIngressSettings(): Promise<IngressSettings> {
   return call<IngressSettings>("/api/v1/ingress/settings");
 }
 
-/** Both empty removes the bot and stops asking Telegram. */
+/**
+ * Both empty removes the bot and stops asking Telegram. An empty field keeps
+ * what is held: a token alone starts pairing, and a chat id alone (This is
+ * me) pairs that chat with the token already saved.
+ */
 export async function saveIngressSettings(bot_token: string, chat_id: string): Promise<IngressSettings> {
   return call<IngressSettings>("/api/v1/ingress/settings", {
     method: "POST",
