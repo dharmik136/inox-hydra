@@ -15,7 +15,7 @@ suite as CI runs it at the end. Code is cited by function, not by line.
 | Ten tabs on one post | 620 requests to the studio became 3; each engagement written 10 times became once; 10 capture rows became 1; 310 heartbeat rows became 1 |
 | Routes | None added: the batched read is an `items` list on the existing engagement route |
 | Interface audit | Health and Setup, dark and light: 8 screens, 0 blocking findings |
-| Suite, as CI runs it | See the last section |
+| Suite, as CI runs it | 3,998 passed, 17 skipped, 0 failed at f69705c, after `npm --prefix studio/ui run build` |
 
 | Commit | What |
 |---|---|
@@ -145,4 +145,13 @@ every client's account into the browser running the bridge; it answers digests s
 
 ## Suite, as CI runs it
 
-Not run yet at this record's first commit.
+`pytest tests studio/tests -q -rs` after `npm --prefix studio/ui run build`, at f69705c, the commit
+before this record's result was written in:
+
+| Run | Result |
+|---|---|
+| First | 3,997 passed, 17 skipped, 1 failed in 13 min 50 s, on a machine running another track's full suite at the same time. The failure was `test_qc_f7_ui.py::test_the_tray_holds_focus_and_escape_closes_one_layer_at_a_time`: Tab left the Manage creator profiles dialog for its Add Creator Profile button. Neither the test nor `AccountSwitcher.tsx` is in this branch's diff; it passed alone three times out of three and with its file 31 of 31 |
+| Second | 3,998 passed, 17 skipped, 0 failed in 13 min 30 s |
+
+The 17 skips are Windows and macOS primitives, PyYAML not installed here, a browser launch that
+needs a real desktop, and enrichment the interface does not surface yet.
