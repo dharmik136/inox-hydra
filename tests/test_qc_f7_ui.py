@@ -431,6 +431,14 @@ def test_brand_studio_tabs_are_all_on_a_phone_screen(studio, scheme):
 FOCUS_IN = "(name) => { const e = document.activeElement; const d = e && e.closest('[role=dialog]');" \
            " return !!d && d.getAttribute('aria-label') === name }"
 
+# The same check, with what was focused when it ran. Read apart, as the
+# helper below used to, 2.10.1's failure named a button that had already gone
+# by the time of the check, and focus was on the page body.
+FOCUS_AT = ("(name) => { const e = document.activeElement; const d = e && e.closest('[role=dialog]');"
+            " const where = !e || e === document.body ? 'the page body'"
+            " : (e.getAttribute('aria-label') || e.innerText || e.tagName).slice(0, 40);"
+            " return {inside: !!d && d.getAttribute('aria-label') === name, where} }")
+
 
 def _is_focused(page, handle):
     return page.evaluate("(el) => document.activeElement === el", handle)
@@ -439,9 +447,8 @@ def _is_focused(page, handle):
 def _tab_stays_in(page, dialog_name, presses=20):
     for step in range(presses):
         page.keyboard.press("Tab" if step % 4 else "Shift+Tab")
-        where = page.evaluate("() => { const e = document.activeElement; return e ? (e.getAttribute('aria-label')"
-                              " || e.innerText || e.tagName).slice(0, 40) : null }")
-        assert page.evaluate(FOCUS_IN, dialog_name), f"Tab left the {dialog_name} dialog for {where!r}"
+        focus = page.evaluate(FOCUS_AT, dialog_name)
+        assert focus["inside"], f"Tab left the {dialog_name} dialog for {focus['where']!r}"
 
 
 def test_the_palette_is_a_dialog_that_holds_and_returns_focus(studio):
@@ -499,6 +506,51 @@ def test_the_tray_holds_focus_and_escape_closes_one_layer_at_a_time(studio):
     page.keyboard.press("Escape")
     tray.wait_for(state="detached")
     assert _is_focused(page, handle), "focus did not go back to the tray's toggle"
+
+
+def test_the_switcher_offers_nothing_and_keeps_focus_while_it_reads_the_profiles(studio):
+    """
+    2.10.1's macOS run failed the test above with "Tab left the Manage creator
+    profiles dialog for 'Add Creator Profile'". The tray mounts its own
+    switcher when it opens, and until /api/v1/accounts answered, that switcher
+    held no profiles against a limit of one, so it offered Add Creator
+    Profile, which a one-profile licence refuses. Shift+Tab from Close wrapped
+    onto that button, the answer then took the button away under focus, and
+    focus fell to the page behind both dialogs. A slow runner did this by
+    chance; here the answer is held until the switcher is open and tabbed.
+    """
+    page = studio().open("Today")
+    held = []
+
+    def hold(route):
+        held.append(route)
+
+    page.route("**/api/v1/accounts", hold)
+    page.get_by_role("button", name="Open navigation tray").click()
+    tray = page.get_by_role("dialog", name="Studio navigation")
+    tray.wait_for(state="visible")
+    tray.get_by_role("button", name="Current profile", exact=False).click()
+    dialog = page.get_by_role("dialog", name="Manage creator profiles")
+    dialog.wait_for(state="visible")
+    assert held, "the switcher was open before it asked for the profiles, so nothing was held"
+    offered = dialog.get_by_role("button", name="Add Creator Profile").count()
+    waiting = dialog.inner_text()
+    page.keyboard.press("Shift+Tab")
+    tabbed_to = page.evaluate(FOCUS_AT, "Manage creator profiles")["where"]
+
+    page.unroute("**/api/v1/accounts", hold)
+    for route in held:
+        route.continue_()
+    dialog.locator("button[aria-current='true']").wait_for(state="visible")
+    focus = page.evaluate(FOCUS_AT, "Manage creator profiles")
+    assert focus["inside"], (
+        f"the profiles' answer moved focus from {tabbed_to!r} to {focus['where']!r}, outside the dialog"
+    )
+    assert offered == 0, "the switcher offered a profile before it had read what the licence covers"
+    assert "Reading your profiles" in waiting, "the switcher showed an empty list as if there were no profiles"
+    assert dialog.get_by_role("button", name="Add Creator Profile").count() == 0
+    assert "Agency licence" in dialog.inner_text()
+    _tab_stays_in(page, "Manage creator profiles")
 
 
 # ---------------------------------------------------------------------------
