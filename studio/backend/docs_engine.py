@@ -724,6 +724,8 @@ HELP_SECTIONS = [
             # Track 1, phase 2: one bridge per browser, and no reload by hand.
             "quality/cycle4/t1-phase2.md",
             "quality/cycle4/t5-derive.md",
+            # 2.10.1: three readers on LinkedIn's 2026 pages, from the owner's own.
+            "quality/cycle4/readers-2026.md",
             "quality/cycle4/t7-ideas.md",
             "quality/cycle4/t7-phase2.md",
             "quality/cycle4/t3-honesty.md",
