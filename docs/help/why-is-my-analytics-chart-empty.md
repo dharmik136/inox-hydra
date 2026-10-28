@@ -3,7 +3,7 @@ Match what Analytics shows to its cause, and get figures back on screen.
 
 ## Analytics: how figures arrive
 
-The studio never fetches your analytics. The browser extension reads the impressions, engagements and followers cards on your LinkedIn creator analytics page (an address starting `linkedin.com/analytics/creator`) while you have it open, and sends them to the studio on this machine. How capture works and what each measure means is in [Read your analytics](read-your-analytics.md).
+The studio never fetches your analytics. The browser extension reads the figures on your LinkedIn creator analytics page (an address starting `linkedin.com/analytics/creator`), such as impressions, members reached and reactions, while you have it open, and sends them to the studio on this machine. How capture works and what each measure means is in [Read your analytics](read-your-analytics.md).
 
 ## Analytics: what you see, and what to do
 
@@ -14,7 +14,7 @@ The studio never fetches your analytics. The browser extension reads the impress
 | **Comments** is a flat line at 0 | Those days were captured by an earlier version, which stored 0 for comments. Days captured now store no figure | Nothing to fix. This is expected |
 | You just visited LinkedIn, but the page has not changed | Analytics reads once when you open it and again only when you change the range. It does not refresh on its own | Switch to another surface in the rail and back to **Analytics** |
 | The side panel showed a notice ending "Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses | Set LinkedIn's range selector to the past 24 hours. The extension reads again |
-| No notice in the side panel after visiting the analytics page | The extension is not loaded in that browser, the page is not your creator analytics page (a single post's analytics page feeds that post's own readings, never this chart), or it found neither an impressions nor a followers card, so it sent nothing | Check the extension is loaded, then reload the LinkedIn analytics page |
+| No notice in the side panel after visiting the analytics page | The extension is not loaded in that browser, the page is not your creator analytics page (a single post's analytics page feeds that post's own readings, never this chart), or it found none of the figures it reads beside their labels, so it sent nothing | Check the extension is loaded, then reload the LinkedIn analytics page |
 | ANALYTICS UNAVAILABLE | The studio did not answer or refused the request | Check the studio is running, then reload the page |
 | LOADING ANALYTICS that never ends | The server has not answered | Treat it like ANALYTICS UNAVAILABLE |
 

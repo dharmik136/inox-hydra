@@ -728,6 +728,10 @@ function noticeToPanel(message, kind) {
 // the path instead.
 let lastAnalyticsPath = null;
 let analyticsReadTimer = null;
+// The 2026 page is a lazy column, like the Activity list (2.10.1): a read
+// that finds nothing it knows looks again, 2 s apart, before it is drift.
+let analyticsRereads = 0;
+const ANALYTICS_REREADS = 5;
 
 function maybeExtractAnalytics(force) {
   const path = window.location.pathname;
@@ -745,6 +749,7 @@ function maybeExtractAnalytics(force) {
 
   // Collapse bursts: a route change plus a re-render should read once.
   if (analyticsReadTimer) clearTimeout(analyticsReadTimer);
+  analyticsRereads = 0;
   analyticsReadTimer = setTimeout(extractAndSyncAnalytics, 2000);
 }
 
@@ -910,47 +915,234 @@ function detectAnalyticsPeriod() {
   return unread ? "unrecognised" : null;
 }
 
+// The 2026 creator analytics page, read by its own words (2.10.1).
+//
+// On the owner's own content page (2026-10-28) every class name is hashed per
+// build, so the card classes this reader looked for matched nothing and it
+// reported drift on a page full of figures. What stays is what the creator
+// reads: each section's heading and, inside it, each figure beside its label.
+// In "Content performance" and "Discovery" the figure comes first ("270" then
+// "Impressions", "19" then "Members reached"); in "Engagement" each row is
+// the label, then its figure ("Reactions" then "0"). A figure must sit right
+// beside its label, so the change shown next to it ("71%"), the comparison
+// under it and the chart's axis are never taken for one. The network split
+// is two rows of a label and its percentage, read only when a row's label
+// names the network the way LinkedIn does; a split that is not read is not
+// drift (owner, 2026-10-26: a figure LinkedIn does not show is not read,
+// never 0), and two shares that do not add up to about 100 are a misread.
+const ANALYTICS_SECTIONS = { "content performance": "performance", "discovery": "discovery", "engagement": "engagement" };
+// The figure, then its exact label.
+const FIGURE_THEN_LABEL = {
+  performance: [["impressions", "impressions"]],
+  discovery: [["impressions", "impressions"], ["members reached", "members_reached"]]
+};
+// The label, then its figure. Reposts are stored as shares, as the cards were.
+const LABEL_THEN_FIGURE = {
+  engagement: [["reactions", "reactions"], ["comments", "comments"], ["reposts", "shares"], ["saves", "saves"],
+    ["sends", "sends"]]
+};
+const ANALYTICS_WORD_FIGURES = ["impressions", "members_reached", "reactions", "comments", "shares", "saves", "sends",
+  "in_network_pct", "out_of_network_pct"];
+const OUT_OF_NETWORK = /\b(?:out(?:side)?[\s-]+of[\s-]+(?:your[\s-]+)?network|outside[\s-]+(?:your[\s-]+)?network|beyond[\s-]+your[\s-]+network)\b/i;
+const IN_NETWORK = /\b(?:in|inside|within|from)\s+(?:your\s+)?network\b/i;
+const SHARE_ONLY = /^(\d{1,3}(?:[.,]\d+)?)\s*%$/;
+// Words that make a phrase a comparison or a note rather than the range.
+const NOT_A_RANGE = /\b(?:vs\.?|versus|compared|prior|previous|than|ago|updated?)\b/i;
+const MONTH_WORD = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?(?![a-z])/i;
+// A menu's options name every range; only the chosen one is the page's.
+const RANGE_OPTIONS = '[role="listbox"], [role="menu"], [role="option"], [role^="menuitem"]';
+const RANGE_CHOSEN = '[aria-selected="true"], [aria-checked="true"], [aria-current="true"]';
+
+function isShownOnPage(el) {
+  if (el.closest("script, style, noscript, template")) return false;
+  if (typeof el.checkVisibility === "function") return el.checkVisibility({ checkVisibilityCSS: true, visibilityProperty: true });
+  return el.getClientRects().length > 0;
+}
+
+// The page's words in reading order: each visible run of text with the
+// element it sits in.
+function pageWords(root) {
+  const words = [];
+  const shown = new Map();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node.nodeValue.replace(/\s+/g, " ").trim();
+    const el = node.parentElement;
+    if (!text || !el) continue;
+    if (!shown.has(el)) shown.set(el, isShownOnPage(el));
+    if (shown.get(el)) words.push({ text, lower: text.toLowerCase(), el });
+  }
+  return words;
+}
+
+// Each section's words: everything inside the widest box around its heading
+// that holds no other section's heading. A heading inside a control (a
+// toggle or a tab that happens to share its word) is not a heading.
+function analyticsSections(words, root) {
+  const headings = words.filter((w) => ANALYTICS_SECTIONS[w.lower] &&
+    !w.el.closest('button, [role="button"], [role="tab"], label, a'));
+  const sections = {};
+  for (const heading of headings) {
+    const name = ANALYTICS_SECTIONS[heading.lower];
+    if (sections[name]) continue;
+    const others = headings.filter((h) => ANALYTICS_SECTIONS[h.lower] !== name);
+    let box = heading.el;
+    while (box.parentElement && box.parentElement !== root && box !== root &&
+           !others.some((h) => box.parentElement.contains(h.el))) {
+      box = box.parentElement;
+    }
+    sections[name] = words.filter((w) => box.contains(w.el));
+  }
+  return sections;
+}
+
+function readAnalyticsWords(root) {
+  const words = pageWords(root);
+  const sections = analyticsSections(words, root);
+  const figures = {};
+  const rounded = new Set();
+  const take = (key, word) => {
+    if (figures[key] !== undefined || !word) return;
+    const parsed = parseMetricValue(word.text);
+    if (!parsed) return;
+    figures[key] = parsed.value;
+    if (parsed.precision === "rounded") rounded.add(key);
+  };
+  for (const [name, list] of Object.entries(sections)) {
+    list.forEach((word, i) => {
+      for (const [label, key] of FIGURE_THEN_LABEL[name] || []) {
+        if (word.lower === label) take(key, list[i - 1]);
+      }
+      for (const [label, key] of LABEL_THEN_FIGURE[name] || []) {
+        if (word.lower === label || word.lower.startsWith(label + " ")) take(key, list[i + 1]);
+      }
+      if (name === "discovery" && list[i + 1] && SHARE_ONLY.test(list[i + 1].text)) {
+        const side = OUT_OF_NETWORK.test(word.text) ? "out_of_network_pct"
+          : IN_NETWORK.test(word.text) ? "in_network_pct" : null;
+        const value = parseFloat(SHARE_ONLY.exec(list[i + 1].text)[1].replace(",", "."));
+        if (side && figures[side] === undefined && value <= 100) figures[side] = value;
+      }
+    });
+  }
+  if (figures.in_network_pct !== undefined && figures.out_of_network_pct !== undefined &&
+      Math.abs(figures.in_network_pct + figures.out_of_network_pct - 100) > 1) {
+    delete figures.in_network_pct;
+    delete figures.out_of_network_pct;
+  }
+  return { words, sections: Object.keys(sections).length, figures, rounded };
+}
+
+// The window the page's own words name: the range control's "Past 28 days"
+// (or "Past 24 hours", in any language analyticsPeriodOf reads) as a phrase
+// of its own, outside the chart and outside an open menu's other options; a
+// custom range's dates are "unrecognised", as the old control's were. With
+// no such phrase, the old range control, then the comparison under the
+// change ("vs. prior 28 days" names the same length), and with none of
+// those the window is one the page did not name: "unnamed", which the studio
+// keeps as a window, never as a day.
+function analyticsWindowOfWords(words) {
+  for (const w of words) {
+    if (w.el.closest('svg, [role="img"], [role="region"]')) continue;
+    if (w.el.closest(RANGE_OPTIONS) && !w.el.closest(RANGE_CHOSEN)) continue;
+    const count = w.text.split(" ").length;
+    if (count <= 8 && MONTH_WORD.test(w.text) && /\d/.test(w.text) && /\s[-\u2013\u2014]\s|\bto\b/.test(w.text)) {
+      return "unrecognised";
+    }
+    if (count > 4 || NOT_A_RANGE.test(w.text)) continue;
+    const period = analyticsPeriodOf(w.text);
+    if (period) return period;
+  }
+  const control = detectAnalyticsPeriod();
+  if (control) return control;
+  for (const w of words) {
+    if (!/\b(?:vs\.?|versus|compared|prior|previous)\b/i.test(w.text) || /\bago\b/i.test(w.text)) continue;
+    const period = analyticsPeriodOf(w.text) ||
+      (/\b(?:prior|previous)\s+day\b/i.test(w.text) ? "1d" : null) ||
+      (/\b(?:prior|previous)\s+week\b/i.test(w.text) ? "7d" : null) ||
+      (/\b(?:prior|previous)\s+year\b/i.test(w.text) ? "365d" : null);
+    if (period) return period;
+  }
+  return "unnamed";
+}
+
+// The creator analytics content page, plainly: the page this reader reads.
+// Another creator analytics page (the audience tab) showing none of these
+// words is not drift.
+function isCreatorContentPage() {
+  return /^\/analytics\/creator\/content\/?$/.test(window.location.pathname);
+}
+
 function extractAndSyncAnalytics() {
   try {
     beginRead("analytics");
-    const metricElements = document.querySelectorAll('[data-test-metric-value], .member-analytics-addon__metric-value, .creator-analytics-metric__value, .analytics-metric-summary');
-    let impressions = null;
-    let engagements = null;
-    let followers = null;
-    // Precision belongs to a reading, not to the page. A single payload-wide
-    // flag was escalated by any abbreviated card on screen, including ones whose
-    // values are then discarded, so an exact impressions figure of 412 was
-    // marked rounded because "Profile viewers 1.3K" sat beside it.
-    const seen = {};
+    const root = document.querySelector("main") || document.body;
+    const byWords = readAnalyticsWords(root);
+    let figures = byWords.figures;
+    let rounded = byWords.rounded;
+    let seenCount = byWords.sections;
+    const fromWords = Object.keys(figures).length > 0;
+    let metricElements = [];
 
-    metricElements.forEach(el => {
-      const parent = el.closest('[data-test-metric-card], .creator-analytics-metric') || el.parentElement;
-      const text = parent ? parent.innerText.toLowerCase() : "";
-      const parsed = parseMetricValue(el.innerText);
-      if (!parsed) return;
-      if (text.includes("impression")) { impressions = parsed.value; seen.impressions = parsed.precision; }
-      else if (text.includes("engagement") || text.includes("reaction")) { engagements = parsed.value; seen.reactions = parsed.precision; }
-      else if (text.includes("follower")) { followers = parsed.value; seen.followers = parsed.precision; }
-    });
+    // The cards of the layout before 2026, kept as a fallback for an account
+    // still served it.
+    if (!fromWords) {
+      metricElements = document.querySelectorAll('[data-test-metric-value], .member-analytics-addon__metric-value, .creator-analytics-metric__value, .analytics-metric-summary');
+      figures = {};
+      rounded = new Set();
+      // Precision belongs to a reading, not to the page. A single payload-wide
+      // flag was escalated by any abbreviated card on screen, including ones
+      // whose values are then discarded, so an exact impressions figure of 412
+      // was marked rounded because "Profile viewers 1.3K" sat beside it.
+      metricElements.forEach(el => {
+        const parent = el.closest('[data-test-metric-card], .creator-analytics-metric') || el.parentElement;
+        const text = parent ? parent.innerText.toLowerCase() : "";
+        const parsed = parseMetricValue(el.innerText);
+        if (!parsed) return;
+        const key = text.includes("impression") ? "impressions"
+          : (text.includes("engagement") || text.includes("reaction")) ? "reactions"
+          : text.includes("follower") ? "followers" : null;
+        if (!key) return;
+        figures[key] = parsed.value;
+        if (parsed.precision === "rounded") rounded.add(key); else rounded.delete(key);
+      });
+      if (figures.impressions === undefined && figures.followers === undefined) figures = {};
+      seenCount = metricElements.length;
+    }
 
-    // Cards on the page but no label recognised, or an analytics page with no
-    // cards at all: either way the reader no longer matches LinkedIn's markup.
+    // Drift is a page that plainly is the page with nothing on it this reader
+    // knows: the content page with none of its section headings, or headings
+    // (or the old cards) with neither impressions nor followers beside them.
+    // A figure the page does not show (members reached, saves, sends, the
+    // split, added in 2.10.1) is not read, never drift.
     const analyticsDrift = [];
-    if (!metricElements.length) analyticsDrift.push("metric_cards");
-    else if (impressions === null && followers === null) analyticsDrift.push("metric_labels");
-    reportCapture("analytics", metricElements.length,
-      [impressions, engagements, followers].filter(v => v !== null).length, analyticsDrift);
+    if (figures.impressions === undefined && figures.followers === undefined) {
+      if (byWords.sections || metricElements.length) analyticsDrift.push("metric_labels");
+      else if (isCreatorContentPage()) analyticsDrift.push("metric_cards");
+    }
+    if (analyticsDrift.length && analyticsRereads < ANALYTICS_REREADS) {
+      analyticsRereads += 1;
+      endRead("analytics");
+      analyticsReadTimer = setTimeout(() => {
+        if (window.location.pathname.startsWith("/analytics/creator")) extractAndSyncAnalytics();
+      }, 2000);
+      return;
+    }
+    reportCapture("analytics", seenCount, Object.keys(figures).length, analyticsDrift);
     endRead("analytics");
 
-    if (impressions === null && followers === null) return;
+    if (!Object.keys(figures).length) return;
 
     // One row carries one precision, so report the least precise reading that
     // actually contributed a stored value.
-    const contributing = Object.values(seen);
-    const precision = contributing.includes("rounded") ? "rounded" : "exact";
-
-    const period = detectAnalyticsPeriod();
+    const precision = rounded.size ? "rounded" : "exact";
+    const period = fromWords ? analyticsWindowOfWords(byWords.words) : detectAnalyticsPeriod();
     const today = new Date().toISOString().slice(0, 10);
+    // Every figure this strategy reads is named in the row, null when the
+    // page did not show it: the studio keeps what it holds for a null.
+    const row = { date: today, period_label: period, precision: precision };
+    for (const key of fromWords ? ANALYTICS_WORD_FIGURES : ["impressions", "reactions", "followers"]) {
+      row[key] = figures[key] === undefined ? null : figures[key];
+    }
 
     studioApi("/api/analytics/ingest", {
         // The LinkedIn account signed in here, which the studio checks
@@ -958,14 +1150,7 @@ function extractAndSyncAnalytics() {
         author: signedInVanity,
         period_label: period,
         precision: precision,
-        series: [{
-          date: today,
-          period_label: period,
-          precision: precision,
-          impressions: impressions,
-          reactions: engagements,
-          followers: followers
-        }]
+        series: [row]
       })
       // Says what the studio did. "Synced" used to follow any answer at all,
       // including none, so a creator whose studio was closed or unpaired was
@@ -987,10 +1172,13 @@ function extractAndSyncAnalytics() {
         if (result.status === "window_mismatch") {
           const cover = period === "unrecognised"
             ? "Inox Hydra: could not tell which period these figures cover"
-            : "Inox Hydra: these figures cover " + (period || "an unknown period");
+            : period === "unnamed"
+              ? "Inox Hydra: the page did not name the period these figures cover"
+              : "Inox Hydra: these figures cover " + (period || "an unknown period");
+          const windowKept = result.windows_saved > 0 ? " They were kept as a reading over that window." : "";
           const kept = result.followers_saved > 0 ? " Your follower count was saved." : "";
           noticeToPanel(
-            cover + ", so they were not saved as today's numbers." + kept +
+            cover + ", so they were not saved as today's numbers." + windowKept + kept +
             " Set the range to 24 hours to sync a daily figure.",
             "warning"
           );

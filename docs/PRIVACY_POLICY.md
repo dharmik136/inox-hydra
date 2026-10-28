@@ -61,6 +61,15 @@ with a job title or in a location), never names, and for a video post its
 watch time and average watch time. Each reading is kept with the post's age and
 the day it was read.
 
+From **your creator analytics page** (`content.js`), for the account you
+confirmed in Inox Hydra only: the figures LinkedIn shows you there over the
+range the page is set to, which are impressions, members reached, reactions,
+comments, reposts, saves and sends, the share of impressions from inside and
+from outside your network, and on LinkedIn's earlier layout your follower
+count. A reading over the past 24 hours is kept as that day; a reading over
+any other range, or one whose range the page does not name, is kept as a
+reading over that range on the day it was read, never as a day.
+
 From **your own account and content analytics pages** (`own_insights.js`), and
 only yours: on your analytics dashboard, your profile views and search
 appearances, each with the window the page names (such as the past 90 days),

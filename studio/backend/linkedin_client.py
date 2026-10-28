@@ -297,20 +297,52 @@ def dismiss_session_removed_notice() -> bool:
 
 
 # A window label a row can carry: LinkedIn's own ranges, as the reader names
-# them (7d, 28d, 90d, 365d). "unrecognised" and an unread window are not
-# windows and are never stored as one.
+# them (7d, 28d, 90d, 365d), and "unnamed" for a reading of the 2026 content
+# page that names no range at all (2.10.1): the figures cover some window,
+# never one day, so they are kept as a window the page did not name.
+# "unrecognised" (a range whose words were not understood, such as a custom
+# range's dates) and an unread window are not windows and are never stored
+# as one.
 _WINDOW_LABEL = re.compile(r"^(\d{1,3})d$")
+UNNAMED_WINDOW = "unnamed"
+
+# The figures a windowed reading can carry, each with the payload keys it is
+# read from: the content page's own (members reached, saves, sends, the
+# network split) as well as the cards read before it.
+_WINDOW_FIGURES = (
+    ("impressions", ("impressions",)),
+    ("reactions", ("likes", "reactions")),
+    ("comments", ("comments",)),
+    ("shares", ("shares", "reposts")),
+    ("followers", ("followers",)),
+    ("members_reached", ("members_reached", "unique_members_reached")),
+    ("saves", ("saves",)),
+    ("sends", ("sends",)),
+    ("in_network_pct", ("in_network_pct",)),
+    ("out_of_network_pct", ("out_of_network_pct",)),
+)
+
+
+def _share(value):
+    """A share of impressions as the page printed it, 0 to 100, or None."""
+    try:
+        share = float(value)
+    except (TypeError, ValueError):
+        return None
+    return share if 0 <= share <= 100 else None
 
 
 def _store_window(conn, day: str, period_label, metrics: dict, precision) -> bool:
     """
-    One creator analytics card that covers a named window, kept as that
-    window on the day it was read. A figure the card did not show is NULL,
-    never 0; a second read of the same window the same day refreshes the
-    row; another window the same day is another row.
+    One creator analytics card that covers a window, kept as that window on
+    the day it was read: a named window (7d, 28d) or one the page did not
+    name. A figure the card did not show is NULL, never 0; a second read of
+    the same window the same day refreshes the row; another window the same
+    day is another row.
     """
-    match = _WINDOW_LABEL.match(str(period_label or ""))
-    if not match or int(match.group(1)) < 2:
+    label = str(period_label or "")
+    match = _WINDOW_LABEL.match(label)
+    if label != UNNAMED_WINDOW and (not match or int(match.group(1)) < 2):
         return False
 
     def _read(*keys):
@@ -320,25 +352,23 @@ def _store_window(conn, day: str, period_label, metrics: dict, precision) -> boo
                 return value
         return None
 
-    figures = (_read("impressions"), _read("likes", "reactions"), _read("comments"), _read("shares"),
-               _read("followers"))
-    if all(value is None for value in figures):
+    figures = {column: _read(*keys) for column, keys in _WINDOW_FIGURES}
+    for column in ("in_network_pct", "out_of_network_pct"):
+        figures[column] = _share(figures[column])
+    if all(value is None for value in figures.values()):
         return False
+    columns = list(figures)
     conn.execute(
-        """
+        f"""
         INSERT INTO analytics_windows
-            (date, period_label, observed_at, impressions, reactions, comments, shares, followers, precision, source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'observed')
+            (date, period_label, observed_at, {", ".join(columns)}, precision, source)
+        VALUES (?, ?, ?, {", ".join("?" for _ in columns)}, ?, 'observed')
         ON CONFLICT(date, period_label) DO UPDATE SET
             observed_at = excluded.observed_at,
-            impressions = COALESCE(excluded.impressions, analytics_windows.impressions),
-            reactions = COALESCE(excluded.reactions, analytics_windows.reactions),
-            comments = COALESCE(excluded.comments, analytics_windows.comments),
-            shares = COALESCE(excluded.shares, analytics_windows.shares),
-            followers = COALESCE(excluded.followers, analytics_windows.followers),
+            {", ".join(f"{c} = COALESCE(excluded.{c}, analytics_windows.{c})" for c in columns)},
             precision = COALESCE(excluded.precision, analytics_windows.precision)
         """,
-        (day, match.group(0), datetime.now(timezone.utc).isoformat(), *figures,
+        (day, label, datetime.now(timezone.utc).isoformat(), *figures.values(),
          precision if precision in ("exact", "rounded") else None),
     )
     return True
@@ -566,9 +596,10 @@ class LinkedInClient:
                 "windows_saved": windows_saved,
                 "period_label": offending,
                 "message": (
-                    f"These figures cover {offending}, not a single day. "
-                    f"Storing them as today's numbers would make every total "
-                    f"that sums across days wrong."
+                    ("The page did not name the window these figures cover, so they are not a single day. "
+                     if offending == UNNAMED_WINDOW else f"These figures cover {offending}, not a single day. ")
+                    + "Storing them as today's numbers would make every total "
+                    "that sums across days wrong."
                     + (" They are kept as a reading over that window, never as a day."
                        if windows_saved else "")
                 ),
@@ -604,10 +635,18 @@ class LinkedInClient:
                 imp = _metric("impressions")
                 lk = _metric("likes", "reactions")
                 cm = _metric("comments")
-                sh = _metric("shares")
+                sh = _metric("shares", "reposts")
                 fl = metrics.get("followers")
                 cn = metrics.get("connections")
                 pv = metrics.get("profile_views")
+                # The 2026 content page's own figures, over 24 hours (2.10.1):
+                # members reached, saves, sends and the network split, each
+                # NULL when the page did not show it.
+                reach = _metric("members_reached", "unique_members_reached")
+                sv = _metric("saves")
+                sd = _metric("sends")
+                inside = _share(metrics.get("in_network_pct"))
+                outside = _share(metrics.get("out_of_network_pct"))
 
                 engaged = sum(v for v in (lk, cm, sh) if v is not None)
                 eng_rate = round((engaged / imp * 100), 2) if (imp or 0) > 0 else None
@@ -631,22 +670,30 @@ class LinkedInClient:
                 -- a figure this read did not show keeps what the day held
                 -- (COALESCE), and a figure never read stays NULL, never 0.
                 INSERT INTO analytics_daily
-                (date, followers, connections, profile_views, impressions, reactions, comments, shares,
+                (date, followers, connections, profile_views, impressions, unique_members_reached, reactions,
+                 comments, shares, saves, sends, in_network_pct, out_of_network_pct,
                  engagement_rate, source, period_label, precision)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', ?, ?)
                 ON CONFLICT(date) DO UPDATE SET
                     followers = COALESCE(excluded.followers, analytics_daily.followers),
                     connections = COALESCE(excluded.connections, analytics_daily.connections),
                     profile_views = COALESCE(excluded.profile_views, analytics_daily.profile_views),
                     impressions = COALESCE(excluded.impressions, analytics_daily.impressions),
+                    unique_members_reached = COALESCE(excluded.unique_members_reached,
+                                                      analytics_daily.unique_members_reached),
                     reactions = COALESCE(excluded.reactions, analytics_daily.reactions),
                     comments = COALESCE(excluded.comments, analytics_daily.comments),
                     shares = COALESCE(excluded.shares, analytics_daily.shares),
+                    saves = COALESCE(excluded.saves, analytics_daily.saves),
+                    sends = COALESCE(excluded.sends, analytics_daily.sends),
+                    in_network_pct = COALESCE(excluded.in_network_pct, analytics_daily.in_network_pct),
+                    out_of_network_pct = COALESCE(excluded.out_of_network_pct, analytics_daily.out_of_network_pct),
                     engagement_rate = COALESCE(excluded.engagement_rate, analytics_daily.engagement_rate),
                     source = 'observed',
                     period_label = excluded.period_label,
                     precision = excluded.precision
-                """, (dt, fl, cn, pv, imp, lk, cm, sh, eng_rate, row_period, row_precision))
+                """, (dt, fl, cn, pv, imp, reach, lk, cm, sh, sv, sd, inside, outside, eng_rate, row_period,
+                      row_precision))
                 # The rate is derived from the row, never from the payload.
                 #
                 # `engaged` above sums only the metrics THIS payload carried,
