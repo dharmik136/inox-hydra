@@ -147,5 +147,42 @@ def test_the_store_takes_a_telegram_ask_and_the_box_still_refuses_one(bot):
 
 def test_the_help_lists_the_commands():
     article = open(os.path.join(REPO_ROOT, "docs", "help", "send-a-post-idea-from-telegram.md"), encoding="utf-8").read()
-    for command in ("/start", "/help", "/idea", "/ask", "/status"):
+    for command in ("/start", "/help", "/idea", "/ask", "/status", "/drafts"):
         assert f"`{command}" in article, command
+
+
+def _phone_draft(days_ago, tags='["mobile-ingress"]', words="An idea of mine"):
+    from datetime import timedelta
+    moment = (datetime.now(timezone.utc) - timedelta(days=days_ago)).strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT INTO drafts (title, raw_content, tags, status, created_at, updated_at) "
+                     "VALUES ('t', ?, ?, 'DRAFT', ?, ?)", (words, tags, moment, moment))
+    conn.close()
+
+
+def test_drafts_answers_how_many_drafts_came_from_the_phone_in_seven_days_as_a_count(bot):
+    """Phase 2: a count, never a draft's words; answered whatever the confirmations switch says."""
+    _saved(bot)
+    for days in (0.5, 2, 6.5):
+        _phone_draft(days)
+    _phone_draft(8)
+    _phone_draft(1, tags='["studio"]', words="Written at the desk")
+    bot["client"].post("/api/v1/ingress/options", json={"replies": False})
+    [answer] = _ask(bot, "/drafts")
+    assert answer == SAID["drafts"].format(count=3)
+    assert "idea of mine" not in answer and "desk" not in answer
+    assert len(_drafts()) == 4 and not any("drafts" in d for d in _drafts()), "/drafts was saved as a draft"
+
+
+def test_drafts_with_none_says_none(bot):
+    _saved(bot)
+    [answer] = _ask(bot, "/drafts")
+    assert answer == SAID["drafts_none"]
+
+
+def test_a_strangers_drafts_command_is_refused(bot):
+    _saved(bot)
+    bot["fake"].push(STRANGER, "/drafts")
+    assert _until(lambda: len(_texts(bot, STRANGER)) == 1)
+    assert _texts(bot, STRANGER) == [SAID["other_chat"]]

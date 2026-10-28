@@ -674,6 +674,9 @@ class TelegramIngressDaemon:
             return done, telegram_bot.HELP, True
         if name == "status":
             return done, telegram_bot.status_sentence(), True
+        if name == "drafts":
+            # A count of the creator's own drafts, never their words.
+            return done, telegram_bot.drafts_answer(), True
         if name == "today":
             # The creator's own figures leave only when they turned that on.
             if not telegram_bot.figures_on():

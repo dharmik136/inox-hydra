@@ -43,6 +43,7 @@ These need a post to come due, or an hour to come round, so they take as long as
 4. Press **Done** under the reminder: the message ends "Reminder cleared. Nothing was marked as posted: it stays due in your studio until you post it." In the studio the post is still due: Done changed nothing there.
 5. Quiet hours: set **Hold notifications during quiet hours** to run from this hour to the next, and schedule another post a few minutes ahead. When it comes due no message comes, and the panel says "QUIET NOW". Untick **Hold notifications during quiet hours**: within about a minute the bot says the post is due. Set quiet hours back as you like them.
 6. The weekly summary: tick **Send me a weekly summary** and pick today and the next whole hour. The panel says "NEXT SUMMARY:" with that time. At that hour the bot sends "Your week, the seven days to ..." with your counts and your next scheduled post, and your figures only if **The bot may answer with your figures** is on. Pick the day and hour you want afterwards.
+7. Send `/drafts`. The bot answers with how many drafts you saved from your phone in the last seven days, for example "Drafts saved from your phone in the last seven days: 2.", a count and never their words.
 
 ## When a step does not match
 

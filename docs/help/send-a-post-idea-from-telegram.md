@@ -68,9 +68,10 @@ Send a command as a message on its own, as Telegram's menu does. Letter case doe
 | `/ask what to remember` | It is remembered as an ask in **From your record**, with the source Telegram, and listed under **What the studio knows** there, where you can change or remove it. It takes effect on tomorrow's cards. Nothing is saved as a draft |
 | `/status` | Whether your studio is running, and whether the bridge in your browser is connected. No figures |
 | `/today` | Your latest post's figures, how many replies are waiting and when your next post is scheduled, only if you turned on **The bot may answer with your figures**. Otherwise it says your figures stay in the studio |
+| `/drafts` | How many drafts you saved from your phone in the last seven days: "Drafts saved from your phone in the last seven days: 5." A count, never their words |
 | Any other command | "I do not know that command. Send /help to see what I do." |
 
-`/start`, `/help`, `/status` and `/today` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
+`/start`, `/help`, `/status`, `/today` and `/drafts` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
 
 ## Your figures on Telegram, only if you allow it
 

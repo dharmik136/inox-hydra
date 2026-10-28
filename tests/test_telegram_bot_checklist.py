@@ -91,3 +91,8 @@ def test_the_weekly_summary_it_names_is_the_panels_and_the_bots():
         assert words in _article() and words in panel, words
     bot = open(os.path.join(REPO_ROOT, "studio", "backend", "telegram_bot.py"), encoding="utf-8").read()
     assert "Your week, the seven days to" in _article() and "Your week, the seven days to" in bot
+
+
+def test_the_drafts_answer_it_quotes_is_the_bots():
+    """Phase 2: /drafts, in the later, optional check."""
+    assert telegram_bot.SENTENCES["drafts"].format(count=2) in _article()

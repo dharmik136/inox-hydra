@@ -141,6 +141,8 @@ SENTENCES = {
     "button_used": "That button was already used, so nothing more was done.",
     "button_old": "That button is old, so nothing was done.",
     "press_failed": "Your studio could not do that. Open the studio to see why.",
+    "drafts": "Drafts saved from your phone in the last seven days: {count}.",
+    "drafts_none": "No draft was saved from your phone in the last seven days.",
 }
 
 # Where a figure was read, as /today says it.
@@ -167,6 +169,7 @@ HELP = "\n".join((
     "- /status: whether your studio and its bridge are running",
     "- /today: your latest post's figures, replies waiting and your next scheduled post, only if you allow "
     "figures in your studio",
+    "- /drafts: how many drafts you saved from your phone in the last seven days",
     "",
     "Press Undo under Saved as a draft to remove that draft, while you have not changed it in your studio.",
     "",
@@ -176,7 +179,7 @@ HELP = "\n".join((
 ))
 
 # Commands answered whatever the confirmations switch says: they are questions.
-QUESTIONS = ("start", "help", "status", "today")
+QUESTIONS = ("start", "help", "status", "today", "drafts")
 _COMMAND = re.compile(r"^/([A-Za-z][A-Za-z0-9_]{0,31})(?:@[A-Za-z0-9_]{1,64})?(?:\s+(.*))?$", re.DOTALL)
 
 
@@ -488,6 +491,27 @@ def next_scheduled(conn) -> str:
     return f"Next scheduled post: {when.astimezone().strftime('%a %d %b, %H:%M')} (your computer's time)."
 
 
+def phone_drafts(conn, start: datetime, end: datetime) -> int:
+    """How many drafts the phone saved from `start` up to `end`: a count, read from when each was saved."""
+    count = 0
+    for row in conn.execute("SELECT created_at FROM drafts WHERE tags LIKE ? AND substr(created_at, 1, 10) >= ?",
+                            ('%"mobile-ingress"%', (start - timedelta(days=1)).date().isoformat())):
+        when = _instant(row["created_at"])
+        count += 1 if when is not None and start <= when < end else 0
+    return count
+
+
+def drafts_answer() -> str:
+    """/drafts: how many drafts the phone saved in the last seven days. A count, never a draft's words."""
+    now = datetime.now(timezone.utc)
+    conn = get_db()
+    try:
+        count = phone_drafts(conn, now - timedelta(days=7), now + timedelta(minutes=1))
+    finally:
+        conn.close()
+    return SENTENCES["drafts"].format(count=count) if count else SENTENCES["drafts_none"]
+
+
 def weekly_summary(conn, moment: datetime) -> str:
     """
     The weekly summary for the seven days to `moment`: the posts the studio
@@ -511,11 +535,7 @@ def weekly_summary(conn, moment: datetime) -> str:
         if when is not None and start <= when < moment:
             published.append((when, row["activity_urn"]))
     published.sort(reverse=True)
-    drafts = 0
-    for row in conn.execute("SELECT created_at FROM drafts WHERE tags LIKE ? AND substr(created_at, 1, 10) >= ?",
-                            ('%"mobile-ingress"%', first_day)):
-        when = _instant(row["created_at"])
-        drafts += 1 if when is not None and start <= when < moment else 0
+    drafts = phone_drafts(conn, start, moment)
     lines = [f"Your week, the seven days to {moment.strftime('%a %d %b, %H:%M')} on your computer's clock:",
              f"Posts published, as your studio recorded them: {len(published)}",
              f"Drafts saved from your phone: {drafts}",
