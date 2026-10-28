@@ -39,10 +39,16 @@ def test_a_hidden_linkedin_tab_still_reports_the_bridge():
             before="() => Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })",
         )
         page.clock.run_for(3 * 60 * 1000 + 1000)
-        beats = pages.sent(page, "/api/v1/bridge/heartbeat")
+        # Since cycle 4, track 1, phase 2 a tab reports to the worker
+        # (PAGE_STATE), which beats once for the browser; a hidden tab still
+        # reports, so the worker still counts it as open.
+        beats = [m for m in pages.sent(page) if m.get("action") == "PAGE_STATE"]
+        to_studio = pages.sent(page, "/api/v1/bridge/heartbeat")
     finally:
         pages.close()
-    assert len(beats) >= 3, f"a hidden tab sent {len(beats)} heartbeats in three minutes"
+    assert len(beats) >= 3, f"a hidden tab reported {len(beats)} times in three minutes"
+    assert beats[-1]["visible"] is False
+    assert to_studio == [], "a tab sent the studio a heartbeat of its own"
 
 
 # ---------------------------------------------------------------------------

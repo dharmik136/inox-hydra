@@ -1795,6 +1795,32 @@ export interface BridgeStatus {
   page_kind: string | null;
   /** null until a heartbeat has carried the state: not measured, never off. */
   network_reading: NetworkReadingState | null;
+  /** Each browser the bridge runs in, newest first (cycle 4, track 1, phase 2). */
+  bridges?: BridgeEntry[];
+}
+
+/** One browser the bridge runs in, from its own latest heartbeat. */
+export interface BridgeEntry {
+  browser_instance_id: string | null;
+  /** The browser's own name, when it gave one. */
+  browser: string | null;
+  /** The LinkedIn account the browser is signed in to: the creator's own. */
+  signed_in_vanity: string | null;
+  connected: boolean;
+  last_seen_at: string;
+  seconds_ago: number;
+  extension_version: string | null;
+  contract_version: number | null;
+  /** LinkedIn pages open, by kind; null from an extension older than the field. */
+  open_pages: Record<string, number> | null;
+  /** Captures held for an account no creator profile here holds, by account. */
+  held: Record<string, number> | null;
+  tabs_needing_reload: number | null;
+  self_reload: boolean | null;
+  files_version: string | null;
+  /** Whether the extension could read its own folder at its last look; false when the folder is gone. */
+  files_readable?: boolean | null;
+  files_checked_at?: string | null;
 }
 
 export interface IdentityCandidate {
@@ -4107,8 +4133,13 @@ export interface ExtensionHealth {
     extension_contract_version: number | null;
     extension_version: string | null;
     last_seen_at: string | null;
-    reload_required: boolean;
+    /** null when nothing the extension said is fresh enough to judge: not known, never "stale". */
+    reload_required: boolean | null;
     message: string | null;
+    /** The extension's files are newer than it, and it is reloading itself. */
+    updating?: boolean;
+    tabs_needing_reload?: number | null;
+    tabs_message?: string | null;
   };
   waiting_captures: {
     waiting: number | null;

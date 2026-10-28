@@ -292,7 +292,8 @@ def test_with_network_reading_on_the_interceptor_answers_and_marks_nothing(pages
                       storage={"networkReading": True})
     page.clock.run_for(100)
     page.wait_for_timeout(50)
-    beats = pages.sent(page, "/api/v1/bridge/heartbeat")
+    # The page tells the worker (PAGE_STATE), which beats for the browser.
+    beats = [m for m in pages.sent(page) if m.get("action") == "PAGE_STATE" and m.get("network_reading")]
     assert beats and beats[-1]["network_reading"]["injected"] is True
     assert page.evaluate(ROOT_MARKS) == [], "the interceptor marked LinkedIn's document"
 

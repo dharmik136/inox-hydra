@@ -81,7 +81,8 @@ If you imported your archive in step 4, this step only adds what has happened si
 
 Click **Import**. The bridge browser opens that activity page, and the extension then clicks LinkedIn's own "Show more results" control and scrolls the page for you, at a randomised pace, for up to 250 rounds, which can take several minutes. A banner at the bottom of the page reads "Studio is importing your posts: N so far." with a **Stop** button.
 
-- Keep the tab in view. The import pauses while the tab is hidden, and Setup then says PAUSED AT the count so far, BRING THE LINKEDIN TAB TO THE FRONT TO GO ON.
+- Keep the tab in view. The import pauses while the tab is hidden, and Setup then says PAUSED AT the count so far, BRING THE LINKEDIN TAB TO THE FRONT TO GO ON. After a minute in the background the tab lets the import go, and its banner reads "Paused after N posts: this tab was in the background. Bring it to the front to go on." The tab you bring to the front, this one or another showing the same page, carries on.
+- Only one tab scrolls an import. If two tabs show the same activity page, the first takes the import, and the other's banner reads "Another tab is importing your posts; this one stopped after N."
 - It stops by itself when the list stops growing. If the page has nothing more to load, that is the end of the list: the banner reads "Done. N posts imported." and the row in Setup reads **READ TO THE END**.
 - If the page still offers more (a **Show more** button, or a list still loading), the list stalled rather than ended. The banner says so, and the row reads **THE LIST STOPPED LOADING AT N. IMPORT AGAIN**. One import also reads at most 250 rounds of the list; past that the row reads **THE MOST ONE IMPORT READS**.
 - **Stop** ends it early. What was read so far is kept.
@@ -103,7 +104,7 @@ The extension reads LinkedIn's pages, and LinkedIn changes how they are built wi
 
 Network reading is off unless you turn it on in the extension's popup. Step 1 says which of three states it is in: "Network reading is off.", "Network reading is on and seeing N LinkedIn data calls, K matched." or "Network reading is on and matching nothing", with the count of data calls the LinkedIn tab that last reported saw. An extension that has not reported the state yet says nothing there, rather than "off". The same sentence is on **Health**, above its readers, and in the extension's side panel, under **Health**.
 
-The extension reports at most once a minute per part per page. The studio keeps a week of those reports, and a row per reader per day for longer. They say how much was found and kept, never what it was.
+The extension reports at most once a minute per part per browser, however many tabs show the page. The studio keeps a week of those reports, and a row per reader per day for longer. They say how much was found and kept, never what it was.
 
 ## What this changes elsewhere
 
@@ -122,8 +123,8 @@ It also says whether a backup of the studio exists, and **Back up first** takes 
 
 | What you see | What to do |
 | --- | --- |
-| Step 1 never ticks | Check the extension is loaded in the bridge browser, and open `http://127.0.0.1:8000` once in that browser so it has the studio's access key. Reload the extension after an update. |
+| Step 1 never ticks | Check the extension is loaded in the bridge browser, and open `http://127.0.0.1:8000` once in that browser so it has the studio's access key. After an update from a version before 2.10, reload the extension once; from 2.10 on it reloads itself. |
 | Step 2 never asks "Is this you?" | Open your profile from the bridge browser, not another one, and wait for the page to finish loading. If it still does not ask, LinkedIn may have changed its page; the studio refuses to guess. |
 | A field reads "Not read" | Open the page that holds it with the buttons above. If it still does not fill, the extension did not recognise that part of the page. |
 | The import stops early | The list may have stopped loading, or the tab was left. Click **Import again**; posts already read are not duplicated. |
-| A row reads **WITH AN OLDER EXTENSION, END NOT KNOWN** | The browser is still running the extension from before the studio was updated, which cannot tell the end of the list from a stall. Importing again does not help until it is reloaded: open the browser's extensions page (`edge://extensions` or `brave://extensions`), click **Reload** on Inox Hydra Bridge, then click **Import again**. See [After an update, reload the browser extension](after-an-update-reload-the-extension.md). |
+| A row reads **WITH AN OLDER EXTENSION, END NOT KNOWN** | That import was read by an extension from before the studio was updated, which cannot tell the end of the list from a stall. When the row goes on **RELOAD IT ON THE BROWSER'S EXTENSIONS PAGE, THEN IMPORT AGAIN**, the browser still runs that extension: open the extensions page (`edge://extensions` or `brave://extensions`), click **Reload** on Inox Hydra Bridge, then click **Import again**. When it goes on **IMPORT AGAIN**, the extension has been updated since, by itself or by you: click **Import again**. See [After an update, the browser extension reloads itself](after-an-update-reload-the-extension.md). |

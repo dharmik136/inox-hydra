@@ -2019,6 +2019,56 @@ def _migrate_stage_post_and_queue_dispatches(cursor: sqlite3.Cursor) -> None:
             (post_id, note.get("scheduled_for"), note["noticed_at"], note.get("late_minutes")))
 
 
+def _migrate_bridge_coordination(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 34:
+    One bridge per browser: a heartbeat row per browser per minute, a capture
+    row per browser, reader and minute, and a history import claimed by one
+    tab.
+
+    Every LinkedIn tab sent its own heartbeat and its own capture rows, so ten
+    tabs in one browser wrote ten rows a minute, and the studio could not tell
+    one browser from two. The worker now stamps every capture with an id it
+    mints once per browser install, and these columns hold it, with the
+    minute it is grouped by, so a second report in the same minute replaces
+    the first instead of adding a row. A heartbeat also says which browser it
+    is, which LinkedIn account that browser is signed in to (the creator's
+    own), which kinds of LinkedIn page are open, how many captures the
+    browser is holding for an account no profile here holds, how many tabs
+    still carry an older copy of the readers, whether the extension can
+    reload itself, and what it last found in its own folder: the version
+    there, when it looked, and whether the folder could be read at all (an
+    upgrade that extracts a new folder leaves the old extension reading a
+    folder that is gone).
+
+    Two visible tabs on one activity page both scrolled the same history
+    import. The import is now claimed: by browser instance and tab, with the
+    moment the claim was last renewed.
+
+    Rows written before this carry NULL in the new columns, which no unique
+    index treats as equal, so they stay as they were.
+    """
+    heartbeats = {row[1] for row in cursor.execute("PRAGMA table_info(bridge_heartbeats)")}
+    for column, kind in (("browser_instance_id", "TEXT"), ("minute", "TEXT"), ("browser", "TEXT"),
+                         ("signed_in_vanity", "TEXT"), ("contract_version", "INTEGER"), ("open_pages", "TEXT"),
+                         ("held", "TEXT"), ("tabs_needing_reload", "INTEGER"), ("self_reload", "INTEGER"),
+                         ("files_version", "TEXT"), ("files_readable", "INTEGER"), ("files_checked_at", "TEXT")):
+        if column not in heartbeats:
+            cursor.execute(f"ALTER TABLE bridge_heartbeats ADD COLUMN {column} {kind}")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_bridge_heartbeats_browser_minute "
+                   "ON bridge_heartbeats(browser_instance_id, minute)")
+    captures = {row[1] for row in cursor.execute("PRAGMA table_info(captures)")}
+    for column in ("browser_instance_id", "minute"):
+        if column not in captures:
+            cursor.execute(f"ALTER TABLE captures ADD COLUMN {column} TEXT")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_captures_browser_reader_minute "
+                   "ON captures(browser_instance_id, extractor, minute)")
+    imports = {row[1] for row in cursor.execute("PRAGMA table_info(self_import_requests)")}
+    for column in ("claimed_by", "claimed_at"):
+        if column not in imports:
+            cursor.execute(f"ALTER TABLE self_import_requests ADD COLUMN {column} TEXT")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -2062,6 +2112,9 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
      _migrate_reader_timing_and_network_reading),
     (34, "A stage change keeps the post it came from, and the queue keeps what it dispatched and missed",
      _migrate_stage_post_and_queue_dispatches),
+    (35, "One bridge per browser: heartbeats and capture rows per browser and minute, "
+         "and a history import claimed by one tab",
+     _migrate_bridge_coordination),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

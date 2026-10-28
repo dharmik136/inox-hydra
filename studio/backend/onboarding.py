@@ -281,21 +281,130 @@ def _clean_voyager_calls(raw: Any) -> Optional[Dict[str, int]]:
     return clean
 
 
+# ---------------------------------------------------------------------------
+# One bridge per browser (cycle 4, track 1, phase 2)
+# ---------------------------------------------------------------------------
+#
+# The worker stamps every capture it relays with where it came from: an id it
+# mints once per browser install, the browser's name, the tab, window and
+# document, and the LinkedIn account the browser is signed in to, which is
+# the creator's own. The studio groups heartbeats and capture rows by the
+# browser id and the minute, routes a capture to the creator profile of that
+# account, and hands a history import to one tab.
+_INSTANCE_ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+_DOCUMENT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def clean_stamp(raw: Any) -> Dict[str, Any]:
+    """
+    The stamp the worker put on a relayed body, kept only where its shape is
+    right, or {} when there is none. Ids are opaque: a browser instance id is
+    random, and tab, window and document ids are the browser's own numbers.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    stamp: Dict[str, Any] = {}
+    instance = raw.get("browser_instance_id")
+    if isinstance(instance, str) and _INSTANCE_ID.match(instance):
+        stamp["browser_instance_id"] = instance
+    browser = _text(raw.get("browser"), 40)
+    if browser:
+        stamp["browser"] = browser
+    for field in ("tab_id", "window_id", "frame_id"):
+        value = raw.get(field)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            stamp[field] = value
+    document = raw.get("document_id")
+    if isinstance(document, str) and _DOCUMENT_ID.match(document):
+        stamp["document_id"] = document
+    if isinstance(raw.get("tab_active"), bool):
+        stamp["tab_active"] = raw["tab_active"]
+    vanity = normalise_vanity(raw.get("signed_in_vanity"))
+    if vanity:
+        stamp["signed_in_vanity"] = vanity
+    return stamp
+
+
+def claimant_of(stamp: Dict[str, Any]) -> Optional[str]:
+    """Who is asking for a history import: one tab of one browser, or None for an older extension."""
+    if stamp.get("browser_instance_id") and stamp.get("tab_id") is not None:
+        return f"{stamp['browser_instance_id']}:{stamp['tab_id']}"
+    return None
+
+
+def _counts_by_name(raw: Any, name_limit: int = 60, limit: int = 40) -> Optional[Dict[str, int]]:
+    """{name: count} as the worker sent it (open page kinds, held captures per account), or None."""
+    if not isinstance(raw, dict):
+        return None
+    clean: Dict[str, int] = {}
+    for key, value in list(raw.items())[:limit]:
+        name = _text(key, name_limit)
+        if name and isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            clean[name] = value
+    return clean
+
+
+def _utc_moment(raw: Any) -> Optional[str]:
+    """A moment the browser stated (toISOString), as UTC ISO text, or None for anything else."""
+    text = _text(raw, 40)
+    if not text:
+        return None
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        return None
+    return moment.astimezone(timezone.utc).isoformat()
+
+
 def record_heartbeat(extension_version: Any = None, page_kind: Any = None,
-                     network_reading: Any = None, voyager_calls: Any = None) -> Dict[str, Any]:
+                     network_reading: Any = None, voyager_calls: Any = None,
+                     browser_instance_id: Any = None, browser: Any = None, signed_in_vanity: Any = None,
+                     contract_version: Any = None, open_pages: Any = None, held: Any = None,
+                     tabs_needing_reload: Any = None, self_reload: Any = None,
+                     files_version: Any = None, files_readable: Any = None,
+                     files_checked_at: Any = None) -> Dict[str, Any]:
+    """
+    One heartbeat. From a worker that names its browser, one row per browser
+    per minute, the newest beat replacing the minute's earlier one: ten tabs,
+    or a worker beating on every change, still write one row a minute. From
+    an extension older than the stamp, one row per beat, as before.
+    """
     now = datetime.now(timezone.utc)
     reading = _clean_network_reading(network_reading)
     calls = _clean_voyager_calls(voyager_calls) if reading else None
+    stamp = clean_stamp({"browser_instance_id": browser_instance_id, "browser": browser,
+                         "signed_in_vanity": signed_in_vanity})
+    values = {
+        "seen_at": now.isoformat(),
+        "extension_version": _text(extension_version, 40),
+        "page_kind": _text(page_kind, 40),
+        "network_reading": json.dumps(reading) if reading else None,
+        "voyager_calls": json.dumps(calls) if calls is not None else None,
+        "browser_instance_id": stamp.get("browser_instance_id"),
+        "minute": now.isoformat()[:16] if stamp.get("browser_instance_id") else None,
+        "browser": stamp.get("browser"),
+        "signed_in_vanity": stamp.get("signed_in_vanity"),
+        "contract_version": contract_version if isinstance(contract_version, int)
+        and not isinstance(contract_version, bool) else None,
+        "open_pages": json.dumps(_counts_by_name(open_pages, 40)) if _counts_by_name(open_pages, 40) is not None else None,
+        "held": json.dumps(_counts_by_name(held, 100)) if _counts_by_name(held, 100) is not None else None,
+        "tabs_needing_reload": _count(tabs_needing_reload),
+        "self_reload": (1 if self_reload else 0) if isinstance(self_reload, bool) else None,
+        "files_version": _text(files_version, 40),
+        "files_readable": (1 if files_readable else 0) if isinstance(files_readable, bool) else None,
+        "files_checked_at": _utc_moment(files_checked_at),
+    }
+    names = list(values)
+    sql = (f"INSERT INTO bridge_heartbeats ({', '.join(names)}) VALUES ({', '.join('?' for _ in names)})")
+    if values["browser_instance_id"]:
+        sql += (" ON CONFLICT(browser_instance_id, minute) DO UPDATE SET "
+                + ", ".join(f"{n} = excluded.{n}" for n in names if n not in ("browser_instance_id", "minute")))
     conn = get_db()
     try:
         with conn:
-            conn.execute(
-                "INSERT INTO bridge_heartbeats (seen_at, extension_version, page_kind, network_reading, voyager_calls) "
-                "VALUES (?,?,?,?,?)",
-                (now.isoformat(), _text(extension_version, 40), _text(page_kind, 40),
-                 json.dumps(reading) if reading else None,
-                 json.dumps(calls) if calls is not None else None),
-            )
+            conn.execute(sql, tuple(values[n] for n in names))
             conn.execute(
                 "DELETE FROM bridge_heartbeats WHERE seen_at < ?",
                 ((now - HEARTBEAT_RETENTION).isoformat(),),
@@ -393,7 +502,7 @@ def bridge_status() -> Dict[str, Any]:
 
     if not row:
         return {"connected": False, "last_seen_at": None, "seconds_ago": None,
-                "extension_version": None, "page_kind": None, "network_reading": None}
+                "extension_version": None, "page_kind": None, "network_reading": None, "bridges": []}
 
     seen = datetime.fromisoformat(row["seen_at"])
     ago = max(0, int((datetime.now(timezone.utc) - seen).total_seconds()))
@@ -404,7 +513,53 @@ def bridge_status() -> Dict[str, Any]:
         "extension_version": row["extension_version"],
         "page_kind": row["page_kind"],
         "network_reading": reading,
+        "bridges": bridges(),
     }
+
+
+def bridges() -> List[Dict[str, Any]]:
+    """
+    Each browser the bridge runs in, newest first, from its own latest
+    heartbeat: which browser, which LinkedIn account it is signed in to, when
+    it was last heard from, the LinkedIn pages it has open, the captures it
+    is holding for an account no profile here holds, the tabs that still
+    carry an older copy of its readers, and what it last found in its own
+    folder. An extension from before the stamp is one bridge whose browser
+    is not known.
+    """
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT h.* FROM bridge_heartbeats AS h JOIN ("
+            "  SELECT COALESCE(browser_instance_id, '') AS instance, MAX(seen_at) AS newest "
+            "  FROM bridge_heartbeats GROUP BY COALESCE(browser_instance_id, '')"
+            ") AS latest ON COALESCE(h.browser_instance_id, '') = latest.instance AND h.seen_at = latest.newest "
+            "ORDER BY h.seen_at DESC").fetchall()
+    finally:
+        conn.close()
+    now = datetime.now(timezone.utc)
+    found = []
+    for row in rows:
+        row = dict(row)
+        ago = max(0, int((now - datetime.fromisoformat(row["seen_at"])).total_seconds()))
+        found.append({
+            "browser_instance_id": row.get("browser_instance_id"),
+            "browser": row.get("browser"),
+            "signed_in_vanity": row.get("signed_in_vanity"),
+            "connected": ago <= BRIDGE_FRESH_SECONDS,
+            "last_seen_at": row["seen_at"],
+            "seconds_ago": ago,
+            "extension_version": row.get("extension_version"),
+            "contract_version": row.get("contract_version"),
+            "open_pages": json.loads(row["open_pages"]) if row.get("open_pages") else None,
+            "held": json.loads(row["held"]) if row.get("held") else None,
+            "tabs_needing_reload": row.get("tabs_needing_reload"),
+            "self_reload": None if row.get("self_reload") is None else bool(row["self_reload"]),
+            "files_version": row.get("files_version"),
+            "files_readable": None if row.get("files_readable") is None else bool(row["files_readable"]),
+            "files_checked_at": row.get("files_checked_at"),
+        })
+    return found
 
 
 # ---------------------------------------------------------------------------
@@ -607,18 +762,28 @@ def _write_capture(conn, extractor: str, payload: Dict[str, Any],
     """
     drift = [d for d in (payload.get("drift") or []) if isinstance(d, str)][:10]
     now = datetime.now(timezone.utc)
-    conn.execute(
-        "INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept, drift, extension_version, "
-        "duration_ms, reads, slow_reads, long_tasks, long_task_ms, refused, items_dropped) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (now.isoformat(), extractor, _text(payload.get("page_kind"), 40),
-         _count(payload.get("items_seen")), _count(payload.get("items_kept")),
-         json.dumps([_text(d, 60) for d in drift]) if drift else None,
-         _text(payload.get("extension_version"), 40),
-         _millis(payload.get("duration_ms")), _count(payload.get("reads")), _count(payload.get("slow_reads")),
-         _count(payload.get("long_tasks")), _millis(payload.get("long_task_ms")),
-         _text(refused, 40), _count(payload.get("items_dropped"))),
-    )
+    # One row per browser, reader and minute when the worker stamped the run:
+    # ten tabs reading one post report one run a minute, the newest report
+    # standing for the minute. A run from an older extension is a row each.
+    instance = clean_stamp(payload.get("stamp")).get("browser_instance_id")
+    values = {
+        "observed_at": now.isoformat(), "extractor": extractor, "page_kind": _text(payload.get("page_kind"), 40),
+        "items_seen": _count(payload.get("items_seen")), "items_kept": _count(payload.get("items_kept")),
+        "drift": json.dumps([_text(d, 60) for d in drift]) if drift else None,
+        "extension_version": _text(payload.get("extension_version"), 40),
+        "duration_ms": _millis(payload.get("duration_ms")), "reads": _count(payload.get("reads")),
+        "slow_reads": _count(payload.get("slow_reads")), "long_tasks": _count(payload.get("long_tasks")),
+        "long_task_ms": _millis(payload.get("long_task_ms")), "refused": _text(refused, 40),
+        "items_dropped": _count(payload.get("items_dropped")),
+        "browser_instance_id": instance, "minute": now.isoformat()[:16] if instance else None,
+    }
+    names = list(values)
+    sql = f"INSERT INTO captures ({', '.join(names)}) VALUES ({', '.join('?' for _ in names)})"
+    if instance:
+        sql += (" ON CONFLICT(browser_instance_id, extractor, minute) DO UPDATE SET "
+                + ", ".join(f"{n} = excluded.{n}" for n in names
+                            if n not in ("browser_instance_id", "extractor", "minute")))
+    conn.execute(sql, tuple(values[n] for n in names))
     conn.execute(PRUNE_CAPTURES, ((now - CAPTURE_RETENTION).isoformat(),))
     return drift, now
 
@@ -1247,6 +1412,7 @@ def confirm_identity(vanity: Any) -> Dict[str, Any]:
             _fill_creator_settings(conn, clean)
     finally:
         conn.close()
+    _accounts_changed()
     return {"status": "confirmed", "vanity": wanted}
 
 
@@ -1297,7 +1463,17 @@ def forget_identity() -> Dict[str, Any]:
             _save_chain(conn, None)
     finally:
         conn.close()
+    _accounts_changed()
     return {"status": "forgotten"}
+
+
+def _accounts_changed() -> None:
+    """Which profile holds which account changed: routing reads it again (bridge_routing)."""
+    try:
+        from . import bridge_routing
+    except ImportError:
+        import bridge_routing
+    bridge_routing.forget()
 
 
 # ---------------------------------------------------------------------------
@@ -1910,7 +2086,8 @@ def extension_outdated(conn) -> bool:
     """
     True when the latest finished posts import came from an older extension,
     which cannot say whether it reached the end of the list. The fix is to
-    reload the extension, not to import again.
+    reload the extension, not to import again, unless the bridge heard from
+    since needs no reload (state() asks ingest_contract.heard_current()).
     """
     row = conn.execute(
         "SELECT outcome FROM self_import_requests WHERE kind = 'posts' AND finished_at IS NOT NULL "
@@ -2213,41 +2390,103 @@ def _expire_requests(conn) -> None:
     )
 
 
-def pending_import(kind: Any) -> Optional[Dict[str, Any]]:
-    """The live request for this kind, if the creator made one recently."""
+# A history import is claimed by one tab of one browser. Two visible tabs on
+# one activity page both used to scroll it, and the import is the one place
+# the extension acts on LinkedIn, so it must never run twice. The holder
+# renews its claim with every event it sends (a progress event while it
+# scrolls); a claim not renewed for this long is free for another tab, so a
+# tab that went hidden, was discarded or closed does not hold it for ever.
+IMPORT_CLAIM_TTL = timedelta(seconds=90)
+IMPORT_EVENTS = ("started", "paused", "resumed", "progress", "released", "finished")
+CLAIMED_ELSEWHERE = "claimed_elsewhere"
+
+
+def _claim_is_live(row: Dict[str, Any], now: datetime) -> bool:
+    claimed_at = row.get("claimed_at")
+    if not row.get("claimed_by") or not claimed_at:
+        return False
+    try:
+        return now - datetime.fromisoformat(claimed_at) < IMPORT_CLAIM_TTL
+    except ValueError:
+        return False
+
+
+def pending_import(kind: Any, claimant: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    The live request for this kind, if the creator made one recently. Named
+    by a tab (`claimant`), it is that tab's to run: handed to it when no
+    other tab holds a live claim, and claimed for it; another tab asking
+    meanwhile is answered None. An extension that names no tab is answered
+    as before.
+    """
     if kind not in IMPORT_KINDS:
         return None
-    cutoff = (datetime.now(timezone.utc) - IMPORT_REQUEST_TTL).isoformat()
+    now = datetime.now(timezone.utc)
+    cutoff = (now - IMPORT_REQUEST_TTL).isoformat()
     conn = get_db()
     try:
         with conn:
             _expire_requests(conn)
-        row = conn.execute(
-            "SELECT id, kind, requested_at, started_at FROM self_import_requests "
-            "WHERE kind = ? AND finished_at IS NULL AND requested_at >= ? ORDER BY id DESC LIMIT 1",
-            (kind, cutoff),
-        ).fetchone()
+            row = conn.execute(
+                "SELECT id, kind, requested_at, started_at, claimed_by, claimed_at FROM self_import_requests "
+                "WHERE kind = ? AND finished_at IS NULL AND requested_at >= ? ORDER BY id DESC LIMIT 1",
+                (kind, cutoff),
+            ).fetchone()
+            if row and claimant:
+                held = dict(row)
+                if held["claimed_by"] not in (None, claimant) and _claim_is_live(held, now):
+                    return None
+                conn.execute("UPDATE self_import_requests SET claimed_by = ?, claimed_at = ? WHERE id = ?",
+                             (claimant, now.isoformat(), held["id"]))
     finally:
         conn.close()
-    return dict(row) if row else None
+    if not row:
+        return None
+    found = dict(row)
+    found.pop("claimed_by", None)
+    found.pop("claimed_at", None)
+    return found
 
 
-def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: Any = None) -> Dict[str, Any]:
+def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: Any = None,
+                  claimant: Optional[str] = None) -> Dict[str, Any]:
     try:
         request_id = int(request_id)
     except (TypeError, ValueError):
         raise RefusedCapture("unknown import request")
-    if event not in ("started", "paused", "resumed", "finished"):
-        raise RefusedCapture("event must be started, paused, resumed or finished")
+    if event not in IMPORT_EVENTS:
+        raise RefusedCapture("event must be started, paused, resumed, progress, released or finished")
     conn = get_db()
     chain = None
     try:
         with conn:
+            if claimant:
+                # Only the holder of a live claim moves the import: a tab whose
+                # claim went quiet and was taken over is told so, and stops.
+                now = datetime.now(timezone.utc)
+                held = conn.execute("SELECT claimed_by, claimed_at FROM self_import_requests WHERE id = ?",
+                                    (request_id,)).fetchone()
+                if held and held["claimed_by"] not in (None, claimant) and _claim_is_live(dict(held), now):
+                    return {"status": CLAIMED_ELSEWHERE}
+                if event == "released":
+                    conn.execute("UPDATE self_import_requests SET claimed_by = NULL, claimed_at = NULL "
+                                 "WHERE id = ? AND claimed_by = ?", (request_id, claimant))
+                    return {"status": "success"}
+                conn.execute("UPDATE self_import_requests SET claimed_by = ?, claimed_at = ? "
+                             "WHERE id = ? AND finished_at IS NULL", (claimant, now.isoformat(), request_id))
+            elif event == "released":
+                return {"status": "success"}
             chain = _load_chain(conn)
-            if event == "started":
+            if event == "progress":
+                conn.execute("UPDATE self_import_requests SET items_seen = COALESCE(?, items_seen) "
+                             "WHERE id = ? AND finished_at IS NULL", (_count(items_seen), request_id))
+            elif event == "started":
+                # A tab starting an import someone paused and gave back is
+                # scrolling it now, so it no longer reads as paused.
                 conn.execute(
-                    "UPDATE self_import_requests SET started_at = COALESCE(started_at, ?) "
-                    "WHERE id = ? AND finished_at IS NULL", (_now(), request_id),
+                    "UPDATE self_import_requests SET started_at = COALESCE(started_at, ?), "
+                    "outcome = CASE WHEN outcome = ? THEN NULL ELSE outcome END "
+                    "WHERE id = ? AND finished_at IS NULL", (_now(), IMPORT_PAUSED_HIDDEN, request_id),
                 )
             elif event in ("paused", "resumed"):
                 # The extension stops scrolling while its LinkedIn tab is
@@ -2327,6 +2566,13 @@ def onboarding_state() -> Dict[str, Any]:
             "FROM self_import_requests ORDER BY id DESC LIMIT 6")]
     finally:
         conn.close()
+    # The last posts import was read by an older extension. Reloading is the
+    # fix only while the browser still runs one: once the bridge heard from
+    # needs no reload (it reloaded itself, or was reloaded), the advice is to
+    # import again, and "reload" is not said.
+    current = ingest_contract.heard_current()
+    if outdated and current:
+        outdated = False
 
     confirmed = bool(row.get("confirmed_at"))
     candidate = None
@@ -2391,6 +2637,9 @@ def onboarding_state() -> Dict[str, Any]:
         "sync_chain": {"sequence": chain["sequence"], "current_kind": chain["current_kind"]} if chain else None,
         # The latest posts import came from an older extension: reload it.
         "extension_outdated": outdated,
+        # The bridge heard from needs no reload, so an import an older
+        # extension read is imported again, not preceded by a reload.
+        "extension_current": current,
         "steps": {
             "bridge": bool(bridge["last_seen_at"]),
             "identity": confirmed,

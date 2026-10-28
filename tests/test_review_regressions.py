@@ -318,7 +318,10 @@ def test_spa_navigation_is_actually_observed():
 def test_the_capture_toast_waits_for_the_writes_it_reports_on():
     """It fired synchronously, so with the studio down it still claimed success."""
     source = _read(CONTENT_JS)
-    assert "Promise.allSettled" in source, (
+    # One request per read since cycle 4, track 1, phase 2: the notice is
+    # decided inside that request's answer, person by person.
+    assert 'const read = studioApi("/api/v1/crm/interactions/ingest", { items });' in source
+    assert "read.then(answer =>" in source, (
         "The capture toast does not wait for its requests, so it reports a "
         "capture that may have been entirely refused."
     )

@@ -103,8 +103,11 @@ not been told yet. When it has not been told, the count is None and the
 screen says so, rather than showing a zero that means "not measured".
 """
 
+import hashlib
 import logging
 import threading
+import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
@@ -132,6 +135,13 @@ REFUSED = "refused"
 RELOAD_MESSAGE = (
     "The Inox Hydra extension in this browser is older than the studio. "
     "Open chrome://extensions and press Reload on Inox Hydra Bridge."
+)
+
+# What to do when the extension's folder is not the studio's: a reload reads
+# the same folder again, so it is loaded again from the studio's.
+LOAD_AGAIN = (
+    "If the studio opened this browser, close it and open it again from Setup; if you loaded the "
+    "extension by hand, remove it on chrome://extensions and load it again from the studio's extension folder."
 )
 
 # The reasons the engagement gate turns a capture away, as the one place they
@@ -347,29 +357,176 @@ def note_waiting(count: Any, oldest_at: Any = None) -> None:
         _waiting["reported_at"] = datetime.now(timezone.utc).isoformat()
 
 
-def handshake(extension_version: Any = None, contract_version: Any = None) -> Dict[str, Any]:
+def _version(text: Any) -> tuple:
+    parts = []
+    for chunk in str(text or "").split("."):
+        digits = "".join(c for c in chunk if c.isdigit())[:10]
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts + [0] * (4 - len(parts)))[:4]
+
+
+# When this studio started. An extension that read its own folder after this
+# and found its own older version there is loaded from a folder that is not
+# this studio's: an in-place update would have shown it the new version.
+STARTED_AT = datetime.now(timezone.utc)
+
+
+def _moment(text: Any) -> Optional[datetime]:
+    try:
+        moment = datetime.fromisoformat(str(text).replace("Z", "+00:00")) if text else None
+    except ValueError:
+        return None
+    return moment if moment is not None and moment.tzinfo is not None else None
+
+
+def _studio_version() -> Optional[str]:
+    try:
+        from ..__version__ import __version__
+    except (ImportError, ValueError):
+        try:
+            import os
+            import sys
+            sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+            from __version__ import __version__
+        except ImportError:
+            return None
+    return __version__
+
+
+def _newest_fresh_bridge() -> Optional[Dict[str, Any]]:
+    """What the newest bridge heard from inside the freshness window said of itself, or None."""
+    try:
+        from . import onboarding
+    except (ImportError, ValueError):
+        import onboarding
+    for bridge in onboarding.bridges():
+        if bridge.get("connected") and (bridge.get("extension_version") or bridge.get("contract_version") is not None):
+            return bridge
+    return None
+
+
+def handshake(extension_version: Any = None, contract_version: Any = None, self_reload: Any = None,
+              files_version: Any = None, tabs_needing_reload: Any = None,
+              studio_version: Optional[str] = None, files_readable: Any = None,
+              files_checked_at: Any = None) -> Dict[str, Any]:
     """
-    What the studio is, what it needs, and whether this client is old enough
-    to need reloading. Answered on the heartbeat and on extension health.
+    What the studio is, what it needs, and whether this client truly needs
+    reloading. Answered on the heartbeat and on extension health.
+
+    Judged on what the extension said: on the line, what it just sent;
+    otherwise the newest heartbeat inside the bridge's freshness window, which
+    carries its contract and whether it reloads itself. With neither, it is
+    not known, and nothing is said: after every restart the studio used to
+    judge a remembered nothing as stale and tell the creator to reload.
+
+    A reload is required when the extension speaks an older contract and is
+    not about to reload itself, or runs an older version than the studio and
+    cannot reload itself (2.10.0 on reloads itself when its files change).
+    An extension whose files are newer than it is updating itself. Tabs the
+    worker could not give the new readers are their own sentence: those tabs
+    need reloading, not the extension.
+
+    Two cases a reload of itself cannot mend are said too, as loading it
+    again: its folder is gone (an upgrade that extracts a new folder and
+    deletes the old one), and it is older than the studio while its folder,
+    read after the studio started, still holds its own version, so the
+    folder is not the one the studio was updated in.
     """
     note_client(extension_version, contract_version)
-    with _lock:
-        seen = dict(_client)
-    # A client on the line is judged on what it just said, not on what some
-    # earlier client said. Only a read with nobody on the line, such as the
-    # side panel's health call, falls back to what is remembered.
+    studio_version = studio_version or _studio_version()
     on_the_line = extension_version is not None or contract_version is not None
-    speaks = (contract_version if isinstance(contract_version, int) else None) if on_the_line \
-        else seen.get("contract_version")
-    stale = speaks is None or speaks < CONTRACT_VERSION
-    return {
-        "contract_version": CONTRACT_VERSION,
-        "extension_contract_version": speaks,
-        "extension_version": seen.get("extension_version"),
-        "last_seen_at": seen.get("last_seen_at"),
-        "reload_required": stale,
-        "message": RELOAD_MESSAGE if stale else None,
-    }
+    if on_the_line:
+        said: Optional[Dict[str, Any]] = {
+            "extension_version": str(extension_version)[:40] if extension_version else None,
+            "contract_version": contract_version if isinstance(contract_version, int) else None,
+            "self_reload": self_reload is True,
+            "files_version": str(files_version)[:40] if files_version else None,
+            "tabs_needing_reload": tabs_needing_reload if isinstance(tabs_needing_reload, int) else None,
+            "files_readable": files_readable if isinstance(files_readable, bool) else None,
+            "files_checked_at": files_checked_at,
+        }
+    else:
+        said = _newest_fresh_bridge()
+        if said is not None:
+            # A heartbeat from 2.10.0 on says whether it reloads itself; one
+            # that does not say is from before, and cannot.
+            said = dict(said, self_reload=said.get("self_reload") is True)
+        with _lock:
+            seen = dict(_client)
+        # A capture spoke after the newest heartbeat: what it said is newer.
+        # It does not say whether the extension reloads itself, so only its
+        # contract is judged.
+        if seen.get("last_seen_at") and (said is None or seen["last_seen_at"] > (said.get("last_seen_at") or "")):
+            said = {"extension_version": seen.get("extension_version"), "contract_version": seen.get("contract_version"),
+                    "self_reload": None, "files_version": None, "last_seen_at": seen.get("last_seen_at"),
+                    "tabs_needing_reload": (said or {}).get("tabs_needing_reload"),
+                    "files_readable": None, "files_checked_at": None}
+    base = {"contract_version": CONTRACT_VERSION, "studio_version": studio_version}
+    if not said:
+        with _lock:
+            seen = dict(_client)
+        return dict(base, extension_contract_version=None, extension_version=seen.get("extension_version"),
+                    last_seen_at=seen.get("last_seen_at"), reload_required=None, updating=False, message=None,
+                    tabs_needing_reload=None, tabs_message=None, known=False)
+    judged = _judged(said, studio_version)
+    with _lock:
+        last_seen = _client.get("last_seen_at")
+    return dict(base, **judged, last_seen_at=said.get("last_seen_at") or last_seen, known=True)
+
+
+def heard_current() -> bool:
+    """
+    True when the newest bridge heard from inside the freshness window needs
+    no reload: Setup's advice to reload after an import from an older
+    extension stands only while that is not so. Judged on the heartbeat
+    alone, never on what an earlier capture left in memory.
+    """
+    said = _newest_fresh_bridge()
+    if said is None:
+        return False
+    said = dict(said, self_reload=said.get("self_reload") is True)
+    return _judged(said, _studio_version())["reload_required"] is False
+
+
+def _judged(said: Dict[str, Any], studio_version: Optional[str]) -> Dict[str, Any]:
+    """Whether what the extension said of itself needs a reload, and the sentences that say so."""
+    running = said.get("extension_version")
+    speaks = said.get("contract_version")
+    reloads_itself = said.get("self_reload") is True
+    on_disk = said.get("files_version")
+    updating = reloads_itself and bool(on_disk) and bool(running) and on_disk != running
+    stale_contract = speaks is None or speaks < CONTRACT_VERSION
+    older = bool(running) and bool(studio_version) and _version(running) < _version(studio_version)
+    cannot_reload_itself = said.get("self_reload") is False
+    folder_gone = reloads_itself and said.get("files_readable") is False
+    checked = _moment(said.get("files_checked_at"))
+    folder_not_ours = (reloads_itself and older and not folder_gone and bool(on_disk) and on_disk == running
+                       and checked is not None and checked >= STARTED_AT)
+    required = not updating and (stale_contract or (older and cannot_reload_itself) or folder_gone
+                                 or folder_not_ours)
+    if not required:
+        message = None
+    elif folder_gone:
+        message = (f"The folder this browser loaded Inox Hydra Bridge{' ' + running if running else ''} from is "
+                   "no longer there, so it cannot update itself and the browser will not load it when it next "
+                   "starts. " + LOAD_AGAIN)
+    elif folder_not_ours:
+        message = (f"This browser loads Inox Hydra Bridge {running} from a folder that is not this studio's, "
+                   f"which runs {studio_version}, so it cannot update itself. " + LOAD_AGAIN)
+    elif older and cannot_reload_itself and running:
+        message = (f"This browser runs Inox Hydra Bridge {running}, older than the studio's {studio_version}, and "
+                   "that version cannot reload itself. Open chrome://extensions and press Reload on Inox Hydra "
+                   "Bridge once; from this version on it reloads itself when its files change.")
+    else:
+        message = RELOAD_MESSAGE
+    tabs = said.get("tabs_needing_reload") or 0
+    tabs_message = None
+    if tabs:
+        tabs_message = (f"{tabs} LinkedIn tab{'s' if tabs != 1 else ''} still carr{'y' if tabs != 1 else 'ies'} "
+                        "an older copy of the bridge's readers, which the update could not replace: reload "
+                        f"{'them' if tabs != 1 else 'it'}.")
+    return dict(extension_contract_version=speaks, extension_version=running, reload_required=required,
+                updating=updating, message=message, tabs_needing_reload=tabs, tabs_message=tabs_message)
 
 
 def refusal_counts() -> Dict[str, Any]:
@@ -406,6 +563,78 @@ def forget() -> None:
         _client.clear()
         _refusals.clear()
         _waiting.clear()
+
+
+# ---------------------------------------------------------------------------
+# What the studio has just taken: a replay is answered before the writer
+# ---------------------------------------------------------------------------
+#
+# Ten tabs open on one post each sent every person on it, and a reloaded tab
+# or a second browser sends them again: one fact, ten turns of the single
+# writer, and seen_count 10. The routes keep the key of each capture they
+# accepted, by the studio's own grain (grain_key), and answer the same key
+# within the horizon nothing_new / already_seen without the writer. The
+# tables' own unique keys stay the durable backstop: a key that has left the
+# set is written as a later sighting, as it always was.
+RECENT_LIMIT = 10_000
+RECENT_HORIZON_SECONDS = 600.0
+ALREADY_SEEN = "already_seen"
+
+
+class RecentKeys:
+    """A bounded set of keys with the moment each was taken, oldest first."""
+
+    def __init__(self, limit: int = RECENT_LIMIT):
+        self._limit = limit
+        self._keys: "OrderedDict[str, float]" = OrderedDict()
+        self._lock = threading.Lock()
+
+    def _drop_expired(self, now: float) -> None:
+        while self._keys:
+            key, taken = next(iter(self._keys.items()))
+            if now - taken < RECENT_HORIZON_SECONDS:
+                break
+            self._keys.popitem(last=False)
+
+    def seen(self, key: Optional[str]) -> bool:
+        if not key:
+            return False
+        now = time.monotonic()
+        with self._lock:
+            self._drop_expired(now)
+            taken = self._keys.get(key)
+            return taken is not None and now - taken < RECENT_HORIZON_SECONDS
+
+    def remember(self, key: Optional[str]) -> None:
+        if not key:
+            return
+        now = time.monotonic()
+        with self._lock:
+            self._keys[key] = now
+            self._keys.move_to_end(key)
+            while len(self._keys) > self._limit:
+                self._keys.popitem(last=False)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._keys.clear()
+
+
+RECENT = RecentKeys()
+
+
+def grain_key(*parts: Any) -> str:
+    """One capture's key: its grain's parts, joined and hashed, so no part is kept as written."""
+    joined = "|".join("" if part is None else str(part) for part in parts)
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+
+
+def already_seen(**counts: Any) -> Dict[str, Any]:
+    """The answer to a replay of a capture the studio has just taken. Not a refusal, so not counted as one."""
+    answer = {"status": "skipped", "outcome": NOTHING_NEW, "reason": ALREADY_SEEN,
+              "message": "This was taken a moment ago.", "show": False, "contract_version": CONTRACT_VERSION}
+    answer.update(counts)
+    return answer
 
 
 # ---------------------------------------------------------------------------

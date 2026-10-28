@@ -32,7 +32,7 @@ A check prints `Installed:` and `Latest:`, then either "You are up to date." or 
 3. Close the minimised **Inox Hydra Engine** window. See [Stop the studio, and use the tray icon](stop-the-studio-and-use-the-tray-icon.md).
 4. Delete the Inox Hydra folder and extract the new ZIP in its place.
 5. Start the studio as usual, with `InoxHydra.bat` in the new folder.
-6. If you loaded the browser extension by hand, load it again from the new folder's `extension` folder. See [After an update, reload the browser extension](after-an-update-reload-the-extension.md).
+6. If you loaded the browser extension by hand, load it again from the new folder's `extension` folder. See [After an update, the browser extension reloads itself](after-an-update-reload-the-extension.md).
 7. If you made a desktop shortcut, make it again: the folder's name includes the version, so the old shortcut points at a folder that is gone. See [Put a studio shortcut on your desktop](put-the-studio-on-your-desktop.md).
 
 A portable copy keeps your data in `%LOCALAPPDATA%\InoxHydra`, outside the folder, so this is safe by default.

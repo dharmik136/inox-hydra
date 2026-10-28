@@ -227,8 +227,10 @@ def test_every_reason_the_gate_can_give_is_in_the_contract():
 # ---------------------------------------------------------------------------
 
 def test_the_heartbeat_answers_which_contract_the_studio_speaks():
+    # The studio's own version: since cycle 4, track 1, phase 2 an extension
+    # older than the studio that cannot reload itself is told to, once.
     answer = client.post("/api/v1/bridge/heartbeat",
-                         json={"extension_version": "2.6.1", "page_kind": "feed",
+                         json={"extension_version": ingest_contract._studio_version(), "page_kind": "feed",
                                "contract_version": ingest_contract.CONTRACT_VERSION})
     shake = answer.json()["handshake"]
     assert shake["contract_version"] == ingest_contract.CONTRACT_VERSION

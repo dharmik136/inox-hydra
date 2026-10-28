@@ -137,8 +137,74 @@ async function studioFetch(path, options) {
     (options && options.headers) || {}
   );
   if (token) headers[STUDIO_TOKEN_HEADER] = token;
+  // The LinkedIn account a capture was read in, which the studio routes by.
+  if (options && options.account) headers[ACCOUNT_HEADER] = options.account;
+  const init = Object.assign({}, options || {}, { headers });
+  delete init.account;
+  return fetch(STUDIO_ORIGIN + path, init);
+}
 
-  return fetch(STUDIO_ORIGIN + path, Object.assign({}, options || {}, { headers }));
+// -------------------------------------------------------------
+// One bridge per browser: where each capture came from
+// -------------------------------------------------------------
+// Every capture names where it was read (cycle 4, track 1, phase 2): an id
+// minted once for this browser's install, the browser's name, the tab,
+// window and document it came from, and the LinkedIn account the browser is
+// signed in to, which is the creator's own (signedInVanity, noted on their
+// own profile). The studio keeps one heartbeat and one capture row per
+// browser and minute by it, hands a history import to one tab, and files
+// each capture in the creator profile of that account (X-Inox-Account).
+// Nothing in it names another member.
+const BROWSER_INSTANCE_KEY = "browserInstanceId";
+const ACCOUNT_HEADER = "X-Inox-Account";
+let browserInstancePromise = null;
+
+function browserInstanceId() {
+  if (!browserInstancePromise) {
+    browserInstancePromise = (async () => {
+      const stored = await readLocal(BROWSER_INSTANCE_KEY);
+      if (typeof stored === "string" && /^[A-Za-z0-9-]{8,64}$/.test(stored)) return stored;
+      const minted = crypto.randomUUID();
+      await storeLocal({ [BROWSER_INSTANCE_KEY]: minted });
+      return minted;
+    })().catch(() => {
+      browserInstancePromise = null;
+      return null;
+    });
+  }
+  return browserInstancePromise;
+}
+
+// The browser's own name, for Setup to tell two bridges apart. A label only.
+function browserName() {
+  try {
+    const brands = ((navigator.userAgentData && navigator.userAgentData.brands) || []).map((b) => b.brand);
+    for (const name of ["Brave", "Microsoft Edge", "Opera", "Vivaldi", "Google Chrome", "Chromium"]) {
+      if (brands.includes(name)) return name;
+    }
+  } catch (err) {
+    // No client hints: unnamed.
+  }
+  return null;
+}
+
+async function signedInAccount() {
+  const vanity = await readLocal("signedInVanity");
+  return typeof vanity === "string" && vanity ? vanity : null;
+}
+
+async function stampFor(sender) {
+  const tab = (sender && sender.tab) || {};
+  return {
+    browser_instance_id: await browserInstanceId(),
+    browser: browserName(),
+    tab_id: typeof tab.id === "number" ? tab.id : null,
+    window_id: typeof tab.windowId === "number" ? tab.windowId : null,
+    tab_active: typeof tab.active === "boolean" ? tab.active : null,
+    frame_id: sender && typeof sender.frameId === "number" ? sender.frameId : null,
+    document_id: sender && typeof sender.documentId === "string" ? sender.documentId : null,
+    signed_in_vanity: await signedInAccount()
+  };
 }
 
 // Sensitive authentication token keys to sanitize from telemetry
@@ -482,7 +548,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ status: "error", error: "Network reading is off." });
           return;
         }
-        relayToStudio(message, path, sendResponse, tabId);
+        relayToStudio(message, path, sendResponse, sender);
       });
       return true;
     }
@@ -490,7 +556,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ status: "error", error: "path not permitted: " + path });
       return true;
     }
-    relayToStudio(message, path, sendResponse, tabId);
+    relayToStudio(message, path, sendResponse, sender);
+    return true;
+  }
+
+  // What a LinkedIn tab reports about itself: its kind of page, whether it
+  // is visible, and network reading as the page sees it. The worker keeps
+  // it for its own heartbeat, one per browser per minute; tabs no longer
+  // send the studio one each.
+  if (message.action === "PAGE_STATE") {
+    const fromLinkedIn = !!sender.tab && typeof sender.tab.id === "number" && sender.id === chrome.runtime.id &&
+      typeof sender.url === "string" && /^https:\/\/([a-z0-9-]+\.)*linkedin\.com\//i.test(sender.url);
+    if (!fromLinkedIn) {
+      sendResponse({ status: "refused" });
+      return true;
+    }
+    notePageState(sender.tab.id, message).then(() => sendResponse({ status: "noted" }));
     return true;
   }
 
@@ -611,18 +692,51 @@ function busyWaitMs(retryAfter, attempt) {
   return Math.round(bounded * (0.5 + Math.random()));
 }
 
-// One request to the studio, as what happened rather than as an exception.
-async function askStudio(path, method, body) {
-  let response;
-  try {
-    response = await studioFetch(path, { method, body });
-  } catch (err) {
-    // No answer at all: the studio may have taken the write and never
-    // replied, which is why only a repeatable payload is kept below.
-    return { ok: false, httpStatus: 0, data: {}, busy: true, later: true, error: err.message };
+// At most this many requests to the studio at once (the capture report's
+// backpressure budget): ten tabs reading at once used to send everything
+// together, and a busy studio answered most of it 503.
+const MAX_IN_FLIGHT = 4;
+let inFlight = 0;
+const waitingForSlot = [];
+
+function takeSlot() {
+  if (inFlight < MAX_IN_FLIGHT) {
+    inFlight += 1;
+    return Promise.resolve();
   }
-  const data = await response.json().catch(() => ({}));
+  return new Promise((resolve) => waitingForSlot.push(resolve));
+}
+
+function giveSlot() {
+  const next = waitingForSlot.shift();
+  if (next) next();
+  else inFlight -= 1;
+}
+
+// One request to the studio, as what happened rather than as an exception.
+async function askStudio(path, method, body, account) {
+  await takeSlot();
+  let response;
+  let data;
+  try {
+    try {
+      response = await studioFetch(path, { method, body, account });
+    } catch (err) {
+      // No answer at all: the studio may have taken the write and never
+      // replied, which is why only a repeatable payload is kept below.
+      return { ok: false, httpStatus: 0, data: {}, busy: true, later: true, error: err.message };
+    }
+    data = await response.json().catch(() => ({}));
+  } finally {
+    giveSlot();
+  }
   const retryAfter = response.headers && response.headers.get ? response.headers.get("Retry-After") : null;
+  // An account no creator profile holds: the studio wrote nothing, and the
+  // capture waits here until a profile for that account exists.
+  if (response.status === 202 && data && data.outcome === "held") {
+    return { ok: false, httpStatus: 202, data, busy: false, later: false, held: true,
+      heldFor: data.account || null, error: null };
+  }
   return {
     ok: response.ok,
     httpStatus: response.status,
@@ -668,9 +782,12 @@ function writeKeptCaptures(kept) {
 // write it back, so a drain that started while a capture was being kept
 // overwrote it and the capture was lost. Both now take a turn in the same
 // chain below.
-async function keepCaptureNow(path, body) {
+async function keepCaptureNow(path, body, account, heldFor) {
   const kept = await readKeptCaptures();
-  kept.push({ path, body, at: new Date().toISOString() });
+  const item = { path, body, at: new Date().toISOString() };
+  if (account) item.account = account;
+  if (heldFor) item.heldFor = heldFor;
+  kept.push(item);
   if (kept.length > KEPT_CAPTURES_LIMIT) {
     console.warn("[Studio Bridge] More than " + KEPT_CAPTURES_LIMIT +
       " captures are waiting for the studio; the oldest are dropped.");
@@ -688,8 +805,8 @@ function inTurn(work) {
   return queueTurn;
 }
 
-function keepCapture(path, body) {
-  return inTurn(() => keepCaptureNow(path, body));
+function keepCapture(path, body, account, heldFor) {
+  return inTurn(() => keepCaptureNow(path, body, account, heldFor));
 }
 
 function sendKeptCapturesLater() {
@@ -702,18 +819,35 @@ function sendKeptCapturesLater() {
 // whole queue away when the real problem was a browser the studio had not
 // been paired with. A capture the studio has decided about is dropped, and
 // the reason is remembered so the creator can be told.
+//
+// A capture held for an account no creator profile holds stays where it is
+// until the studio's heartbeat answer names that account, and is then sent
+// with the rest; it never blocks the captures behind it.
 async function sendKeptCaptures() {
   const kept = await readKeptCaptures();
   if (kept.length === 0) {
     await afterQueueChanged();
     return 0;
   }
+  const homes = new Set((await readLocal(PROFILE_ACCOUNTS_KEY)) || []);
+  const still = [];
   let sent = 0;
-  while (kept.length > 0) {
-    const item = kept[0];
-    const answer = await askStudio(item.path, "POST", item.body);
-    if (answer.later) break;
-    kept.shift();
+  let unreachable = false;
+  for (const item of kept) {
+    if (unreachable || (item.heldFor && !homes.has(await accountDigest(item.heldFor)))) {
+      still.push(item);
+      continue;
+    }
+    const answer = await askStudio(item.path, "POST", item.body, item.account || null);
+    if (answer.held) {
+      still.push(Object.assign({}, item, { heldFor: answer.heldFor || item.heldFor || item.account || null }));
+      continue;
+    }
+    if (answer.later) {
+      still.push(item);
+      unreachable = true;
+      continue;
+    }
     if (answer.ok) {
       sent += 1;
       await noteCapture(item.path, answer, null, false);
@@ -721,9 +855,18 @@ async function sendKeptCaptures() {
       await rememberRefusal(item.path, answer);
     }
   }
-  await writeKeptCaptures(kept);
+  await writeKeptCaptures(still);
   await afterQueueChanged();
   return sent;
+}
+
+// How many captures wait for a profile, per account.
+function heldCounts(kept) {
+  const counts = {};
+  for (const item of kept) {
+    if (item.heldFor) counts[item.heldFor] = (counts[item.heldFor] || 0) + 1;
+  }
+  return counts;
 }
 
 // -------------------------------------------------------------
@@ -758,11 +901,20 @@ function readLocal(key) {
 
 async function afterQueueChanged() {
   const kept = await readKeptCaptures();
-  await storeLocal({ [WAITING_KEY]: { waiting: kept.length, oldest_at: kept.length ? kept[0].at : null } });
-  if (kept.length > 0) scheduleDrain();
+  // Waiting is what the studio can take now; a capture held for an account
+  // with no profile is counted on its own, by account.
+  const deliverable = kept.filter((item) => !item.heldFor);
+  const before = (await readLocal(WAITING_KEY)) || {};
+  const now = { waiting: deliverable.length, oldest_at: deliverable.length ? deliverable[0].at : null,
+    held: heldCounts(kept) };
+  await storeLocal({ [WAITING_KEY]: now });
+  if (deliverable.length > 0) scheduleDrain();
   else clearDrain();
   await paintBadge();
-  reportWaiting(kept);
+  // The studio hears the new counts at once, so a screen can show them.
+  if (before.waiting !== now.waiting || JSON.stringify(before.held || {}) !== JSON.stringify(now.held)) {
+    scheduleHeartbeat(0);
+  }
 }
 
 // A refusal the studio has decided on, kept so the side panel can name it.
@@ -782,32 +934,286 @@ async function rememberRefusal(path, answer) {
   });
 }
 
-// Tells the studio how many captures are waiting, so a screen can show the
-// number. It rides on the heartbeat, which already carries the version, and
-// is best effort: a studio that cannot be reached is the usual reason for a
-// queue in the first place.
-async function reportWaiting(kept) {
+// -------------------------------------------------------------
+// The worker's heartbeat: one per browser per minute
+// -------------------------------------------------------------
+// Every LinkedIn tab sent the studio a heartbeat a minute of its own, so ten
+// tabs wrote ten rows a minute. The worker now beats for the browser, on a
+// minute's alarm and soon after something changes, and carries what the
+// tabs report to it (PAGE_STATE): the LinkedIn pages open, by kind, and
+// network reading as the newest visible page sees it; with how many
+// captures are waiting, how many are held for an account no profile holds,
+// how many tabs still carry an older copy of the readers, and whether this
+// install reloads itself when its files change. The registry of tabs lives
+// in session storage, which survives the worker being stopped and is
+// emptied when the browser closes, as a tab is.
+const HEARTBEAT_ALARM = "inox_bridge_heartbeat";
+const TAB_REGISTRY_KEY = "tabRegistry";
+const NEEDS_RELOAD_KEY = "tabsNeedingReload";
+// The accounts the studio's creator profiles have confirmed, as one-way
+// digests: enough to recognise the account a held capture waits for, without
+// keeping every profile's account name in this browser.
+const PROFILE_ACCOUNTS_KEY = "profileAccounts";
+
+async function accountDigest(vanity) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(vanity).trim().toLowerCase()));
+  return Array.from(new Uint8Array(bytes)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+const FILES_VERSION_KEY = "filesVersion";
+// When the extension last read its own folder, and whether it could.
+const FILES_CHECK_KEY = "filesCheck";
+const PAGE_KIND = /^[a-z0-9_-]{1,40}$/;
+let heartbeatTimer = null;
+
+function scheduleHeartbeat(delayMs) {
+  if (heartbeatTimer) return;
+  heartbeatTimer = setTimeout(() => {
+    heartbeatTimer = null;
+    sendWorkerHeartbeat();
+  }, delayMs === undefined ? 2000 : delayMs);
+}
+
+let registryTurn = Promise.resolve();
+
+function inRegistryTurn(work) {
+  const next = registryTurn.then(work);
+  registryTurn = next.catch(() => {});
+  return next;
+}
+
+function notePageState(tabId, message) {
+  return inRegistryTurn(async () => {
+    const registry = (await sessionGet(TAB_REGISTRY_KEY)) || {};
+    const before = registry[tabId] || null;
+    const entry = {
+      page_kind: PAGE_KIND.test(String(message.page_kind || "")) ? message.page_kind : "page",
+      visible: message.visible === true,
+      at: Date.now(),
+      version: typeof message.extension_version === "string" ? message.extension_version.slice(0, 40) : null,
+      network_reading: message.network_reading && typeof message.network_reading === "object" ? message.network_reading : null,
+      voyager_calls: message.voyager_calls && typeof message.voyager_calls === "object" ? message.voyager_calls : null
+    };
+    registry[tabId] = entry;
+    await sessionSet({ [TAB_REGISTRY_KEY]: registry });
+    if (entry.version === chrome.runtime.getManifest().version) {
+      const needs = (await sessionGet(NEEDS_RELOAD_KEY)) || {};
+      if (needs[tabId]) {
+        delete needs[tabId];
+        await sessionSet({ [NEEDS_RELOAD_KEY]: needs });
+      }
+    }
+    // A new tab, another kind of page, or network reading changing: the
+    // studio hears soon rather than at the next minute.
+    const changed = !before || before.page_kind !== entry.page_kind ||
+      JSON.stringify(before.network_reading) !== JSON.stringify(entry.network_reading);
+    if (changed) scheduleHeartbeat();
+  });
+}
+
+function forgetTab(tabId) {
+  return inRegistryTurn(async () => {
+    const registry = (await sessionGet(TAB_REGISTRY_KEY)) || {};
+    const needs = (await sessionGet(NEEDS_RELOAD_KEY)) || {};
+    if (registry[tabId] !== undefined) {
+      delete registry[tabId];
+      await sessionSet({ [TAB_REGISTRY_KEY]: registry });
+    }
+    if (needs[tabId] !== undefined) {
+      delete needs[tabId];
+      await sessionSet({ [NEEDS_RELOAD_KEY]: needs });
+    }
+  });
+}
+
+async function openLinkedInTabs() {
+  try {
+    const tabs = await chrome.tabs.query({ url: "https://*.linkedin.com/*" });
+    return Array.isArray(tabs) ? tabs.filter((tab) => tab && typeof tab.id === "number" && !tab.discarded) : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+async function sendWorkerHeartbeat() {
+  const kept = await readKeptCaptures();
+  const deliverable = kept.filter((item) => !item.heldFor);
+  const registry = (await sessionGet(TAB_REGISTRY_KEY)) || {};
+  const live = new Set((await openLinkedInTabs()).map((tab) => String(tab.id)));
+  const openPages = {};
+  let page = null;
+  for (const [tabId, entry] of Object.entries(registry)) {
+    if (!entry || !live.has(String(tabId))) continue;
+    openPages[entry.page_kind] = (openPages[entry.page_kind] || 0) + 1;
+    if (entry.network_reading && (!page || (entry.visible && !page.visible) ||
+        (entry.visible === page.visible && entry.at > page.at))) {
+      page = entry;
+    }
+  }
+  const needs = (await sessionGet(NEEDS_RELOAD_KEY)) || {};
+  // What this worker can see of network reading: the switch and whether the
+  // browser holds the reader registered; what a page sees (whether it
+  // carries the reader, the calls it counted) from the newest visible page.
+  const reading = await workerNetworkReading();
+  const filesCheck = await readLocal(FILES_CHECK_KEY);
+  if (page) {
+    for (const field of ["injected", "voyager_calls_seen", "matched", "captured"]) {
+      if (reading[field] === null || reading[field] === undefined) {
+        const value = page.network_reading[field];
+        reading[field] = value === undefined ? null : value;
+      }
+    }
+  }
   const body = {
     extension_version: chrome.runtime.getManifest().version,
     contract_version: INGEST_CONTRACT_VERSION,
     page_kind: "service_worker",
-    waiting_captures: kept.length,
-    oldest_waiting_at: kept.length ? kept[0].at : null,
-    // What this worker can see of network reading: the switch and whether
-    // the browser holds the reader registered. A page's figures (whether
-    // it carries the reader, the calls it counted) are the page's to report, so they are
-    // null here and the studio keeps the newest page's.
-    network_reading: await workerNetworkReading()
+    waiting_captures: deliverable.length,
+    oldest_waiting_at: deliverable.length ? deliverable[0].at : null,
+    network_reading: reading,
+    voyager_calls: page && page.voyager_calls ? page.voyager_calls : null,
+    browser_instance_id: await browserInstanceId(),
+    browser: browserName(),
+    signed_in_vanity: await signedInAccount(),
+    open_pages: openPages,
+    held: heldCounts(kept),
+    tabs_needing_reload: Object.keys(needs).filter((tabId) => live.has(String(tabId))).length,
+    self_reload: true,
+    files_version: (await readLocal(FILES_VERSION_KEY)) || null,
+    files_readable: filesCheck && typeof filesCheck.readable === "boolean" ? filesCheck.readable : null,
+    files_checked_at: filesCheck && typeof filesCheck.at === "string" ? filesCheck.at : null
   };
-  studioFetch("/api/v1/bridge/heartbeat", {
-    method: "POST",
-    body: JSON.stringify(body)
-  }).then((response) => response.json().catch(() => ({})))
-    .then((answer) => {
-      const shake = answer && answer.handshake;
-      if (shake && shake.reload_required) noteReloadNeeded(shake);
-    })
-    .catch(() => {});
+  let answer = null;
+  await takeSlot();
+  try {
+    const response = await studioFetch("/api/v1/bridge/heartbeat", { method: "POST", body: JSON.stringify(body) });
+    answer = await response.json().catch(() => ({}));
+  } catch (err) {
+    return;
+  } finally {
+    giveSlot();
+  }
+  const shake = answer && answer.handshake;
+  if (shake && shake.reload_required) noteReloadNeeded(shake);
+  // A studio of another version: an unpacked install whose files are newer
+  // than it reloads now rather than at the next check, and one whose files
+  // are not, or are gone, says so on the next beat.
+  if (shake && (shake.reload_required ||
+      (shake.studio_version && shake.studio_version !== chrome.runtime.getManifest().version))) {
+    checkOwnFiles();
+  }
+  if (answer && Array.isArray(answer.profile_accounts)) {
+    const homes = answer.profile_accounts.filter((v) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v));
+    await storeLocal({ [PROFILE_ACCOUNTS_KEY]: homes });
+    for (const item of kept) {
+      if (item.heldFor && homes.includes(await accountDigest(item.heldFor))) {
+        sendKeptCapturesLater();
+        break;
+      }
+    }
+  }
+}
+
+function ensureAlarm(name, periodInMinutes) {
+  try {
+    chrome.alarms.get(name, (existing) => {
+      if (!existing) chrome.alarms.create(name, { periodInMinutes });
+    });
+  } catch (err) {
+    // Alarms are unavailable only if the permission was removed.
+  }
+}
+
+// -------------------------------------------------------------
+// Never reload by hand
+// -------------------------------------------------------------
+// The studio and the extension update together from the same folder, and a
+// browser kept the extension it loaded at startup until someone pressed
+// Reload: the studio last heard from 2.7.0 on an install whose files were
+// 2.9.0. An unpacked install now notices its files changed, on start-up and
+// every few minutes, by reading its own manifest.json from disk, and reloads
+// itself when the version there differs from the one it runs. A store
+// install's files only change by an update, which reloads it anyway, so
+// there the two always agree and nothing happens.
+const OWN_FILES_ALARM = "inox_own_files";
+const OWN_FILES_EVERY_MINUTES = 5;
+
+async function checkOwnFiles() {
+  let response = null;
+  try {
+    response = await fetch(chrome.runtime.getURL("manifest.json"), { cache: "no-store" });
+  } catch (err) {
+    response = null;
+  }
+  // Its folder is gone: deleted, or replaced by an upgrade that extracts a
+  // new folder somewhere else. It runs on from memory but cannot update
+  // itself, and the browser will not load it at its next start; the
+  // heartbeat says so, which is the one case the studio says to load it again.
+  if (!response || !response.ok) {
+    await storeLocal({ [FILES_VERSION_KEY]: null,
+      [FILES_CHECK_KEY]: { at: new Date().toISOString(), readable: false } });
+    return false;
+  }
+  try {
+    const disk = await response.json();
+    const onDisk = disk && typeof disk.version === "string" ? disk.version : null;
+    await storeLocal({ [FILES_VERSION_KEY]: onDisk,
+      [FILES_CHECK_KEY]: { at: new Date().toISOString(), readable: true } });
+    if (onDisk && onDisk !== chrome.runtime.getManifest().version) {
+      chrome.runtime.reload();
+      return true;
+    }
+  } catch (err) {
+    // A manifest caught half written reads as nothing; the next check sees it whole.
+  }
+  return false;
+}
+
+// On install and on update, the readers go into the LinkedIn tabs already
+// open, so no tab needs a refresh: each tab is asked which version of the
+// readers it carries (none, after an update: the readers of the version
+// before are cut off from this one), and given this version's. A tab that
+// cannot be reached is remembered as needing a reload, and the heartbeat
+// says how many, which is the one case Setup should say "reload".
+const READER_FILES = ["voyager_schema.js", "content.js", "own_pages.js", "own_insights.js"];
+
+async function injectIntoOpenTabs() {
+  const version = chrome.runtime.getManifest().version;
+  for (const tab of await openLinkedInTabs()) {
+    try {
+      const probe = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => (typeof window.__inoxBridgeVersion === "string" ? window.__inoxBridgeVersion : null)
+      });
+      if (probe && probe[0] && probe[0].result === version) continue;
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["card_urns.js"], world: "MAIN" });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: READER_FILES });
+    } catch (err) {
+      await inRegistryTurn(async () => {
+        const needs = (await sessionGet(NEEDS_RELOAD_KEY)) || {};
+        needs[tab.id] = String((err && err.message) || err).slice(0, 120);
+        await sessionSet({ [NEEDS_RELOAD_KEY]: needs });
+      });
+    }
+  }
+  scheduleHeartbeat(0);
+}
+
+try {
+  chrome.runtime.onInstalled.addListener((details) => {
+    ensureAlarm(HEARTBEAT_ALARM, 1);
+    ensureAlarm(OWN_FILES_ALARM, OWN_FILES_EVERY_MINUTES);
+    if (details && (details.reason === "install" || details.reason === "update")) injectIntoOpenTabs();
+  });
+  chrome.runtime.onStartup.addListener(() => {
+    ensureAlarm(HEARTBEAT_ALARM, 1);
+    ensureAlarm(OWN_FILES_ALARM, OWN_FILES_EVERY_MINUTES);
+    checkOwnFiles();
+    scheduleHeartbeat(0);
+  });
+  ensureAlarm(HEARTBEAT_ALARM, 1);
+  ensureAlarm(OWN_FILES_ALARM, OWN_FILES_EVERY_MINUTES);
+} catch (err) {
+  // No alarms or runtime events: the relays still work.
 }
 
 // The studio speaks a newer contract than this extension. Said once per
@@ -914,7 +1320,10 @@ async function noteCapture(path, answer, tabId, kept) {
   }
   if (stored && tabId !== null && tabId !== undefined) {
     const counts = (await readLocal(BADGE_COUNTS_KEY)) || {};
-    counts[tabId] = (counts[tabId] || 0) + 1;
+    // A read of a post is one request now; the badge still counts each
+    // person the studio took from it.
+    const taken = typeof data.items_accepted === "number" && data.items_accepted > 0 ? data.items_accepted : 1;
+    counts[tabId] = (counts[tabId] || 0) + taken;
     await storeLocal({ [BADGE_COUNTS_KEY]: counts });
     await actionCall("setBadgeText", { tabId, text: String(counts[tabId]) });
   }
@@ -1120,6 +1529,7 @@ try {
   chrome.runtime.onStartup.addListener(() => { restoreBadge(); });
   if (chrome.tabs && chrome.tabs.onRemoved) {
     chrome.tabs.onRemoved.addListener(async (tabId) => {
+      await forgetTab(tabId);
       const counts = (await readLocal(BADGE_COUNTS_KEY)) || {};
       if (counts[tabId] !== undefined) {
         delete counts[tabId];
@@ -1149,32 +1559,197 @@ function clearDrain() {
 }
 
 chrome.runtime.onStartup.addListener(() => { sendKeptCapturesLater(); });
+// One listener for the worker's alarms: the drain, its own heartbeat (which
+// also drains, so a held capture goes as soon as its account has a profile),
+// and the check of its own files.
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm && alarm.name === DRAIN_ALARM) sendKeptCapturesLater();
+  if (!alarm) return;
+  if (alarm.name === DRAIN_ALARM) sendKeptCapturesLater();
+  else if (alarm.name === HEARTBEAT_ALARM) {
+    sendWorkerHeartbeat();
+    sendKeptCapturesLater();
+  } else if (alarm.name === OWN_FILES_ALARM) checkOwnFiles();
 });
 
 // Every write says which contract it speaks and which build sent it, so the
 // studio knows what it is talking to without the page script having to
-// remember to say. A body that names them already keeps its own values.
-function stamped(body) {
+// remember to say, and where it was read (the stamp). A body that names
+// them already keeps its own values.
+function stamped(body, stamp) {
   const payload = sanitizeTelemetryPayload(body) || {};
   if (typeof payload !== "object" || Array.isArray(payload)) return payload;
   if (payload.contract_version === undefined) payload.contract_version = INGEST_CONTRACT_VERSION;
   if (payload.extension_version === undefined) {
     payload.extension_version = chrome.runtime.getManifest().version;
   }
+  if (stamp && payload.stamp === undefined) payload.stamp = stamp;
   return payload;
 }
 
-async function relayToStudio(message, path, sendResponse, tabId) {
+// -------------------------------------------------------------
+// The same capture from another tab is answered here
+// -------------------------------------------------------------
+// Ten tabs on one post each read every person on it and sent them all, so
+// the studio wrote each engagement ten times. The worker keeps a key for
+// each item it forwarded in the last ten seconds, in session storage (which
+// survives the worker being stopped, is emptied when the browser closes, and
+// no page can read); an identical item from any tab inside the window is
+// answered already_seen here, without a request, and a new one always goes.
+// The key is a hash of what the studio keeps one row for, never the words:
+// for an engagement, the account, the post, the person, how they engaged and
+// the comment; for anything else, the account and the item as read.
+const COALESCE_WINDOW_MS = 10000;
+const COALESCED_KEY = "coalescedCaptures";
+const VOLATILE_FIELDS = new Set(["extension_version", "contract_version", "stamp", "idempotency_key", "timestamp",
+  "capture_id"]);
+
+function stableJson(value) {
+  if (Array.isArray(value)) return "[" + value.map(stableJson).join(",") + "]";
+  if (value && typeof value === "object") {
+    return "{" + Object.keys(value).filter((k) => !VOLATILE_FIELDS.has(k)).sort()
+      .map((k) => JSON.stringify(k) + ":" + stableJson(value[k])).join(",") + "}";
+  }
+  return JSON.stringify(value === undefined ? null : value);
+}
+
+async function hashOf(parts) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(parts.join("|")));
+  return Array.from(new Uint8Array(bytes)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function engagementKey(item, account) {
+  const person = String(item.linkedin_urn || item.profile_url || "");
+  // Someone with no profile link is never the same person as anyone else to
+  // the studio, so nothing is answered for them here.
+  if (!person) return contentKey("engagement")(item, account);
+  const vanity = /linkedin\.com\/in\/([^/?#]+)/i.exec(person);
+  const words = String(item.comment_text || "").split(/\s+/).filter(Boolean).join(" ").toLowerCase();
+  return hashOf(["engagement", account || "", item.post_urn || item.capture_context || "",
+    vanity ? vanity[1].toLowerCase() : person, String(item.interaction_type || "COMMENT").toUpperCase(), words]);
+}
+
+function contentKey(kind) {
+  return (item, account) => hashOf([kind, account || "", stableJson(item)]);
+}
+
+// A reader's run, reported by every tab reading the same kind of page: the
+// studio keeps one row per browser, reader and minute, so the same run
+// shape from another tab in the same minute is not sent at all.
+function runKey(body, account) {
+  const drift = Array.isArray(body.drift) && body.drift.length ? "drift:" + body.drift.join(",") : "clean";
+  return hashOf(["run", account || "", String(body.extractor || ""), String(body.page_kind || ""), drift,
+    new Date().toISOString().slice(0, 16)]);
+}
+
+// The paths whose captures can be the same capture from another tab, and
+// where a body lists its items.
+const COALESCED_PATHS = {
+  "/api/v1/bridge/capture": { keyOf: runKey },
+  "/api/v1/crm/interactions/ingest": { list: "items", keyOf: engagementKey },
+  "/api/v1/self/posts/ingest": { list: "posts", keyOf: contentKey("posts") },
+  "/api/v1/self/outbound/ingest": { list: "items", keyOf: contentKey("outbound") },
+  "/api/v1/self/posts/analytics": { keyOf: contentKey("post-analytics") },
+  "/api/analytics/ingest": { keyOf: contentKey("analytics") },
+  "/api/analytics/page-figures": { keyOf: contentKey("page-figures") },
+  "/api/v1/identity/observe": { keyOf: contentKey("profile") }
+};
+
+let coalesceTurn = Promise.resolve();
+
+// Splits a body into what is new and what another tab sent a moment ago.
+function coalesce(path, body, account) {
+  const rule = COALESCED_PATHS[path];
+  const run = async () => {
+    const listed = !!rule.list && Array.isArray(body[rule.list]);
+    // An empty list is sent as it is: there is nothing in it to be the same.
+    if (listed && body[rule.list].length === 0) return null;
+    const items = listed ? body[rule.list] : [body];
+    const keys = await Promise.all(items.map((item) => rule.keyOf(item || {}, account)));
+    const now = Date.now();
+    const seen = (await sessionGet(COALESCED_KEY)) || {};
+    for (const key of Object.keys(seen)) {
+      if (!(now - seen[key] < COALESCE_WINDOW_MS)) delete seen[key];
+    }
+    const fresh = [];
+    const repeated = [];
+    keys.forEach((key, index) => {
+      if (seen[key] !== undefined) repeated.push(index);
+      else {
+        seen[key] = now;
+        fresh.push(index);
+      }
+    });
+    await sessionSet({ [COALESCED_KEY]: seen });
+    return { listed, items, keys, fresh, repeated, list: rule.list };
+  };
+  const result = coalesceTurn.then(run);
+  coalesceTurn = result.catch(() => {});
+  return result;
+}
+
+function alreadySeen(key) {
+  return { idempotency_key: key, status: "skipped", outcome: "nothing_new", reason: "already_seen", coalesced: true };
+}
+
+async function relayToStudio(message, path, sendResponse, sender) {
+  const tabId = sender && sender.tab && typeof sender.tab.id === "number" ? sender.tab.id : null;
   const method = message.method || "POST";
-  const body = message.body ? JSON.stringify(stamped(message.body)) : undefined;
-  if (tabId === undefined) tabId = null;
+  const stamp = await stampFor(sender);
+  const account = stamp.signed_in_vanity || null;
+  let outgoing = message.body;
+  let split = null;
+  if (COALESCED_PATHS[path] && outgoing && typeof outgoing === "object" && !Array.isArray(outgoing)) {
+    // A key that cannot be made (no session storage, no digest) sends the
+    // capture as it is: the studio's own already_seen still holds.
+    try {
+      split = await coalesce(path, outgoing, account);
+    } catch (err) {
+      split = null;
+    }
+  }
+  if (split) {
+    if (split.fresh.length === 0) {
+      // Every item came from another tab a moment ago: answered here.
+      const data = { status: "skipped", outcome: "nothing_new", reason: "already_seen", coalesced: true };
+      if (split.listed && path === "/api/v1/crm/interactions/ingest") {
+        data.items = split.keys.map(alreadySeen);
+        data.items_accepted = 0;
+      }
+      sendResponse({ status: "success", httpStatus: 200, data });
+      return;
+    }
+    if (split.listed) {
+      outgoing = Object.assign({}, outgoing, {
+        [split.list]: split.fresh.map((index) => (path === "/api/v1/crm/interactions/ingest"
+          ? Object.assign({}, split.items[index], { idempotency_key: split.keys[index] })
+          : split.items[index]))
+      });
+    }
+  }
+  const body = outgoing ? JSON.stringify(stamped(outgoing, stamp)) : undefined;
   let answer = { ok: false, httpStatus: 0, data: {}, busy: false, later: false, error: "not sent" };
   for (let attempt = 1; attempt <= BUSY_ATTEMPTS; attempt += 1) {
-    answer = await askStudio(path, method, body);
+    answer = await askStudio(path, method, body, account);
     if (!answer.busy || attempt === BUSY_ATTEMPTS) break;
     await waitFor(busyWaitMs(answer.retryAfter, attempt));
+  }
+  // A read's answers come back in the order its people were read: the ones
+  // another tab sent a moment ago answered here, the rest by the studio.
+  if (split && split.listed && path === "/api/v1/crm/interactions/ingest" && answer.data &&
+      Array.isArray(answer.data.items) && split.repeated.length) {
+    const merged = split.keys.map(alreadySeen);
+    split.fresh.forEach((index, n) => { merged[index] = answer.data.items[n] || merged[index]; });
+    answer.data = Object.assign({}, answer.data, { items: merged });
+  }
+  // An account no creator profile holds: kept, and sent once one does.
+  if (answer.held) {
+    await keepCapture(path, body, account, answer.heldFor || account);
+    await noteCapture(path, answer, tabId, true);
+    sendResponse({
+      status: "error", httpStatus: answer.httpStatus, data: answer.data, kept: true, held: true, waiting: 0,
+      error: (answer.data && answer.data.message) || "No profile holds this LinkedIn account yet, so this capture is kept."
+    });
+    return;
   }
   // The HTTP code is reported as httpStatus, never as status. Spreading a
   // result carrying its own `status` over this object silently replaced
@@ -1197,7 +1772,7 @@ async function relayToStudio(message, path, sendResponse, tabId) {
   // unpaired browser and a studio that is restarting both end as soon as the
   // creator opens it, and the capture is the creator's either way.
   if (answer.later && KEEP_WHEN_BUSY.has(path)) {
-    await keepCapture(path, body);
+    await keepCapture(path, body, account);
     await noteCapture(path, answer, tabId, true);
     const waiting = (await readLocal(WAITING_KEY)) || {};
     sendResponse({

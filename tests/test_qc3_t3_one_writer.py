@@ -151,8 +151,15 @@ def test_the_same_capture_sent_twice_is_still_one_engagement():
     The keep-and-resend queue depends on this, and the writer must not change
     it: the capture runs inside the actor but in its own transaction.
     """
+    import ingest_contract
     _confirm_with_a_post()
     first = _capture(7).json()
+    # A replay inside ten minutes is answered already_seen before the writer
+    # (cycle 4, track 1, phase 2); once the studio has let the key go, as the
+    # keep-and-resend queue's replay after a long outage would find it, it
+    # is written again as the same engagement.
+    assert _capture(7).json()["reason"] == "already_seen"
+    ingest_contract.RECENT.clear()
     second = _capture(7).json()
     assert first["interaction"]["interaction_id"] == second["interaction"]["interaction_id"]
     conn = get_db()

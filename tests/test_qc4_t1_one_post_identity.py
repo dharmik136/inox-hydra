@@ -502,7 +502,7 @@ def test_every_writer_of_a_post_or_its_engagement_goes_through_the_one_rule():
     names = {(rel, function.name) for rel, function, _ in writers}
     # The guard must be reading the writers it exists for.
     for expected in (("onboarding.py", "ingest_own_posts"), ("onboarding.py", "note_own_post"),
-                     ("archive_import.py", "_import_posts"), ("routers/crm.py", "ingest_crm_interaction"),
+                     ("archive_import.py", "_import_posts"), ("routers/crm.py", "_write_engagement"),
                      ("database.py", "seed_demo_identity")):
         assert expected in names, f"the guard no longer finds {expected}"
     outside = [(rel, function.name) for rel, function, ok in writers if not ok]

@@ -89,6 +89,8 @@ type SetupState = OnboardingState & {
   steps: { history?: boolean };
   /** The latest posts import came from an older extension; reloading it is the fix, not importing again. */
   extension_outdated?: boolean;
+  /** The bridge heard from needs no reload; an import an older extension read is simply imported again. */
+  extension_current?: boolean;
 };
 
 export function OnboardingSurface({
@@ -366,6 +368,7 @@ export function OnboardingSurface({
                     label={entry.label}
                     count={state.counts[entry.kind]}
                     last={state.imports.find((i) => i.kind === entry.kind) ?? null}
+                    reloadFirst={!state.extension_current}
                     pending={busy === entry.kind}
                     disabled={busy !== null}
                     onImport={() =>
@@ -491,8 +494,15 @@ function bridgeLine(state: OnboardingState): string {
   // that carried the state; an extension that has not reported it says
   // nothing here rather than "off".
   const reading = bridge.network_reading ? ` ${bridge.network_reading.sentence}` : "";
+  // More than one browser: each named, so two clients' bridges can be told
+  // apart (cycle 4, track 1, phase 2).
+  const others = (bridge.bridges ?? []).length > 1
+    ? ` Bridges: ${(bridge.bridges ?? []).map((entry) =>
+        `${entry.browser ?? "a browser"}${entry.signed_in_vanity ? ` (${entry.signed_in_vanity})` : ""} ` +
+        (entry.connected ? "connected" : `last heard from ${ago(entry.seconds_ago)}`)).join("; ")}.`
+    : "";
   if (bridge.connected) {
-    return `Connected${bridge.extension_version ? `, extension ${bridge.extension_version}` : ""}.${reading}`;
+    return `Connected${bridge.extension_version ? `, extension ${bridge.extension_version}` : ""}.${reading}${others}`;
   }
   if (bridge.seconds_ago !== null) return `Last heard from ${ago(bridge.seconds_ago)}. Open a LinkedIn tab in the bridge browser.`;
   return "Not seen yet";
@@ -870,6 +880,7 @@ function ImportRow({
   label,
   count,
   last,
+  reloadFirst,
   pending,
   disabled,
   onImport,
@@ -877,6 +888,7 @@ function ImportRow({
   label: string;
   count: number;
   last: SelfImport | null;
+  reloadFirst: boolean;
   pending: boolean;
   disabled: boolean;
   onImport: () => void;
@@ -886,7 +898,7 @@ function ImportRow({
       <div className="min-w-0">
         <p className="text-[13px] text-ink-primary">{label}</p>
         <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">
-          {count} STORED{last ? ` · ${importLine(last)}` : ""}
+          {count} STORED{last ? ` · ${importLine(last, reloadFirst)}` : ""}
         </p>
       </div>
       <Secondary disabled={disabled} onPress={onImport}>
@@ -907,7 +919,7 @@ function chainLine(chain: { sequence: SelfImportKind[]; current_kind: SelfImport
 // Only "end_of_list" is the whole list. The others read part of it, and say so,
 // because a partial history taken for a whole one is how real leads were
 // offered for deletion as strangers.
-function importLine(entry: SelfImport): string {
+function importLine(entry: SelfImport, reloadFirst: boolean): string {
   const read = entry.items_seen ?? 0;
   // The extension does not scroll a hidden tab, and says so; this read
   // SCROLLING NOW while nothing moved.
@@ -926,8 +938,12 @@ function importLine(entry: SelfImport): string {
   if (entry.outcome === "round_limit") return `READ ${read}, THE MOST ONE IMPORT READS`;
   // An older extension said "completed" for every import, so whether it
   // reached the end is not known. It keeps running until it is reloaded, and
-  // importing again before that only repeats this, so say to reload it.
-  return `READ ${read} WITH AN OLDER EXTENSION, END NOT KNOWN. RELOAD IT ON THE BROWSER'S EXTENSIONS PAGE, THEN IMPORT AGAIN`;
+  // importing again before that only repeats this, so say to reload it, but
+  // only while the bridge heard from still needs it: one that reloaded
+  // itself since needs only Import again.
+  return reloadFirst
+    ? `READ ${read} WITH AN OLDER EXTENSION, END NOT KNOWN. RELOAD IT ON THE BROWSER'S EXTENSIONS PAGE, THEN IMPORT AGAIN`
+    : `READ ${read} WITH AN OLDER EXTENSION, END NOT KNOWN. IMPORT AGAIN`;
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {

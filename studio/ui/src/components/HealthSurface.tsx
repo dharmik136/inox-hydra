@@ -12,6 +12,7 @@ import {
   runUpdateCheck,
   setUpdatePreference,
   type BackupSchedule,
+  type BridgeEntry,
   type ExtensionHealth,
   type HealthReader,
   type HealthReaderDetail,
@@ -202,10 +203,20 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
               {bridgeSentence(bridge)}
               {/* Only once the bridge has been heard from: with no heartbeat at all the
                   handshake has nothing to judge, and "older than the studio" would be a guess. */}
-              {bridge.last_seen_at && extension?.contract.reload_required && extension.contract.message ? ` ${extension.contract.message}` : ""}
+              {bridge.last_seen_at && extension?.contract.reload_required === true && extension.contract.message ? ` ${extension.contract.message}` : ""}
+              {extension?.contract.tabs_message ? ` ${extension.contract.tabs_message}` : ""}
             </p>
           ) : (
             <p>The bridge&apos;s state was not answered by the studio on the last read.</p>
+          )}
+          {/* One line per browser the bridge runs in, when there is more than one or one holds
+              captures for an account no profile here holds (cycle 4, track 1, phase 2). */}
+          {bridge && (bridge.bridges ?? []).length > 0 && ((bridge.bridges ?? []).length > 1 || (bridge.bridges ?? []).some((b) => b.held && Object.keys(b.held).length > 0)) && (
+            <ul className="mt-1.5 space-y-0.5" aria-label="Browsers the bridge runs in">
+              {(bridge.bridges ?? []).map((entry) => (
+                <li key={entry.browser_instance_id ?? "older"}>{bridgeEntryLine(entry)}</li>
+              ))}
+            </ul>
           )}
         </div>
       </header>
@@ -671,6 +682,23 @@ function stateWords(reader: HealthReader): string {
     case "refused":
       return `REFUSED: ${(reader.refused ?? "reason not given").toUpperCase()}`;
   }
+}
+
+/** "Brave, signed in as you: connected, 2 LinkedIn pages open." with what it holds for an account no profile holds. */
+function bridgeEntryLine(entry: BridgeEntry): string {
+  const who = `${entry.browser ?? "A browser"}${entry.signed_in_vanity ? `, signed in as ${entry.signed_in_vanity}` : ""}`;
+  const when = entry.connected ? "connected" : `last heard from ${ago(entry.seconds_ago)}`;
+  const open = entry.open_pages ? Object.values(entry.open_pages).reduce((sum, n) => sum + n, 0) : null;
+  const pages = open === null ? "" : open === 0 ? ", no LinkedIn page open" : `, ${open} LinkedIn page${open === 1 ? "" : "s"} open`;
+  const held = Object.entries(entry.held ?? {})
+    .map(([vanity, count]) => ` ${count} capture${count === 1 ? "" : "s"} held: no creator profile here holds linkedin.com/in/${vanity}.`)
+    .join("");
+  // Its folder is gone (a portable upgrade deleted it): it runs from memory
+  // and will not load at the browser's next start, which no reload mends.
+  const folder = entry.files_readable === false
+    ? " The folder it was loaded from is no longer there: load the extension again from the studio's folder."
+    : "";
+  return `${who}: ${when}${pages}.${held}${folder}`;
 }
 
 function bridgeSentence(bridge: ExtensionHealth["bridge"]): string {

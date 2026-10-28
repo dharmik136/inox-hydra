@@ -3,6 +3,24 @@
 // Interacts with LinkedIn DOM to auto-inject formatted posts
 // -------------------------------------------------------------
 
+// Which version of the readers this tab carries, for the worker: on an
+// update it gives the LinkedIn tabs already open this version's readers,
+// and a tab that already has them is left alone. In this script's own world,
+// which LinkedIn's page cannot see.
+window.__inoxBridgeVersion = chrome.runtime.getManifest().version;
+
+// Whether this script can still reach its extension. An update or a reload
+// cuts the readers already in a page off from it; they used to go on reading
+// every change to the page, and could send none of it. Readers that find
+// themselves cut off stop.
+function bridgeAlive() {
+  try {
+    return !!(chrome.runtime && chrome.runtime.id);
+  } catch (err) {
+    return false;
+  }
+}
+
 
 /**
  * Sends a studio API call through the background service worker.
@@ -762,7 +780,11 @@ function checkForNavigation() {
 if ("navigation" in window && window.navigation && typeof window.navigation.addEventListener === "function") {
   window.navigation.addEventListener("currententrychange", checkForNavigation);
 }
-setInterval(() => {
+const navigationPoll = setInterval(() => {
+  if (!bridgeAlive()) {
+    clearInterval(navigationPoll);
+    return;
+  }
   if (document.visibilityState === "visible") checkForNavigation();
 }, 5000);
 
@@ -1384,7 +1406,7 @@ function readNewLayoutComments() {
 let engagerReadTimer = null;
 
 function scheduleEngagerRead() {
-  if (engagerReadTimer || !isPostEngagementSurface()) return;
+  if (engagerReadTimer || !isPostEngagementSurface() || !bridgeAlive()) return;
   const wait = Math.max(600, 4000 - (Date.now() - lastCommentScrapeTime));
   engagerReadTimer = setTimeout(() => {
     engagerReadTimer = null;
@@ -1393,7 +1415,7 @@ function scheduleEngagerRead() {
 }
 
 function observeAndCaptureEngagers() {
-  if (!isPostEngagementSurface()) return;
+  if (!isPostEngagementSurface() || !bridgeAlive()) return;
 
   lastCommentScrapeTime = Date.now();
   beginRead("engagers");
@@ -1582,48 +1604,48 @@ function observeAndCaptureEngagers() {
       return;
     }
 
-    // One write per person, to the one route that decides whether they are a
-    // lead at all.
+    // One write per read, to the one route that decides whether each person
+    // is a lead at all: the read's people as items[], each answered on its
+    // own, in the order they were read (cycle 4, track 1, phase 2). Thirty
+    // people were thirty requests, and ten tabs on one post three hundred.
     //
-    // There used to be two: a batch into /api/analytics/ingest and this one.
-    // They matched people by different keys (profile URL there, name plus
-    // headline here), so one person could become two leads and two namesakes
-    // one. And only this route now carries the rule that a lead engaged with
-    // the creator's own post, so the batch write would have stored every
-    // stranger this one refuses.
-    const writes = [];
-    identified.forEach(lead => {
+    // There used to be two writes: a batch into /api/analytics/ingest and
+    // this one. They matched people by different keys (profile URL there,
+    // name plus headline here), so one person could become two leads and two
+    // namesakes one. And only this route carries the rule that a lead
+    // engaged with the creator's own post, so the batch write would have
+    // stored every stranger this one refuses.
+    const items = identified.map(lead => {
       let commentOnly = "";
       if (lead.notes && lead.notes.startsWith('Commented: "')) {
         commentOnly = lead.notes.replace(/^Commented:\s*"/, "").replace(/"$/, "");
       }
-      writes.push(
-        studioApi("/api/v1/crm/interactions/ingest", {
-            full_name: lead.name || "Unknown",
-            // Only a real profile URL identifies a person. This used to fall
-            // back to a urn:li:person: minted from a hash of their display
-            // name, which put a forged key into LinkedIn's own namespace.
-            linkedin_urn: lead.profile_url,
-            headline: lead.headline || "",
-            company: lead.company || "",
-            interaction_type: (lead.engagement_type || "COMMENT").toUpperCase(),
-            // Only words the person wrote. A reaction sent lead.notes here,
-            // "Reacted to post on LinkedIn", which was stored and shown as
-            // their comment.
-            comment_text: commentOnly || "",
-            // Where this row was read from, so a bad selector can be found and
-            // its rows removed rather than left to look like observations.
-            capture_context: window.location.pathname,
-            post_urn: lead.post_urn || null,
-            // Whose post this is. The studio keeps the engager only when it is
-            // the creator's.
-            post_author: lead.post_author || null,
-            // The post this happened on is not known yet. A fixed string here
-            // ended up quoted in every generated message.
-            post_topic: null
-          })
-      );
+      return {
+        full_name: lead.name || "Unknown",
+        // Only a real profile URL identifies a person. This used to fall
+        // back to a urn:li:person: minted from a hash of their display
+        // name, which put a forged key into LinkedIn's own namespace.
+        linkedin_urn: lead.profile_url,
+        headline: lead.headline || "",
+        company: lead.company || "",
+        interaction_type: (lead.engagement_type || "COMMENT").toUpperCase(),
+        // Only words the person wrote. A reaction sent lead.notes here,
+        // "Reacted to post on LinkedIn", which was stored and shown as
+        // their comment.
+        comment_text: commentOnly || "",
+        // Where this row was read from, so a bad selector can be found and
+        // its rows removed rather than left to look like observations.
+        capture_context: window.location.pathname,
+        post_urn: lead.post_urn || null,
+        // Whose post this is. The studio keeps the engager only when it is
+        // the creator's.
+        post_author: lead.post_author || null,
+        // The post this happened on is not known yet. A fixed string here
+        // ended up quoted in every generated message.
+        post_topic: null
+      };
     });
+    const read = studioApi("/api/v1/crm/interactions/ingest", { items });
 
     // Report what was actually stored. This used to run synchronously, outside
     // the promise chain, so with the studio not running every request failed
@@ -1633,8 +1655,11 @@ function observeAndCaptureEngagers() {
     // else's is the rule working, and is silent: the feed is full of other
     // people's posts, and announcing each one would turn the notice into noise
     // the creator learns to ignore.
-    Promise.allSettled(writes).then(results => {
-      const answers = results.map(r => (r.status === "fulfilled" ? r.value : null));
+    read.then(answer => {
+      // Each person's own answer, from the read's; an answer for the whole
+      // read (kept for a busy studio, refused, or none at all) is everyone's.
+      const perPerson = answer && Array.isArray(answer.items) ? answer.items : null;
+      const answers = identified.map((lead, i) => (perPerson ? perPerson[i] || null : answer));
       // A person counts as seen on this post only once the studio has decided
       // about them: kept, or deliberately skipped by its rule. Marking them
       // seen before the write meant that everyone read while the studio was
@@ -1688,9 +1713,35 @@ function observeAndCaptureEngagers() {
   }
 }
 
-// Observe DOM mutations for opened comments sections and reaction modals
+// Observe DOM mutations for opened comments sections and reaction modals.
+//
+// Only while the tab is visible (cycle 4, track 1, phase 2): a hidden tab's
+// page goes on changing (LinkedIn polls and re-renders), and every tab left
+// open in the background read every change. The observer is off while the
+// tab is hidden and reads once when it is shown again. A reader cut off
+// from its extension by an update stops for good.
 const commentObserver = new MutationObserver(() => {
+  if (!bridgeAlive()) {
+    commentObserver.disconnect();
+    return;
+  }
   scheduleEngagerRead();
 });
-commentObserver.observe(document.body, { childList: true, subtree: true });
+let commentsFollowed = false;
+
+function followCommentsWhileVisible(readNow) {
+  if (!bridgeAlive() || document.visibilityState === "hidden") {
+    if (commentsFollowed) commentObserver.disconnect();
+    commentsFollowed = false;
+    return;
+  }
+  if (!commentsFollowed) {
+    commentObserver.observe(document.body, { childList: true, subtree: true });
+    commentsFollowed = true;
+    if (readNow) scheduleEngagerRead();
+  }
+}
+
+followCommentsWhileVisible(false);
+document.addEventListener("visibilitychange", () => followCommentsWhileVisible(true));
 

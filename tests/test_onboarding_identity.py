@@ -362,15 +362,26 @@ def test_no_timer_harvests_the_session():
     assert 'alarms.clear("studio_periodic_sync")' in code, (
         "the alarm an earlier version registered is no longer cleared, and alarms outlive their code"
     )
-    # One alarm is allowed, and only one: the drain that sends captures the
-    # studio was too busy for. What may not happen on a schedule is the
-    # session sync, so the alarm's handler is read and must not reach it.
+    # The alarms allowed: the drain that sends captures the studio was too
+    # busy for, the worker's own heartbeat and the check of its own files
+    # (cycle 4, track 1, phase 2). What may not happen on a schedule is the
+    # session sync, so the one alarm handler is read, and every function it
+    # calls, and none may reach it.
     created = re.findall(r"alarms\.create\(\s*([A-Za-z_]+)", code)
-    assert created == ["DRAIN_ALARM"], f"an alarm other than the capture drain is created: {created}"
-    handlers = re.findall(r"alarms\.onAlarm\.addListener\((.{0,220})", code, re.S)
+    assert created and set(created) <= {"DRAIN_ALARM", "name"}, f"an alarm is created another way: {created}"
+    ensured = re.findall(r"(?<!function )ensureAlarm\(\s*([A-Za-z_]+)", code)
+    assert set(ensured) <= {"HEARTBEAT_ALARM", "OWN_FILES_ALARM"}, f"an unexpected alarm is kept: {ensured}"
+    handlers = re.findall(r"alarms\.onAlarm\.addListener\((.{0,420})", code, re.S)
     assert len(handlers) == 1, "more than one alarm handler"
-    for forbidden in ("syncActiveSessionToStudio", "li_at", "cookies"):
-        assert forbidden not in handlers[0], f"an alarm reaches {forbidden}"
+    called = set(re.findall(r"\b(sendKeptCapturesLater|sendWorkerHeartbeat|checkOwnFiles)\(", handlers[0]))
+    bodies = [handlers[0]]
+    for name in called:
+        found = re.search(r"(?:async )?function " + name + r"\([^)]*\) \{(.*?)\n\}", code, re.S)
+        assert found, f"the alarm calls {name}, which is not found"
+        bodies.append(found.group(1))
+    for body in bodies:
+        for forbidden in ("syncActiveSessionToStudio", "li_at", "cookies"):
+            assert forbidden not in body, f"an alarm reaches {forbidden}"
 
 
 # ---------------------------------------------------------------------------

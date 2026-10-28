@@ -410,11 +410,12 @@ def _run_import(grows, button=None, loader=False, max_rounds=250, stop_at=None):
     with open(OWN_PAGES, encoding="utf-8") as handle:
         source = handle.read()
     names = ["runImport", "clickShowMore"]
-    for helper in ("showMoreButton", "moreOffered"):
+    # claimedElsewhere: the import is claimed by one tab (cycle 4, track 1, phase 2).
+    for helper in ("showMoreButton", "moreOffered", "claimedElsewhere"):
         if f"function {helper}(" in source:
             names.append(helper)
     functions = "\n".join(_function(source, n) for n in names)
-    for const in ("LOAD_MORE_WORDS", "LOADER_SELECTOR"):
+    for const in ("LOAD_MORE_WORDS", "LOADER_SELECTOR", "IMPORT_PROGRESS_MS", "HIDDEN_RELEASE_MS"):
         line = next((l for l in source.splitlines() if l.strip().startswith(f"const {const} ")), None)
         if line:
             functions = line + "\n" + functions

@@ -121,7 +121,7 @@ class Pages:
         self.blocked = []
 
     def open(self, path, html, scripts=("voyager_schema.js", "content.js"), me="test-creator",
-             storage=None, before=None, session=None):
+             storage=None, before=None, session=None, expose=None):
         """
         Serves `html` at https://www.linkedin.com<path>, installs the fake
         chrome and the page clock, then loads the named extension scripts in
@@ -143,6 +143,10 @@ class Pages:
         )
         context.add_init_script(FAKE_CHROME)
         page = context.new_page()
+        # Python functions the page can await, such as a real studio behind
+        # the fake worker (tests/test_qc4_t1p2_pages.py).
+        for name, function in (expose or {}).items():
+            page.expose_function(name, function)
         page.clock.install()
         page.goto("https://www.linkedin.com" + path, wait_until="load")
         if before:
@@ -152,10 +156,20 @@ class Pages:
         return page
 
     def sent(self, page, path=None):
+        """
+        The messages the page scripts sent the worker, or the bodies sent to
+        one path. A read of a post's people is one body carrying items[]
+        (cycle 4, track 1, phase 2); for the engagers path each person is
+        returned as a body of their own, as each was sent before, so a test
+        reads who was sent rather than how many requests carried them.
+        """
         messages = page.evaluate("() => window.__sent")
         if path is None:
             return messages
-        return [m["body"] for m in messages if m.get("path") == path]
+        bodies = [m["body"] for m in messages if m.get("path") == path]
+        if path == "/api/v1/crm/interactions/ingest":
+            return [item for body in bodies for item in (body.get("items") if isinstance(body.get("items"), list) else [body])]
+        return bodies
 
     def close(self):
         self.browser.close()
