@@ -106,7 +106,9 @@ def test_health_answers_whether_the_bridge_is_reading_in_the_first_viewport(stud
     expect(main).to_contain_text("CANNOT READ POST TEXT")
     expect(main).to_contain_text("NOT SEEN YET")
     expect(main).to_contain_text("since the studio started")
-    expect(main).to_contain_text("not reported by this extension version")
+    # Network reading was retired in 2.10.2; where it never ran, Health says
+    # nothing of it (it used to say its state was "not reported").
+    expect(main).not_to_contain_text("Network reading")
 
     # The question is answered above the fold: the bridge line, the four
     # figures and the whole readers table are inside the first viewport.

@@ -61,7 +61,7 @@ The table lists these eight parts:
 | Creator analytics | The figures in **Analytics** |
 | Your posts' analytics pages | The figures on one of your own posts' analytics pages, such as members reached, saves and sends, and where the page shows them followers gained, profile viewers, link visits, the share of impressions from inside and outside your network, and the viewer demographics. Only your recorded posts are read. Only a missing impressions, members reached, reactions, comments, reposts, saves or sends figure marks this reader as not reading the page. LinkedIn may not show the others to every member or on every post, so a missing one stores nothing and is not counted against the reader; if one never appears, the label may have changed |
 
-Network reading's two parts, **Network reading: your posts' figures** and **Network reading: creator analytics**, are no longer listed: network reading was retired in 2.10.2. Their runs from before stay in the capture log, and the figures they kept stay with your posts and in **Analytics**, marked as read by network reading.
+Network reading's two parts, **Network reading: your posts' figures** and **Network reading: creator analytics**, are no longer listed: network reading was retired in 2.10.2. Their runs from before stay in the capture log. The figures they kept stay too, marked as read by network reading: your follower count in **Analytics**, and your own posts' figures with each post on **Posts**.
 
 ## The blocks on the right
 
