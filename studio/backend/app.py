@@ -84,6 +84,7 @@ try:
     from . import insights
     from . import devtools
     from . import security
+    from . import bridge_routing
     from . import desktop as desktop_integration
     from .migrations import describe as describe_schema
     from . import support as support_tools
@@ -160,6 +161,7 @@ except ImportError:
     import insights
     import devtools
     import security
+    import bridge_routing
     import desktop as desktop_integration
     from migrations import describe as describe_schema
     import support as support_tools
@@ -827,8 +829,26 @@ async def pin_creator_profile(request: Request, call_next):
             },
         )
     else:
-        with paths_module.using_profile(active):
-            response = await call_next(request)
+        # A bridge request names the LinkedIn account it was read in, and goes
+        # to the profile that has confirmed that account (bridge_routing).
+        account = request.headers.get(bridge_routing.ACCOUNT_HEADER) if trusted else None
+        decision, routed = ("pass", None)
+        if account:
+            decision, routed = await run_in_threadpool(bridge_routing.decide, path, account)
+        if decision == "held":
+            vanity = account.strip().lower()
+            response = JSONResponse(status_code=202, content={
+                "status": "held", "outcome": "held", "reason": "no_profile_for_account", "account": vanity,
+                "message": bridge_routing.held_message(vanity), "show": False,
+                "contract_version": ingest_contract.CONTRACT_VERSION})
+        elif decision == "skip":
+            response = JSONResponse(content={
+                "status": "skipped", "outcome": ingest_contract.NOTHING_NEW, "reason": "no_profile_for_account",
+                "message": bridge_routing.held_message(account.strip().lower()), "show": False,
+                "contract_version": ingest_contract.CONTRACT_VERSION})
+        else:
+            with paths_module.using_profile(routed or active):
+                response = await call_next(request)
     if trusted:
         response.headers[PROFILE_HEADER] = active
     return response
@@ -1501,6 +1521,19 @@ class BridgeHeartbeat(BaseModel):
     # the studio reports as not measured rather than as off.
     network_reading: Optional[Dict[str, Any]] = None
     voyager_calls: Optional[Dict[str, Any]] = None
+    # The worker's own heartbeat, one per browser per minute (cycle 4, track
+    # 1, phase 2): which browser, the LinkedIn account it is signed in to,
+    # the LinkedIn pages it has open by kind, the captures it is holding for
+    # an account no profile holds, the tabs still carrying an older copy of
+    # its readers, and whether it reloads itself when its files change.
+    browser_instance_id: Optional[str] = None
+    browser: Optional[str] = None
+    signed_in_vanity: Optional[str] = None
+    open_pages: Optional[Dict[str, Any]] = None
+    held: Optional[Dict[str, Any]] = None
+    tabs_needing_reload: Optional[int] = None
+    self_reload: Optional[bool] = None
+    files_version: Optional[str] = None
 
 
 class IdentityConfirm(BaseModel):
@@ -1519,6 +1552,8 @@ class OutboundIngest(BaseModel):
 
 class ImportRequest(BaseModel):
     kind: str
+    # The worker's stamp: which browser and tab asks, so one tab holds the import.
+    stamp: Optional[Dict[str, Any]] = None
 
 
 class ImportEvent(BaseModel):
@@ -1526,6 +1561,7 @@ class ImportEvent(BaseModel):
     event: str
     items_seen: Optional[int] = None
     outcome: Optional[str] = None
+    stamp: Optional[Dict[str, Any]] = None
 
 
 def _refusal(error: "onboarding.RefusedCapture"):
@@ -1583,11 +1619,18 @@ def post_bridge_heartbeat(payload: BridgeHeartbeat):
     than the studio's ingest contract is told to reload once instead of
     failing quietly on a field name that moved.
     """
-    seen = onboarding.record_heartbeat(payload.extension_version, payload.page_kind,
-                                       payload.network_reading, payload.voyager_calls)
+    seen = onboarding.record_heartbeat(
+        payload.extension_version, payload.page_kind, payload.network_reading, payload.voyager_calls,
+        browser_instance_id=payload.browser_instance_id, browser=payload.browser,
+        signed_in_vanity=payload.signed_in_vanity, contract_version=payload.contract_version,
+        open_pages=payload.open_pages, held=payload.held, tabs_needing_reload=payload.tabs_needing_reload,
+        self_reload=payload.self_reload, files_version=payload.files_version)
     ingest_contract.note_waiting(payload.waiting_captures, payload.oldest_waiting_at)
     changes.publish("heartbeat", waiting=payload.waiting_captures is not None)
     seen["handshake"] = ingest_contract.handshake(payload.extension_version, payload.contract_version)
+    # The accounts a profile here has confirmed, so the worker sends what it
+    # held for one of them as soon as it has a home.
+    seen["profile_vanities"] = bridge_routing.profile_vanities()
     return seen
 
 
@@ -1730,14 +1773,16 @@ def post_import_request(payload: ImportRequest):
 @app.post("/api/v1/self/imports/pending", tags=["Onboarding"])
 def get_pending_import(payload: ImportRequest):
     kind = payload.kind
-    return {"status": "success", "request": onboarding.pending_import(kind),
+    claimant = onboarding.claimant_of(onboarding.clean_stamp(payload.stamp))
+    return {"status": "success", "request": onboarding.pending_import(kind, claimant=claimant),
             "vanity": onboarding.confirmed_vanity() or None}
 
 
 @app.post("/api/v1/self/imports/event", tags=["Onboarding"])
 def post_import_event(payload: ImportEvent):
     try:
-        return onboarding.update_import(payload.id, payload.event, payload.items_seen, payload.outcome)
+        return onboarding.update_import(payload.id, payload.event, payload.items_seen, payload.outcome,
+                                        claimant=onboarding.claimant_of(onboarding.clean_stamp(payload.stamp)))
     except onboarding.RefusedCapture as error:
         _refusal(error)
 
