@@ -28,7 +28,7 @@ The session is copied only when you press the button. Nothing copies it on a tim
 
 ## Option B: paste it
 
-1. Open **Settings** from the rail, which opens **Brand Studio**.
+1. Open **Settings** from the rail.
 2. Choose **Local security**.
 3. Scroll to **LinkedIn session**.
 4. Paste your `li_at` value into the field marked `li_at`.
@@ -47,9 +47,14 @@ Under **LinkedIn session**, **Stored session** reads:
 
 | Value | Meaning |
 | --- | --- |
-| PRESENT | Both values are stored |
-| NONE | One or both are missing or unreadable |
+| PRESENT | Both values are stored and readable |
+| STORED, NOT USABLE | A session is stored, but one value is missing or cannot be read here; you can still delete it |
+| NONE | Nothing is stored |
 | READING | The studio is still checking, or could not read the status. Reload the page if it stays. |
+
+With a session stored, **Saved** says when it was saved and, for a session the extension's **Sync LinkedIn Session** captured, which account it belongs to, for example FOR @ASHA-RAO. A session pasted here by hand says ACCOUNT NOT KNOWN: the studio cannot tell whose it is, so **Send to LinkedIn** asks you to sync from the extension first.
+
+This is the one place the session is kept and deleted. **Setup** used to show it with its own **Delete**, from a different setting; it now says whether one is stored and points here.
 
 PRESENT only means values are stored. Nothing checks that LinkedIn still accepts them. The **LinkedIn session** row in the list above it reads CONNECTED or NOT CONNECTED and is coloured green either way, so read the words, not the colour.
 
@@ -62,10 +67,10 @@ PRESENT only means values are stored. Nothing checks that LinkedIn still accepts
 
 ## Remove it
 
-1. Open **Setup** from the rail.
-2. Under **LINKEDIN SESSION**, click **Delete**.
+1. Open **Settings** from the rail, then **Local security**.
+2. Under **LinkedIn session**, click **Delete**, then **Yes, delete the session**. **Keep it** leaves it as it was.
 
-The line changes to "Not stored." Only the session is removed; nothing else in your settings changes. It is not copied back unless you press **Sync LinkedIn Session** again. Backups taken before you deleted it still hold the encrypted session.
+**Stored session** changes to NONE. Only the session is removed; nothing else in your settings changes. It is not copied back unless you press **Sync LinkedIn Session** again. Backups taken before you deleted it still hold the encrypted session.
 
 ## If it does not work
 

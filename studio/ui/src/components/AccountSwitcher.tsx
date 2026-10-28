@@ -83,7 +83,7 @@ export function AccountSwitcher({
 
   useEffect(() => {
     loadAccounts();
-    // A licence entered or removed in Brand Studio changes how many profiles fit.
+    // A licence entered or removed in Settings changes how many profiles fit.
     const onLicence = () => void loadAccounts();
     window.addEventListener(LICENCE_CHANGED, onLicence);
     return () => window.removeEventListener(LICENCE_CHANGED, onLicence);
@@ -400,7 +400,7 @@ export function AccountSwitcher({
               {!creating && atLimit && (
                 <p className="mt-1 text-[11px] leading-snug text-ink-muted">
                   {limit === 1
-                    ? "Your licence covers one creator profile. More than one needs the Agency licence, entered in Brand Studio, Licence."
+                    ? "Your licence covers one creator profile. More than one needs the Agency licence, entered in Settings, Licence."
                     : `Your licence covers ${limit} creator profiles, and all ${limit} are in use.`}
                 </p>
               )}

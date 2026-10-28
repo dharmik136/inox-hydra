@@ -49,7 +49,7 @@ To do this in the interface instead, see [Connect your own AI provider](connect-
 - **reset** takes a `pre_reset` safety backup, then clears the AI provider settings (provider, key, model, address and any other `ai_` setting, plus a Gemini key) and the stored LinkedIn session cookies. It prints the names of the settings it cleared.
 
 > [!NOTE]
-> Everything else stays: drafts, posts, leads, analytics, the queue and its pause setting, the Brand Studio profile, grounding sources, the update-check preference and the Devtools switch. Afterwards, connect your AI provider and your LinkedIn session again. The closing hint suggests `python studio_cli.py ai configure`, which the portable build does not have; there, use the Composer inspector's **Prompt** tab instead. See [Connect your own AI provider](connect-your-own-ai-provider.md).
+> Everything else stays: drafts, posts, leads, analytics, the queue and its pause setting, your Brand byline and watermark, grounding sources, the update-check preference and the Devtools switch. Afterwards, connect your AI provider and your LinkedIn session again. The closing hint suggests `python studio_cli.py ai configure`, which the portable build does not have; there, use the Composer inspector's **Prompt** tab instead. See [Connect your own AI provider](connect-your-own-ai-provider.md).
 
 ## Handle secrets carefully
 

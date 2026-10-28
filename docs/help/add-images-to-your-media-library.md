@@ -77,14 +77,14 @@ The image provider is set per profile, in the **Prompt** tab under **Images**, b
 - With an AI provider set up, **Preview prompt** and **Generate** also send your description to that AI provider first, to write the scene (see [Connect your own AI provider](connect-your-own-ai-provider.md)).
 - A key is stored in this machine's encrypted vault and never shown again in full. Leave the key empty when you change only the model, and the saved key is kept.
 - The free public generator's mark is cropped off the image.
-- Starting the studio with `INOX_ALLOW_IMAGE_EGRESS=0` or `INOX_NO_EGRESS=1` blocks every image provider that is not on this computer. **Generate** then fails, saying nothing was sent and which setting blocked it, and the **image** line under **What has left this machine** in **Brand Studio**, **Local security**, counts the refusal.
+- Starting the studio with `INOX_ALLOW_IMAGE_EGRESS=0` or `INOX_NO_EGRESS=1` blocks every image provider that is not on this computer. **Generate** then fails, saying nothing was sent and which setting blocked it, and the **image** line under **What has left this machine** in **Settings**, **Local security**, counts the refusal.
 
 Uploads never leave your machine.
 
 ## Current limits
 
 - You cannot attach media to a post from the Composer. Drafts are saved as text only.
-- The Brand Studio watermark setting is not applied to images generated here.
+- The watermark set in **Brand** is not applied to images generated here.
 
 ## Where files are kept
 

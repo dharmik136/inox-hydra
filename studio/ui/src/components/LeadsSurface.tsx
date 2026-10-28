@@ -886,7 +886,7 @@ function Dossier({
  * here stays in the older ones until they go; Storage and privacy can remove
  * them from backups too (batch R4's secure delete).
  */
-const BACKUPS_KEEP_THEM = "Older backups still hold them until rotation removes those backups; to remove them from backups too, use Brand Studio, Storage and privacy.";
+const BACKUPS_KEEP_THEM = "Older backups still hold them until rotation removes those backups; to remove them from backups too, use Settings, Storage and privacy.";
 
 /**
  * A post, named the way a drafted message can quote it: its first sentence,

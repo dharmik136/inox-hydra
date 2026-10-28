@@ -1336,6 +1336,12 @@ export interface AuthStatus {
    * not the first, was removed when this version started (decision D9).
    */
   session_removed?: { at: string; message: string } | null;
+  /** Whether anything is stored, usable or not: a stored session the client cannot use is still deletable. */
+  stored?: boolean;
+  /** When the stored session was saved; null when none is held. */
+  saved_at?: string | null;
+  /** Whose it is, known only for a session the extension's Sync captured. */
+  account?: { vanity: string } | null;
 }
 
 export async function fetchAuthStatus(): Promise<AuthStatus> {
@@ -1603,6 +1609,10 @@ export interface BackupArchive {
   restorable?: boolean;
   /** "backup" for a ZIP of database and media, "database" for a database copy alone. */
   kind?: string;
+  /** Whether its integrity check passed when it was made; null when no check was recorded. */
+  verified?: boolean | null;
+  /** The schema version of the database it holds, or null when unreadable. */
+  schema_version?: number | null;
 }
 
 export interface BackupListing {
@@ -4111,6 +4121,70 @@ export interface UpdateStatus {
   last_checked: string | null;
   last_seen_version: string | null;
   releases_url: string;
+}
+
+/** Your profile as LinkedIn last showed it (GET /api/v1/brand/profile). */
+export interface BrandProfile {
+  confirmed: boolean;
+  profile: {
+    vanity: string | null;
+    name: string | null;
+    headline: string | null;
+    about: string | null;
+    location: string | null;
+    company: string | null;
+    followers: number | null;
+    connections: number | null;
+    /** One read of your profile page writes these fields together. */
+    read_at: string | null;
+    confirmed_at: string | null;
+  } | null;
+  positions: { title: string | null; company: string | null; date_range: string | null; location: string | null; description: string | null; read_at: string | null }[];
+  education: { school: string | null; degree: string | null; date_range: string | null; read_at: string | null }[];
+  skills: { skill: string; read_at: string | null }[];
+  /** Follower and connection counts on the days they were read. */
+  audience: { date: string; followers: number | null; connections: number | null }[];
+}
+
+export async function fetchBrandProfile(): Promise<BrandProfile> {
+  return call<BrandProfile>("/api/v1/brand/profile");
+}
+
+/** What Settings opens on (GET /api/v1/settings/overview). */
+export interface SettingsOverview {
+  backup: { enabled: boolean; last: { name: string; made_at: string; bytes: number; verified: boolean | null } | null; next_due: string | null; stale: boolean; never: boolean };
+  cleanup: { runs: string; jobs: { job: string; state: "on" | "off" | "waiting for you"; rows: number | null }[] };
+  egress: { total_performed: number; total_refused: number; master_off: boolean; since: string };
+  licence: { status: string; tier_label: string; expires_at: string | null; updates_until: string | null };
+  updates: { enabled: boolean; last_checked: string | null; last_seen_version: string | null; current_version: string };
+  autostart: { supported: boolean; enabled: boolean; available: boolean; platform: string | null };
+}
+
+export async function fetchSettingsOverview(): Promise<SettingsOverview> {
+  return call<SettingsOverview>("/api/v1/settings/overview");
+}
+
+/** Starts the studio with your computer, or stops doing so (POST /api/v1/desktop/autostart). */
+export async function setAutostart(enabled: boolean): Promise<void> {
+  await call("/api/v1/desktop/autostart", { method: "POST", body: JSON.stringify({ enabled }) });
+}
+
+/** The people you kept from the review, and when (GET /api/v1/storage/kept). */
+export interface KeptPerson {
+  lead_id: string;
+  name: string | null;
+  headline: string | null;
+  kept_at: string;
+}
+
+export async function fetchKeptList(): Promise<KeptPerson[]> {
+  const data = await call<{ kept?: KeptPerson[] }>("/api/v1/storage/kept");
+  return data.kept ?? [];
+}
+
+export async function unkeepLead(leadId: string): Promise<number> {
+  const data = await call<{ removed?: number }>(`/api/v1/storage/kept/${encodeURIComponent(leadId)}`, { method: "DELETE" });
+  return data.removed ?? 0;
 }
 
 export async function fetchUpdateStatus(): Promise<UpdateStatus> {

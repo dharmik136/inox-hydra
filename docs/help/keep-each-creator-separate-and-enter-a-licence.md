@@ -19,7 +19,7 @@ Two things work in your first profile only: syncing a LinkedIn session, and **Se
 
 The new profile opens straight away, empty. To fill it, go through **Setup** in it, with that creator's own LinkedIn in the bridge browser.
 
-More than one profile needs the Agency licence. Without it, the switcher does not offer **Add Creator Profile**, and says instead "Your licence covers one creator profile. More than one needs the Agency licence, entered in Brand Studio, Licence." When an Agency licence's profiles are all in use, it says that in the same place.
+More than one profile needs the Agency licence. Without it, the switcher does not offer **Add Creator Profile**, and says instead "Your licence covers one creator profile. More than one needs the Agency licence, entered in Settings, Licence." When an Agency licence's profiles are all in use, it says that in the same place.
 
 ## Delete a profile
 
@@ -31,7 +31,7 @@ Deleting a profile removes its folder: its database, media, backups and exports.
 
 ## Enter a licence
 
-1. Open **Brand Studio**, then **Licence**.
+1. Open **Settings**, then **Licence**.
 2. Paste the key from your purchase email into **Enter a licence**. It begins `IHL1.`
 3. Click **Use this licence**.
 

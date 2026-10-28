@@ -1,6 +1,6 @@
 # Back up, restore or export your data
 
-Take a backup or export from Brand Studio, find where it was saved, and restore one from Brand Studio or, if the studio will not start, from the command line.
+Take a backup or export from Settings, find where it was saved, and restore one from Settings or, if the studio will not start, from the command line.
 
 ## Where your data lives
 
@@ -16,7 +16,7 @@ To see the exact paths, open a terminal in the checkout folder, the one that hol
 
 ## Back up now
 
-1. Open **Settings** from the rail, which opens **Brand Studio**.
+1. Open **Settings** from the rail.
 2. Choose the **Storage and privacy** tab.
 3. **Your data** is at the top of it.
 4. Click **Back up now**.
@@ -25,7 +25,7 @@ When it finishes, a note reads "Saved *size* to *archive path*". Below the butto
 
 **What happens:** the studio writes `inox_backup_manual_<date>_<time>.zip`. It contains `data/linkedin_studio.db` (a compact copy taken in one consistent read, so it is consistent even while the studio is running), every file under `assets/`, and a `backup_manifest.json` with the date, the version and the result of the checks. Each backup is checked as it is made: the database copy must pass SQLite's integrity check, and the archive is read back against its checksums. If either fails, no file is kept and the note gives the reason; your earlier backups are unchanged. Photos and videos are stored as they are rather than compressed again, which saves time and no space.
 
-**Automatic daily backup.** While the studio is open, it also makes `inox_backup_daily_<date>_<time>.zip` once a day, checked the same way. Any backup made in the last 24 hours counts, so pressing **Back up now** puts the next one off. Turn it off, and see the last and next backup, in Brand Studio's **Storage and privacy** tab. See [Choose what the studio keeps, and for how long](choose-what-the-studio-keeps.md).
+**Automatic daily backup.** While the studio is open, it also makes `inox_backup_daily_<date>_<time>.zip` once a day, checked the same way. Any backup made in the last 24 hours counts, so pressing **Back up now** puts the next one off. Turn it off, and see the last and next backup, in **Settings**, under **Storage and privacy**, or at a glance on its **Overview**. See [Choose what the studio keeps, and for how long](choose-what-the-studio-keeps.md).
 
 **Which backups are kept.** Of the automatic backups, the studio keeps the newest of each of the last 7 days, then of 4 weeks before those, then of 3 months before those: about 14, reaching back about four months. The backups a cleanup makes first (`inox_backup_pre_cleanup_<date>_<time>.zip`) are counted with them. Backups you make with **Back up now** or the command line, and the safety backups taken before a restore, are never removed by the studio.
 
@@ -73,12 +73,12 @@ A figure the studio never read says "not measured", not 0.
 | --- | --- | --- |
 | Contents | Full database and all media | Content tables only, no media |
 | Credentials | Included | Excluded |
-| Can it be restored? | Yes, from Brand Studio or the command line | No |
+| Can it be restored? | Yes, from Settings or the command line | No |
 | Use it for | Getting your studio back | Taking your content to a spreadsheet, Obsidian or another tool |
 
 ## Restore a backup
 
-1. Open **Settings** from the rail, which opens **Brand Studio**.
+1. Open **Settings** from the rail.
 2. Choose the **Storage and privacy** tab, where **Your data** is at the top.
 3. In the list of backups, click **Restore** beside the one you want. Every ZIP backup and every automatic database copy has one.
 4. The studio asks first. The question names the backup and says what it replaces: everything in this creator profile, that is drafts and the queue, leads and analytics, your confirmed identity and Setup, settings and stored keys, media files (not for an automatic database copy, which leaves media as they are), and the record of people you forgot. Click **OK** to go ahead.

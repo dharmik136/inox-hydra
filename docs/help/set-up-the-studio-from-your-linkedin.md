@@ -38,7 +38,7 @@ The profile page does not show everything, so three buttons open the pages that 
 
 Anything the page did not show is left as it was, so a section that had not loaded yet does not erase what was read before. Your profile page shows only your first few roles, schools and skills, so what it shows is added to the lists already read, from your archive or the full lists, and never shortens them. A full list replaces the stored one only when it is read from its own page, such as **Read all skills**. A field reading "Not read" is one the studio has not found yet.
 
-Confirming also fills your name, headline and company in **Brand Studio**, but only where those are empty. What you typed there is never replaced. If you later delete what the studio holds about you, the fields it filled are cleared again, unless you have changed them since.
+Confirming also fills your byline's name, headline and company in **Brand**, under **Identity**, but only where those are empty. What you typed there is never replaced. If you later delete what the studio holds about you, the fields it filled are cleared again, unless you have changed them since.
 
 ## 4. Your LinkedIn archive
 
@@ -112,7 +112,7 @@ The extension reports at most once a minute per part per page. The studio keeps 
 
 ## Delete it
 
-Under **Your profile**, click **NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE STUDIO HOLDS ABOUT YOU**. Nothing is deleted yet. Setup lists what would go, with counts: your identity and profile, your imported posts and every reading of their figures, your comments and reactions, your connections, the record of your archive and history imports, what you asked **From your record** for with its daily cards, your marks and your notes, the saved posts, follows, votes, articles, reposts and searches your archive brought, and the Brand Studio fields Setup filled. Your leads and drafts are kept.
+Under **Your profile**, click **NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE STUDIO HOLDS ABOUT YOU**. Nothing is deleted yet. Setup lists what would go, with counts: your identity and profile, your imported posts and every reading of their figures, your comments and reactions, your connections, the record of your archive and history imports, what you asked **From your record** for with its daily cards, your marks and your notes, the saved posts, follows, votes, articles, reposts and searches your archive brought, and the byline fields Setup filled in **Brand**. Your leads and drafts are kept.
 
 It also says whether a backup of the studio exists, and **Back up first** takes one. Type `delete` and click **Delete everything** to go ahead, or **Keep it** to leave everything as it is. It cannot be undone except from a backup. The next time you open your profile, Setup asks again.
 

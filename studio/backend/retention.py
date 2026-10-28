@@ -864,6 +864,53 @@ def _ids(lead_ids: Any) -> List[str]:
     return list(dict.fromkeys(str(i) for i in lead_ids[:5000]))
 
 
+def kept_list() -> Dict[str, Any]:
+    """
+    The people the creator kept from the review, newest keep first, with the
+    day each was kept. The table was written and read only as an exclusion,
+    so a keep could not be seen or taken back (sections report, batch 5).
+    """
+    conn = get_db()
+    try:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT k.lead_id, COALESCE(l.full_name, l.name) AS name, l.headline, k.kept_at "
+            "FROM lead_retention_keeps k JOIN leads l ON l.id = k.lead_id ORDER BY k.kept_at DESC")]
+    finally:
+        conn.close()
+    return {"kept": rows, "count": len(rows)}
+
+
+def unkeep(lead_id: str) -> Dict[str, Any]:
+    """Takes a keep back: the person may be listed for review again when they qualify."""
+    conn = get_db()
+    try:
+        with conn:
+            removed = conn.execute("DELETE FROM lead_retention_keeps WHERE lead_id = ?", (lead_id,)).rowcount
+    finally:
+        conn.close()
+    return {"removed": removed}
+
+
+def next_cleanup() -> Dict[str, Any]:
+    """
+    What the next cleanup would do: each job, whether it is on, off or waiting
+    for the creator's yes, and how many rows it would remove now. Cleanups
+    run with the hourly check (scheduler daily_backup_and_retention), behind a
+    checked backup, so "now" is within the hour while the studio runs.
+    """
+    current = rules()
+    jobs = []
+    for job in JOBS:
+        switch = _JOB_SWITCH.get(job)
+        state = current[switch] if switch else "on"
+        try:
+            rows = _PREVIEWS[job](current)["rows"]
+        except Exception:
+            rows = None
+        jobs.append({"job": job, "state": {"on": "on", "ask": "waiting for you"}.get(state, "off"), "rows": rows})
+    return {"runs": "every hour while the studio runs, behind a checked backup", "jobs": jobs}
+
+
 def keep_leads(lead_ids: Any) -> Dict[str, Any]:
     """The creator keeps these people: they leave the review list for good."""
     chosen = _ids(lead_ids)

@@ -396,7 +396,7 @@ export function TodaySurface({
       {backups.data?.stale && (
         <p role="status" className="studio-meta shrink-0 rounded-md border border-signal-orange px-3 py-1.5 leading-snug text-signal-orange-text">
           NO BACKUP FOR {Math.round(backups.data.age_hours ?? 0)} HOURS. THE DAILY BACKUP IS ON BUT HAS
-          NOT RUN; THE NEWEST COPY YOU COULD RESTORE FROM IS THAT OLD. SEE STORAGE AND PRIVACY IN BRAND STUDIO.
+          NOT RUN; THE NEWEST COPY YOU COULD RESTORE FROM IS THAT OLD. SEE STORAGE AND PRIVACY IN SETTINGS.
         </p>
       )}
 

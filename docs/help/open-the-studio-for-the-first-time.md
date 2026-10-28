@@ -52,7 +52,8 @@ The studio opens on **Setup** until its required steps are done (the bridge hear
 - **Queue**: 11 default weekly posting slots and no posts.
 - **Leads**: "No leads captured yet" and setup instructions for the browser extension.
 - **Analytics**: empty until the extension captures your numbers.
-- **Brand** and **Settings** (both open **Brand Studio** for now): no name. While the **Name** field is empty, the preview shows "Unnamed".
+- **Brand**: your profile, once you have confirmed it in **Setup**, and no byline name. While the **Name** field under **Identity** is empty, the preview shows "Unnamed".
+- **Settings**: an overview of your backups, cleanups, what has left this machine, your licence, the update check and whether the studio starts with your computer.
 
 ## Find your way around
 
@@ -71,12 +72,12 @@ The rail on the left lists the seventeen sections, in five groups: **Now**, **Ma
 | Audience | Learn | Who keeps coming back, who has gone quiet, and who is a connection |
 | Patterns | Learn | What your own posts suggest, and how steadily you post |
 | Analytics | Learn | Time series, what changed, and comparisons |
-| Brand | Learn | Your identity and watermark. For now it opens **Brand Studio**, as **Settings** does |
+| Brand | Learn | Your profile as LinkedIn last showed it, each part with the date it was read; your byline (**Identity**) and **Watermark** one level down |
 | Activity | Bridge | What the bridge has read from your LinkedIn, as it arrives |
 | Health | Bridge | Whether the bridge is reading, and what it could not read |
 | Setup | Studio | Connect the browser and teach the studio who you are |
 | Docs | Studio | Offline playbook and strategy search |
-| Settings | Studio | Grounding, local security, storage and privacy, and your licence. For now it opens **Brand Studio**, as **Brand** does |
+| Settings | Studio | An overview of backups, cleanups, what has left this machine, your licence, the update check and autostart; **Grounding**, **Local security**, **Storage and privacy** and **Licence** one level down |
 
 The **Studio** group sits at the foot of the rail, so **Setup** is always in the same place. Below it, the **Bridge** chip says whether the bridge browser has been heard from and opens **Health**.
 
@@ -91,7 +92,7 @@ The **LOCAL** shield at the bottom of the rail says all processing is local. Tha
 
 All of these are optional.
 
-1. Open **Brand Studio**, stay on **Identity**, fill in **Name** (and **Headline** and **Company** if you like), then press **Save**.
+1. Open **Brand**, choose **Identity**, fill in **Name** (and **Headline** and **Company** if you like), then press **Save**.
 2. To capture leads and your analytics, follow [Install the browser extension that captures leads and analytics](install-the-browser-extension.md).
 3. To use your own AI model, follow [Connect your own AI provider](connect-your-own-ai-provider.md).
 

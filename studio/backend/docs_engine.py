@@ -652,7 +652,7 @@ HELP_SECTIONS = [
     {
         "id": "ai",
         "title": "Bring your own AI",
-        "blurb": "Connect an AI provider, run an instruction on your draft, set up Brand Studio and its grounding sources, and add images.",
+        "blurb": "Connect an AI provider, run an instruction on your draft, set up your Brand and Settings and their grounding sources, and add images.",
         "paths": [
             "help/connect-your-own-ai-provider.md",
             "help/run-an-instruction-on-your-draft.md",

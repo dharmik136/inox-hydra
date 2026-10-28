@@ -120,7 +120,7 @@ See [What leaves this machine, and when](what-leaves-this-machine.md) for the sw
 | The fifth card says it waits for your provider or the library | Connect a provider in the Composer's **Prompt** tab, or fetch the Inox library on **What the studio knows**. |
 | "Not sent: the call could cost up to ..." | The estimate is over what is left of your daily ceiling. Raise the ceiling on **What the studio knows**, or choose a cheaper model. |
 | "Not sent: no price is listed for ..." | The studio cannot keep that provider under your ceiling, so it does not call it. |
-| "Your own model's ideas are part of the Creator licence." | Enter a Creator licence in **Brand Studio**. |
+| "Your own model's ideas are part of the Creator licence." | Enter a Creator licence in **Settings**, under **Licence**. |
 | "The library file was not found at its address. It may not be published yet." | There is no library at the address yet. Nothing was changed. |
 | "The file's signature does not match any library key this studio holds" | The file was not signed by Inox Hydra, or was changed after it was signed. Nothing was kept. |
 | A card failed a check and is not shown | A row it cited was not found, or your model's idea failed one of the checks above. Nothing is put in its place. |

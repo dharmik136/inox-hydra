@@ -36,15 +36,17 @@ def _studio_back(page):
 
 
 def test_brand_studio_recovers_by_itself_when_the_studio_returns(studio):
+    # Brand Studio is Brand and Settings now (cycle 4, track 4, phase b); Brand
+    # is the screen that needs the profile, so it is the one that must recover.
     page = studio["page"]
     _studio_down(page)
-    page.goto(studio["url"] + "/#/settings")
-    page.wait_for_selector("text=THE PROFILE COULD NOT BE READ.")
+    page.goto(studio["url"] + "/#/brand")
+    page.wait_for_selector("text=YOUR BRAND COULD NOT BE READ.")
     page.wait_for_selector("text=The studio is not answering")
     _studio_back(page)
     # The banner asks again every five seconds; the screen follows it.
-    page.wait_for_selector("h1:has-text('Brand Studio')", timeout=12000)
-    assert page.locator("text=THE PROFILE COULD NOT BE READ.").count() == 0
+    page.wait_for_selector("h1:has-text('What your profile shows')", timeout=12000)
+    assert page.locator("text=YOUR BRAND COULD NOT BE READ.").count() == 0
 
 
 def test_posts_recover_by_themselves_when_the_studio_returns(studio):

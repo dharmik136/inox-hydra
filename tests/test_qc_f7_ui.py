@@ -399,24 +399,28 @@ def test_every_tray_destination_can_be_reached_in_a_short_window(studio, width, 
     page.wait_for_timeout(250)
     box = tray.bounding_box()
     assert box["y"] + box["height"] <= height + 0.5, f"the tray runs below a {height} pixel window: {box}"
-    # The tray's last destination: Settings, which opens Brand Studio until
-    # Brand and Settings are split (cycle 4, track 4).
+    # The tray's last destination: Settings, its own screen since Brand
+    # Studio split in two (cycle 4, track 4, phase b).
     last = tray.get_by_role("button", name="Settings")
     last.scroll_into_view_if_needed()
     assert _inside(last.bounding_box(), width, height), "the tray's last destination cannot be brought on screen"
     last.click()
     page.wait_for_timeout(300)
-    assert page.locator("h1", has_text="Brand Studio").is_visible()
+    assert page.locator("h1", has_text="What runs here, and what leaves").is_visible()
 
 
 @pytest.mark.parametrize("scheme", ["dark", "light"])
 def test_brand_studio_tabs_are_all_on_a_phone_screen(studio, scheme):
-    page = studio(375, 812, scheme).open("Settings")
-    tabs = page.get_by_role("tablist", name="Brand workspaces").get_by_role("tab")
-    assert tabs.count() == 6  # Storage and privacy joined in batch R4
-    for index in range(tabs.count()):
-        tab = tabs.nth(index)
-        assert _inside(tab.bounding_box(), 375, 812), f"{tab.inner_text()} is off screen at 375 pixels"
+    # Brand Studio's six tabs are Brand's three views and Settings' five now
+    # (cycle 4, track 4, phase b); every one still fits a phone's width.
+    session = studio(375, 812, scheme)
+    for section, label, count in (("Settings", "Settings views", 5), ("Brand", "Brand views", 3)):
+        page = session.open(section)
+        tabs = page.get_by_role("tablist", name=label).get_by_role("tab")
+        assert tabs.count() == count
+        for index in range(tabs.count()):
+            tab = tabs.nth(index)
+            assert _inside(tab.bounding_box(), 375, 812), f"{tab.inner_text()} is off screen at 375 pixels"
 
 
 # ---------------------------------------------------------------------------
@@ -593,7 +597,10 @@ def test_switching_profile_asks_before_discarding_brand_studio_edits(studio, mon
     assert page.evaluate(FETCH, ["POST", "/api/v1/licence", {"key": _agency_key(monkeypatch)}])["status"] == 200
     created = page.evaluate(FETCH, ["POST", "/api/v1/accounts", {"name": "Second Creator"}])["body"]["account"]
     try:
-        session.go("Settings")
+        # The byline is edited in Brand, under Identity, since Brand Studio
+        # split in two (cycle 4, track 4, phase b).
+        session.go("Brand")
+        page.get_by_role("tab", name="Identity").click()
         headline = page.get_by_label("Headline")
         headline.fill("An edit not saved yet")
         page.get_by_text("UNSAVED").wait_for(state="visible")
@@ -604,8 +611,8 @@ def test_switching_profile_asks_before_discarding_brand_studio_edits(studio, mon
         switcher.locator("div.group", has_text="Second Creator").locator("button").first.click()
         page.wait_for_timeout(600)
 
-        assert asked, "the studio reloaded into another profile and threw the Brand Studio edits away"
-        assert "Brand Studio" in asked[0], f"the question does not say what would be lost: {asked[0]!r}"
+        assert asked, "the studio reloaded into another profile and threw the Brand edits away"
+        assert "Your Brand edits" in asked[0], f"the question does not say what would be lost: {asked[0]!r}"
         assert headline.input_value() == "An edit not saved yet"
     finally:
         page.evaluate(FETCH, ["POST", "/api/v1/accounts/switch", {"account_id": "default"}])

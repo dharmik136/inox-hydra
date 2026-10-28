@@ -87,6 +87,18 @@ export function LicenceWorkspace() {
             {state.status === "expired" && held && `Ended ${held.expires_at}, for ${held.email}`}
             {state.status === "invalid" && "Not accepted"}
           </dd>
+          {held?.name && (
+            <>
+              <dt className="text-ink-muted">Name</dt>
+              <dd className="text-ink-secondary">{held.name}</dd>
+            </>
+          )}
+          {held?.issued_at && (
+            <>
+              <dt className="text-ink-muted">Issued</dt>
+              <dd className="text-ink-secondary">{held.issued_at}</dd>
+            </>
+          )}
           {held?.expires_at && state.status === "active" && (
             <>
               <dt className="text-ink-muted">Ends</dt>

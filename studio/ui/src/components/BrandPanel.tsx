@@ -80,7 +80,7 @@ export function BrandPanel() {
           creator looking for where to set their name concluded there was
           nowhere. */}
       <p className="studio-meta border-t border-edge pt-3 text-ink-muted">
-        EDIT THESE IN BRAND STUDIO, FROM THE RAIL
+        EDIT THESE IN BRAND, FROM THE RAIL
       </p>
     </div>
   );

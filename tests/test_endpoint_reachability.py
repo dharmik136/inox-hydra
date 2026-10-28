@@ -405,10 +405,15 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # opens: 216 paths, 168 reached, 48 unreachable. The Queue's month,
 # /api/queue/calendar, which its Calendar view reads: 217, 169, 48. What the
 # model is told, /api/v1/composer/told, which the Prompt tab reads: 218, 170, 48.
+# Brand and Settings split from Brand Studio: /api/v1/brand/profile and
+# /api/v1/settings/overview, which they open on, and the kept list's two
+# paths, GET /api/v1/storage/kept and DELETE /api/v1/storage/kept/{lead_id},
+# all reached; and /api/v1/desktop/autostart, which no screen reached before,
+# reached by the overview's switch: 222 paths, 175 reached, 47 unreachable.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 218
-REACHED_BY_INTERFACE = 170
-UNREACHABLE = 48
+TOTAL_API_PATHS = 222
+REACHED_BY_INTERFACE = 175
+UNREACHABLE = 47
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

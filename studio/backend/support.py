@@ -648,17 +648,26 @@ def _manifest_of(archive: str) -> Dict[str, Any]:
         return {}
 
 
+def verified_of(manifest: Optional[Dict[str, Any]]) -> Optional[bool]:
+    """
+    Whether a backup's integrity check passed when it was made: True, False,
+    or None for a backup made before checks were recorded (or a database copy,
+    which carries no manifest). The one reading of a manifest's check.
+    """
+    verified = (manifest or {}).get("verified") or {}
+    return verified.get("integrity_check") == "ok" if verified else None
+
+
 def _describe(entry: Optional[tuple]) -> Optional[Dict[str, Any]]:
     if not entry:
         return None
     made_at, path = entry
-    verified = _manifest_of(path).get("verified") or {}
     return {
         "name": os.path.basename(path),
         "made_at": made_at.isoformat(timespec="seconds"),
         "bytes": os.path.getsize(path),
         # Backups made before checking began carry no record of it.
-        "verified": verified.get("integrity_check") == "ok" if verified else None,
+        "verified": verified_of(_manifest_of(path)),
     }
 
 

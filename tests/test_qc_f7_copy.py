@@ -55,7 +55,8 @@ def test_local_security_names_each_action_that_sends_and_what_it_sends():
 def test_the_brand_inspector_does_not_call_brand_studio_unbuilt():
     rendered = _rendered("BrandPanel.tsx")
     assert "NOT BUILT YET" not in rendered.upper(), "the inspector says Brand Studio does not exist"
-    assert "BRAND STUDIO" in rendered.upper(), "the inspector no longer says where these are edited"
+    # Brand since Brand Studio split in two (cycle 4, track 4, phase b).
+    assert "EDIT THESE IN BRAND, FROM THE RAIL" in rendered.upper(), "the inspector no longer says where these are edited"
 
 
 def test_the_activity_screen_goes_by_one_name():
