@@ -721,6 +721,8 @@ HELP_SECTIONS = [
             "quality/CYCLE4_2026-10_PRD.md",
             "quality/CYCLE4_REGISTER.md",
             "quality/cycle4/t1-bridge.md",
+            # Track 1, phase 2: one bridge per browser, and no reload by hand.
+            "quality/cycle4/t1-phase2.md",
             "quality/cycle4/t5-derive.md",
             "quality/cycle4/t7-ideas.md",
             "quality/cycle4/t3-honesty.md",
