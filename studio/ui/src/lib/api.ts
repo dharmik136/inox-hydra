@@ -2260,6 +2260,8 @@ export interface PostsInsights extends Paging {
   best: string[];
   worst: string[];
   settled_after_days: number;
+  /** Whether that age was measured from the creator's own readings or assumed (results.settled_after_hours). */
+  settled_after?: SettledAfter;
   sort: string;
   settled_state: string | null;
   q: string | null;
@@ -2318,6 +2320,33 @@ export interface PostDetail {
   edited_first_seen_at?: string | null;
   /** The kind of post when a source said (post_format.py): "video", "text" and so on, or "unknown". */
   format?: string | null;
+  /** Every reading the studio keeps of the post, from every page, oldest first. */
+  readings?: PostReading[];
+  /** The reading nearest two days old, which Today compares at, or why there is none. */
+  two_day?: TwoDayReading;
+  /** Readings older than this many days are thinned by the roll-up; null when it is off. */
+  readings_thinned_after_days?: number | null;
+}
+
+/** One reading of a post, from one page, at one moment. */
+export interface PostReading {
+  observed_at: string;
+  age_hours: number | null;
+  source: string;
+  precision: string | null;
+  impressions: number | null;
+  reactions: number | null;
+  comments: number | null;
+  reposts: number | null;
+}
+
+export interface TwoDayReading {
+  /** read; too_new (younger than the window); not_yet (in it, unread); missed (past it, unread); unknown_age. */
+  state: "read" | "too_new" | "not_yet" | "missed" | "unknown_age";
+  reading: (Partial<PostReading> & { age_hours: number; source: string | null }) | null;
+  age_hours: number | null;
+  at_hours: number;
+  window: [number, number];
 }
 
 export async function fetchPostDetail(activityUrn: string): Promise<PostDetail> {

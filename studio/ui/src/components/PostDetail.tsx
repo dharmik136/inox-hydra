@@ -134,8 +134,11 @@ export function PostDetail({
                 </p>
               )}
               <WatchTime post={post} />
+              <TwoDay post={post} />
 
               {post.url && <OpenThePost url={post.url} />}
+
+              <Readings post={post} />
 
               <section className="mt-5">
                 <p className="studio-label mb-2">Who engaged</p>
@@ -191,6 +194,105 @@ export function PostDetail({
         </div>
       </div>
     </div>
+  );
+}
+
+/** The pages a reading comes from, in the words the rest of the studio uses. */
+const PAGES: Record<string, string> = {
+  activity_page: "your Activity page",
+  post_analytics: "its analytics page",
+  voyager_network: "network reading",
+};
+
+/**
+ * The reading nearest two days old, which Today compares this post at, or
+ * which of three reasons there is none (the studio's own words for each).
+ */
+function TwoDay({ post }: { post: PostDetailData }) {
+  const two = post.two_day;
+  if (!two) return null;
+  if (two.state === "read" && two.reading) {
+    const r = two.reading;
+    const parts = [
+      r.impressions != null ? `${r.impressions.toLocaleString()} IMPRESSIONS` : null,
+      r.reactions != null ? `${r.reactions.toLocaleString()} REACTIONS` : null,
+      r.comments != null ? `${r.comments.toLocaleString()} COMMENTS` : null,
+    ].filter(Boolean);
+    return (
+      <p className="studio-meta mt-1 text-[10px] text-ink-muted">
+        AT ABOUT TWO DAYS OLD (READ AT {Math.round(r.age_hours)} H FROM {(PAGES[r.source ?? ""] ?? r.source ?? "A PAGE").toUpperCase()}):{" "}
+        {parts.length ? parts.join(" · ") : "NO FIGURE READ"}
+      </p>
+    );
+  }
+  const why: Record<string, string> = {
+    too_new: `NOT TWO DAYS OLD YET: POSTS ARE COMPARED AT ABOUT ${two.at_hours} HOURS, AND THIS ONE IS ${Math.round(two.age_hours ?? 0)}`,
+    not_yet: "NOT READ YET AT ABOUT TWO DAYS OLD: OPEN ITS ANALYTICS PAGE NOW AND IT WILL BE",
+    missed: `NOT READ WHILE IT WAS ABOUT TWO DAYS OLD (${two.window[0]} TO ${two.window[1]} HOURS), SO IT CANNOT BE COMPARED AT THAT AGE`,
+    unknown_age: "NOT COMPARED AT TWO DAYS: ITS PUBLISH TIME IS NOT KNOWN",
+  };
+  return <p className="studio-meta mt-1 text-[10px] text-ink-muted">{why[two.state] ?? ""}</p>;
+}
+
+/**
+ * Every reading the studio keeps of this post, as a series per page, oldest
+ * first: how it grew, and how many times each page was read. "Read N times"
+ * counts the readings kept, and the roll-up thins older ones, which is said.
+ */
+function Readings({ post }: { post: PostDetailData }) {
+  const readings = post.readings ?? [];
+  if (readings.length === 0) {
+    return <p className="studio-meta mt-4 text-[10px] text-ink-muted">NO READING OF THIS POST IS KEPT YET</p>;
+  }
+  const sources = Array.from(new Set(readings.map((reading) => reading.source)));
+  const cell = (value: number | null, approximate: boolean) =>
+    value === null ? "not read" : `${approximate ? "about " : ""}${value.toLocaleString()}`;
+  return (
+    <section className="mt-5">
+      <p className="studio-label mb-2">Readings</p>
+      {sources.map((source) => {
+        const series = readings.filter((reading) => reading.source === source);
+        return (
+          <div key={source} className="mb-3">
+            <p className="studio-meta text-[10px] text-ink-muted">
+              FROM {(PAGES[source] ?? source.replace(/_/g, " ")).toUpperCase()}, READ {series.length}{" "}
+              {series.length === 1 ? "TIME" : "TIMES"}
+            </p>
+            <table className="mt-1 w-full text-left text-[11px]">
+              <thead>
+                <tr className="studio-meta text-[10px] text-ink-muted">
+                  <th className="py-0.5 font-normal">AGE</th>
+                  <th className="py-0.5 font-normal">READ</th>
+                  <th className="py-0.5 text-right font-normal">IMPRESSIONS</th>
+                  <th className="py-0.5 text-right font-normal">REACTIONS</th>
+                  <th className="py-0.5 text-right font-normal">COMMENTS</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-edge text-ink-secondary">
+                {series.map((reading) => {
+                  const rounded = reading.precision === "rounded";
+                  return (
+                    <tr key={reading.observed_at}>
+                      <td className="py-0.5 tabular-nums">{reading.age_hours === null ? "not known" : `${Math.round(reading.age_hours)} h`}</td>
+                      <td className="py-0.5">{formatLocalDay(reading.observed_at)}</td>
+                      <td className="py-0.5 text-right tabular-nums">{cell(reading.impressions, rounded)}</td>
+                      <td className="py-0.5 text-right tabular-nums">{cell(reading.reactions, rounded)}</td>
+                      <td className="py-0.5 text-right tabular-nums">{cell(reading.comments, rounded)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+      {post.readings_thinned_after_days != null && (
+        <p className="studio-meta text-[10px] leading-snug text-ink-muted">
+          READINGS OLDER THAN {post.readings_thinned_after_days} DAYS KEEP THE FIRST AND LAST OF EACH DAY AND EVERY ONE AT 36
+          TO 72 HOURS OLD, SO AN OLDER POST MAY HAVE BEEN READ MORE OFTEN THAN THIS SAYS.
+        </p>
+      )}
+    </section>
   );
 }
 

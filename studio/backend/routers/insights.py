@@ -12,7 +12,9 @@ try:
     from .. import insights
     from .. import onboarding
     from .. import own_insights
+    from .. import post_summary
     from .. import results
+    from .. import retention
     from ..contrast_engine import compute_all_contrasts
     from ..database import get_db
     from ..evidence_briefing import get_topic_attribution_map, get_retrieval_evidence_brief, patterns_comparisons
@@ -20,7 +22,9 @@ except (ImportError, ValueError):
     import insights
     import onboarding
     import own_insights
+    import post_summary
     import results
+    import retention
     from contrast_engine import compute_all_contrasts
     from database import get_db
     from evidence_briefing import get_topic_attribution_map, get_retrieval_evidence_brief, patterns_comparisons
@@ -70,6 +74,12 @@ def _derived(activity_urn: str) -> Dict[str, Any]:
         # and when it was first seen marked edited (phase 2).
         held = conn.execute("SELECT format, edited_first_seen_at FROM own_posts WHERE activity_urn = ?",
                             (activity_urn,)).fetchone()
+        two_day = _two_day(conn, activity_urn)
+        # The readings roll-up thins readings older than its age to the first
+        # and last of each day (and keeps every one at 36 to 72 hours), so
+        # "read N times" is the readings kept; the screen says so when it ran.
+        rule = retention.rules(conn)
+        thinned_after = int(rule["readings_days"]) if rule.get("readings") == "on" else None
     finally:
         conn.close()
     readings = onboarding.post_readings(activity_urn)
@@ -94,7 +104,36 @@ def _derived(activity_urn: str) -> Dict[str, Any]:
         "half_life": half_life,
         "format": held["format"] if held else None,
         "edited_first_seen_at": held["edited_first_seen_at"] if held else None,
+        "two_day": two_day,
+        "readings_thinned_after_days": thinned_after,
     }
+
+
+def _two_day(conn, activity_urn: str) -> Dict[str, Any]:
+    """
+    The reading nearest two days old, the age Today compares a post at
+    (post_summary.READING_AT_HOURS, within READING_WINDOW), from the per-post
+    summary that Today reads, so the two screens cannot pick different ones.
+    With none, which of three reasons: too young to have one, in the window
+    and not read yet, or past the window without one.
+    """
+    row = post_summary.current(conn, [activity_urn]).get(activity_urn)
+    reading = post_summary.reading_of(row, "reading_48h")
+    published = conn.execute("SELECT published_at FROM own_posts WHERE activity_urn = ?", (activity_urn,)).fetchone()
+    age = results.age_hours(published[0]) if published and published[0] else None
+    low, high = post_summary.READING_WINDOW
+    if reading:
+        state = "read"
+    elif age is None:
+        state = "unknown_age"
+    elif age < low:
+        state = "too_new"
+    elif age <= high:
+        state = "not_yet"
+    else:
+        state = "missed"
+    return {"state": state, "reading": reading, "age_hours": round(age, 1) if age is not None else None,
+            "at_hours": post_summary.READING_AT_HOURS, "window": [low, high]}
 
 
 @router.get("/api/v1/insights/reposts")
