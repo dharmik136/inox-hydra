@@ -84,6 +84,15 @@ POOL_FROM_RANKING_AT = 8
 POOL_QUARTILE = 0.25
 # A comment made longer ago than this is still the creator's, but the recent ones come first.
 ENGAGED_RECENT_DAYS = 90
+# Which kind of the creator's own activity a drawn slot shows, and how often
+# against the others; a kind with nothing free to show today is left out of
+# the draw. Engaged with: a comment carries what they think, so it comes up
+# twice as often as a poll they voted in, an account they follow, or a post
+# they reacted to, saved or reposted (a link). Working for you, on a day no
+# post of the date is there: one of their own first lines, or as often one of
+# their own articles.
+ENGAGED_KIND_WEIGHTS = (("comment", 2.0), ("vote", 1.0), ("follow", 1.0), ("link", 1.0))
+WORKING_KIND_WEIGHTS = (("opener", 1.0), ("article", 1.0))
 # The studio's own playbook, in Docs under Write and publish, which an ask is
 # matched to beside the creator's posts (the report's batch 6).
 PLAYBOOK_FILE = "strategy_playbook.md"
@@ -94,7 +103,8 @@ LABELS = ("measured", "derived", "typed", "suggested", "retrieved", "curated", "
 # the post of this day) is not drawn, so a mark can only set it aside: hide
 # for good, skip for SKIP_HOLD_DAYS. A model's idea or the Monday card is
 # never shown twice in any case.
-DRAWN_KINDS = ("opener", "ask", "theme", "comment", "reaction", "saved", "repost", "library")
+DRAWN_KINDS = ("opener", "article", "ask", "theme", "comment", "vote", "follow", "reaction", "saved", "repost",
+               "library")
 CHOSEN_KINDS = ("what_worked", "on_this_day")
 BLOCKS = {"working_for_you": "Working for you", "you_asked": "You asked", "you_engaged_with": "You engaged with",
           "monday": "This week", "model": "Suggested by your model", "library": "From the Inox library"}
@@ -299,6 +309,30 @@ def _draw(items: List[Tuple[Any, ...]], history: Dict[str, Any], day: date, seed
 # ---------------------------------------------------------------------------
 # The creator's posts, topics and figures
 # ---------------------------------------------------------------------------
+
+def _topical(text: Optional[str], vocabulary: List[Tuple[str, str]]) -> Optional[str]:
+    """The creator's recurring topic a text goes under, or None: OTHER_TOPIC is no topic of theirs."""
+    if not vocabulary or not text:
+        return None
+    label = evidence_briefing.classify_post_topic(text, vocabulary)
+    return None if label == evidence_briefing.OTHER_TOPIC else label
+
+
+def _choose_kind(candidates: List[Tuple[str, Optional[Dict[str, Any]]]], weights: Tuple[Tuple[str, float], ...],
+                 seed: int) -> Optional[Dict[str, Any]]:
+    """One of the kinds that has a card today, by its stated weight, with the stored seed."""
+    weight = dict(weights)
+    present = [(kind, card) for kind, card in candidates if card is not None]
+    if not present:
+        return None
+    point = random.Random(seed).random() * sum(weight[kind] for kind, _ in present)
+    running = 0.0
+    for kind, card in present:
+        running += weight[kind]
+        if point <= running:
+            return card
+    return present[-1][1]
+
 
 def _posts(conn) -> List[Dict[str, Any]]:
     return [dict(r) for r in _rows(
@@ -534,6 +568,48 @@ def resurfaced_opener(conn, posts: List[Dict[str, Any]], topics_of: Dict[str, st
     return _card(card_id, 2, "working_for_you", "opener", label, rule, payload, [{"table": "own_posts", "id": urn}])
 
 
+def your_article(conn, vocabulary: List[Tuple[str, str]], topic_counts: Dict[str, int], history: Dict[str, Any],
+                 day: date, seed: int) -> Optional[Dict[str, Any]]:
+    """
+    An article of the creator's own, from their LinkedIn archive, whose title
+    goes under one of their recurring topics: its title, link and date. An
+    article that goes under none of them is not drawn; nothing else of it is
+    held, so nothing else is shown.
+    """
+    block = "working_for_you"
+    total = sum(topic_counts.values())
+    items = []
+    for row in _rows(conn, "SELECT id, url, title, happened_at, source_file FROM archive_records WHERE kind = 'article' "
+                           "AND url IS NOT NULL AND title IS NOT NULL ORDER BY happened_at DESC LIMIT 200"):
+        topic = _topical(row["title"], vocabulary)
+        if topic:
+            items.append((f"article:{row['id']}", dict(row, topic=topic), topic_counts.get(topic, 1) / max(1, total)))
+    drawn = _draw(items, history, day, seed + 6) if items else None
+    if not drawn:
+        return None
+    card_id, row = drawn
+    rule = ("your own articles, from your archive, whose title goes under one of your recurring words, each with the "
+            "chance of its topic's share of your posts; held back after a showing as an opener is")
+    payload = {
+        "title": "An article of yours",
+        "badge": "from your archive",
+        "excerpt": _excerpt(row["title"]),
+        "date": row["happened_at"],
+        "url": row["url"],
+        "figures": [],
+        "figure_sentence": "",
+        "because": (f"Because you published this article on {_said_date(row['happened_at'])}, and "
+                    f"{topic_counts.get(row['topic'], 0)} of your {total} posts go under {row['topic']} "
+                    f"· rule: Working for you"),
+        "source_sentence": f"published on {_said_date(row['happened_at'])}, from your archive ({row['source_file']})",
+        "method_sentence": rule,
+        "draft_text": row["title"],
+        "topic": row["topic"],
+        "block_label": BLOCKS[block],
+    }
+    return _card(card_id, 2, block, "article", "typed", rule, payload, [{"table": "archive_records", "id": row["id"]}])
+
+
 # ---------------------------------------------------------------------------
 # Slot 3: you asked, matched to your own posts by their words
 # ---------------------------------------------------------------------------
@@ -694,22 +770,29 @@ def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], h
 # ---------------------------------------------------------------------------
 
 def you_engaged_with(conn, vocabulary: List[Tuple[str, str]], history: Dict[str, Any], day: date,
-                     seed: int) -> Dict[str, Any]:
+                     seed: int, topic_counts: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
     """
-    A post of somebody else's the creator commented on, reacted to, saved or
-    reposted: the link, the date, the kind, and for a comment their own words.
+    The creator's own activity on what somebody else wrote or runs: a post they
+    commented on, as the link, the date and their own words; a poll they voted
+    in, or a company or member they follow, when it goes under one of their
+    recurring topics; or a post they reacted to, saved or reposted, as a link,
+    a kind and a date. Which kind is shown is drawn by ENGAGED_KIND_WEIGHTS.
 
     outbound_engagements.target_author and .target_excerpt are never read:
     other people's posts do not belong on a card any more than in the
     database (migration 2's reason), and a card quotes nothing of the other
-    person's beyond what the creator's own comment already does. A comment is
-    preferred, because it carries what the creator thinks; a reaction, a
-    saved post or a repost is a link, a kind and a date. "Because" counts the creator's
-    own comments by the topic of their own words, never by person.
+    person's beyond what the creator's own comment already does. A poll's
+    words are its author's, so a vote shows its topic and link, never the
+    option; a follow is the creator's own record of whom they follow, the name
+    and the date their archive holds, and nothing about the account is read
+    from anywhere. "Because" counts the creator's own words by topic, never by
+    person.
     """
     block = "you_engaged_with"
+    topic_counts = topic_counts or {}
     month_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     since = (datetime.now(timezone.utc) - timedelta(days=ENGAGED_RECENT_DAYS)).isoformat()
+    total_posts = sum(topic_counts.values())
 
     def comments(where: str, params: Tuple[Any, ...]) -> List[Dict[str, Any]]:
         return [dict(r) for r in _rows(
@@ -717,59 +800,117 @@ def you_engaged_with(conn, vocabulary: List[Tuple[str, str]], history: Dict[str,
                   "WHERE kind = 'comment' AND my_text IS NOT NULL AND TRIM(my_text) != '' " + where +
                   " ORDER BY first_seen_at DESC LIMIT 200", params)]
 
-    pool = comments("AND first_seen_at >= ?", (since,)) or comments("", ())
-    if pool:
-        drawn = _draw([(f"eng:{c['id']}", c) for c in pool], history, day, seed + 3)
-        if drawn:
-            card_id, comment = drawn
-            recent = [r["my_text"] for r in _rows(
-                conn, "SELECT my_text FROM outbound_engagements WHERE kind = 'comment' AND my_text IS NOT NULL "
-                      "AND first_seen_at >= ? LIMIT 2000", (month_ago,))]
-            topic = evidence_briefing.classify_post_topic(comment["my_text"], vocabulary) if vocabulary else None
-            if topic and topic != evidence_briefing.OTHER_TOPIC:
-                same = sum(1 for text in recent if evidence_briefing.classify_post_topic(text, vocabulary) == topic)
-                count_said = (f", and {same} comments of yours in the last 30 days were about {topic}, "
-                              f"by your own words" if same else "")
-            else:
-                same = len(recent)
-                count_said = f", one of {same} comments of yours in the last 30 days" if same > 1 else ""
-            rule = ("your own comments on other people's posts, drawn in turn: the link, the date and your own words; "
-                    "the other person's post is never read into the card; counted by the topic of your words, "
-                    "never by person")
-            payload = {
-                "title": "You engaged with",
-                "badge": "your comment",
-                "excerpt": _excerpt(comment["my_text"]),
-                "date": comment["first_seen_at"],
-                "url": post_identity.linkedin_permalink(comment["target_activity_urn"]),
-                "figures": [{"name": "comments_in_30_days", "value": same, "table": "outbound_engagements",
-                             "id": None, "observed_at": None,
-                             "source": f"count of your comments since {month_ago[:10]}"
-                                       + (f" about {topic}" if topic and topic != evidence_briefing.OTHER_TOPIC else "")}],
-                "figure_sentence": "",
-                "because": (f"Because you commented on this post on {_said_date(comment['first_seen_at'])}"
-                            f"{count_said} · rule: You engaged with"),
-                "source_sentence": f"your comment of {_said_date(comment['first_seen_at'])}",
-                "method_sentence": rule,
-                "draft_text": comment["my_text"],
-                "topic": topic,
-                "block_label": BLOCKS[block],
-            }
-            return _card(card_id, 4, block, "comment", "measured", rule, payload,
-                         [{"table": "outbound_engagements", "id": comment["id"]}])
+    def comment_card() -> Optional[Dict[str, Any]]:
+        drawn = _draw([(f"eng:{c['id']}", c) for c in pool], history, day, seed + 3) if pool else None
+        if not drawn:
+            return None
+        card_id, comment = drawn
+        recent = [r["my_text"] for r in _rows(
+            conn, "SELECT my_text FROM outbound_engagements WHERE kind = 'comment' AND my_text IS NOT NULL "
+                  "AND first_seen_at >= ? LIMIT 2000", (month_ago,))]
+        topic = evidence_briefing.classify_post_topic(comment["my_text"], vocabulary) if vocabulary else None
+        if topic and topic != evidence_briefing.OTHER_TOPIC:
+            same = sum(1 for text in recent if evidence_briefing.classify_post_topic(text, vocabulary) == topic)
+            count_said = (f", and {same} comments of yours in the last 30 days were about {topic}, "
+                          f"by your own words" if same else "")
+        else:
+            same = len(recent)
+            count_said = f", one of {same} comments of yours in the last 30 days" if same > 1 else ""
+        rule = ("your own comments on other people's posts, drawn in turn: the link, the date and your own words; "
+                "the other person's post is never read into the card; counted by the topic of your words, "
+                "never by person")
+        payload = {
+            "title": "You engaged with",
+            "badge": "your comment",
+            "excerpt": _excerpt(comment["my_text"]),
+            "date": comment["first_seen_at"],
+            "url": post_identity.linkedin_permalink(comment["target_activity_urn"]),
+            "figures": [{"name": "comments_in_30_days", "value": same, "table": "outbound_engagements",
+                         "id": None, "observed_at": None,
+                         "source": f"count of your comments since {month_ago[:10]}"
+                                   + (f" about {topic}" if topic and topic != evidence_briefing.OTHER_TOPIC else "")}],
+            "figure_sentence": "",
+            "because": (f"Because you commented on this post on {_said_date(comment['first_seen_at'])}"
+                        f"{count_said} · rule: You engaged with"),
+            "source_sentence": f"your comment of {_said_date(comment['first_seen_at'])}",
+            "method_sentence": rule,
+            "draft_text": comment["my_text"],
+            "topic": topic,
+            "block_label": BLOCKS[block],
+        }
+        return _card(card_id, 4, block, "comment", "measured", rule, payload,
+                     [{"table": "outbound_engagements", "id": comment["id"]}])
 
-    others: List[Tuple[str, Dict[str, Any]]] = []
-    for row in _rows(conn, "SELECT id, target_activity_urn, reaction_kind, first_seen_at FROM outbound_engagements "
-                           "WHERE kind = 'reaction' ORDER BY first_seen_at DESC LIMIT 200"):
-        others.append((f"eng:{row['id']}", {"what": "reaction", **dict(row)}))
-    for row in _rows(conn, "SELECT id, url, happened_at FROM archive_records WHERE kind = 'saved_item' AND url IS NOT NULL "
-                           "ORDER BY happened_at DESC LIMIT 200"):
-        others.append((f"saved:{row['id']}", {"what": "saved", **dict(row)}))
-    for row in _rows(conn, "SELECT id, url, happened_at FROM archive_records WHERE kind = 'instant_repost' "
-                           "AND url IS NOT NULL ORDER BY happened_at DESC LIMIT 200"):
-        others.append((f"repost:{row['id']}", {"what": "reposted", **dict(row)}))
-    drawn = _draw(others, history, day, seed + 4) if others else None
-    if drawn:
+    def topical_records(kinds: Tuple[str, ...], column: str) -> List[Dict[str, Any]]:
+        out = []
+        for row in _rows(conn, f"SELECT id, kind, url, name, detail, happened_at, source_file FROM archive_records "
+                               f"WHERE kind IN ({', '.join('?' for _ in kinds)}) AND {column} IS NOT NULL "
+                               f"ORDER BY happened_at DESC LIMIT 400", kinds):
+            topic = _topical(row[column], vocabulary)
+            if topic:
+                out.append(dict(row, topic=topic))
+        return out
+
+    def vote_card() -> Optional[Dict[str, Any]]:
+        drawn = _draw([(f"vote:{v['id']}", v, topic_counts.get(v["topic"], 1) / max(1, total_posts)) for v in votes],
+                      history, day, seed + 8) if votes else None
+        if not drawn:
+            return None
+        card_id, vote = drawn
+        rule = ("polls you voted in, from your archive, whose choice goes under one of your recurring words: the link "
+                "and the date; the poll's words are its author's and are never shown")
+        said = _said_date(vote["happened_at"])
+        payload = {
+            "title": "A poll you voted in",
+            "badge": "your vote",
+            "excerpt": "",
+            "date": vote["happened_at"],
+            "url": vote["url"],
+            "figures": [],
+            "figure_sentence": "",
+            "because": (f"Because you voted in this poll on {said}, and your choice goes under {vote['topic']}, as "
+                        f"{topic_counts.get(vote['topic'], 0)} of your {total_posts} posts do · rule: You engaged with"),
+            "source_sentence": f"your vote of {said}, from your archive ({vote['source_file']})",
+            "method_sentence": rule,
+            "draft_text": "",
+            "topic": vote["topic"],
+            "block_label": BLOCKS[block],
+        }
+        return _card(card_id, 4, block, "vote", "typed", rule, payload, [{"table": "archive_records", "id": vote["id"]}])
+
+    def follow_card() -> Optional[Dict[str, Any]]:
+        drawn = _draw([(f"follow:{f['id']}", f, topic_counts.get(f["topic"], 1) / max(1, total_posts)) for f in follows],
+                      history, day, seed + 9) if follows else None
+        if not drawn:
+            return None
+        card_id, follow = drawn
+        company = follow["kind"] == "company_follow"
+        since_said = f", since {_said_date(follow['happened_at'])}" if _day_of(follow["happened_at"]) else ""
+        rule = ("the companies and members you follow, from your archive, whose name goes under one of your recurring "
+                "words: the name and the date your archive holds, and nothing read about the account")
+        payload = {
+            "title": f"You follow {follow['name']}",
+            "badge": "a company or page you follow" if company else "a member you follow",
+            "excerpt": "",
+            "date": follow["happened_at"],
+            "url": None,
+            "figures": [],
+            "figure_sentence": "",
+            "because": (f"Because you follow {follow['name']}{since_said}, and the name goes under {follow['topic']}, as "
+                        f"{topic_counts.get(follow['topic'], 0)} of your {total_posts} posts do · rule: You engaged with"),
+            "source_sentence": f"from your archive ({follow['source_file']})",
+            "method_sentence": rule,
+            "draft_text": "",
+            "topic": follow["topic"],
+            "block_label": BLOCKS[block],
+        }
+        return _card(card_id, 4, block, "follow", "typed", rule, payload,
+                     [{"table": "archive_records", "id": follow["id"]}])
+
+    def link_card() -> Optional[Dict[str, Any]]:
+        drawn = _draw(others, history, day, seed + 4) if others else None
+        if not drawn:
+            return None
         card_id, item = drawn
         if item["what"] == "reaction":
             word = item.get("reaction_kind") or "a reaction"
@@ -825,13 +966,34 @@ def you_engaged_with(conn, vocabulary: List[Tuple[str, str]], history: Dict[str,
             "block_label": BLOCKS[block],
         }
         return _card(card_id, 4, block, "saved", "measured", rule, payload, [{"table": "archive_records", "id": item["id"]}])
-    if pool or others:
+
+    pool = comments("AND first_seen_at >= ?", (since,)) or comments("", ())
+    votes = topical_records(("vote",), "detail")
+    follows = topical_records(("company_follow", "member_follow"), "name")
+    others: List[Tuple[str, Dict[str, Any]]] = []
+    for row in _rows(conn, "SELECT id, target_activity_urn, reaction_kind, first_seen_at FROM outbound_engagements "
+                           "WHERE kind = 'reaction' ORDER BY first_seen_at DESC LIMIT 200"):
+        others.append((f"eng:{row['id']}", {"what": "reaction", **dict(row)}))
+    for row in _rows(conn, "SELECT id, url, happened_at FROM archive_records WHERE kind = 'saved_item' AND url IS NOT NULL "
+                           "ORDER BY happened_at DESC LIMIT 200"):
+        others.append((f"saved:{row['id']}", {"what": "saved", **dict(row)}))
+    for row in _rows(conn, "SELECT id, url, happened_at FROM archive_records WHERE kind = 'instant_repost' "
+                           "AND url IS NOT NULL ORDER BY happened_at DESC LIMIT 200"):
+        others.append((f"repost:{row['id']}", {"what": "reposted", **dict(row)}))
+
+    chosen = _choose_kind([("comment", comment_card()), ("vote", vote_card()), ("follow", follow_card()),
+                           ("link", link_card())], ENGAGED_KIND_WEIGHTS, seed + 10)
+    if chosen is not None:
+        return chosen
+    if pool or others or votes or follows:
         return _abstained(4, block, "comment", "Every post you engaged with was shown in the last few days or hidden. "
                           "One comes back as its hold ends, and Unhide all on What the studio knows brings back what "
-                          "you hid.", "your own comments, reactions, reposts and saved posts, each held back after a showing")
-    return _abstained(4, block, "comment", "No comments, reactions, reposts or saved posts of yours imported yet. Import "
-                      "your archive in Setup, or run Comments you left; this card fills from your own activity.",
-                      "your own comments, reactions, reposts and saved posts")
+                          "you hid.", "your own comments, poll votes, follows, reactions, reposts and saved posts, "
+                          "each held back after a showing")
+    return _abstained(4, block, "comment", "No comments, reactions, reposts or saved posts of yours imported yet, and no "
+                      "poll you voted in or account you follow goes under one of your topics. Import your archive in "
+                      "Setup, or run Comments you left; this card fills from your own activity.",
+                      "your own comments, poll votes, follows, reactions, reposts and saved posts")
 
 
 # ---------------------------------------------------------------------------
@@ -948,15 +1110,19 @@ def compute_local(conn, day: date, seed: int) -> Dict[str, Any]:
     history = _history(conn, day)
     cards: List[Dict[str, Any]] = []
     cards.append(what_worked(conn, posts, history, day))
-    second = on_this_day(conn, posts, day, history) or resurfaced_opener(conn, posts, topics_of, history, day, seed)
+    second = on_this_day(conn, posts, day, history)
+    if second is None:
+        second = _choose_kind([("opener", resurfaced_opener(conn, posts, topics_of, history, day, seed)),
+                               ("article", your_article(conn, _vocabulary, topic_counts, history, day, seed))],
+                              WORKING_KIND_WEIGHTS, seed + 7)
     if second is None and posts:
-        second = _abstained(2, "working_for_you", "opener", "No opener of yours is free to resurface today: every one "
-                            "is held back after a showing, or was hidden. Unhide all on What the studio knows brings them back.",
-                            "the resurfacing rule")
+        second = _abstained(2, "working_for_you", "opener", "No opener of yours, nor an article of yours on one of "
+                            "your topics, is free to resurface today: every one is held back after a showing, or was "
+                            "hidden. Unhide all on What the studio knows brings them back.", "the resurfacing rule")
     if second is not None:
         cards.append(second)
     cards.append(you_asked(conn, posts, topic_counts, history, day, seed))
-    cards.append(you_engaged_with(conn, _vocabulary, history, day, seed))
+    cards.append(you_engaged_with(conn, _vocabulary, history, day, seed, topic_counts))
     monday = monday_card(conn, day)
     if monday is not None:
         cards.append(monday)

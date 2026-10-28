@@ -63,7 +63,8 @@ KIND_WORDS = {
     "what_worked": "What worked", "on_this_day": "On this day", "opener": "Openers to reuse",
     "ask": "Your asks", "theme": "Your recurring words", "comment": "Your comments",
     "reaction": "Your reactions", "saved": "Your saved posts", "repost": "Your reposts", "idea": "Your model's ideas",
-    "library": "The Inox library",
+    "library": "The Inox library", "article": "Your articles", "vote": "Polls you voted in",
+    "follow": "Accounts you follow",
 }
 
 
