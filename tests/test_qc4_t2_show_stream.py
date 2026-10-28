@@ -975,8 +975,10 @@ def test_a_fresh_home_is_left_alone_until_init_db_has_set_it_up(studio, monkeypa
         # Past any one second sleep the thread was already in, and looking
         # every 10 ms, so it cannot sleep through init_db's tens of milliseconds.
         time.sleep(changes.IDLE_CLOSE_S and 1.2)
+        # Measured over half a second: a slow runner looked four times in a
+        # fifth of one, which says nothing about the fault this test is for.
         before = changes.watch_state()["looks"]
-        time.sleep(0.2)
+        time.sleep(0.5)
         assert changes.watch_state()["looks"] - before >= 5, "the watcher is not looking fast enough to test this"
         fresh = tempfile.mkdtemp(prefix="inox_t2_fresh_home_")
         monkeypatch.setenv("INOX_HYDRA_HOME", fresh)
@@ -985,7 +987,8 @@ def test_a_fresh_home_is_left_alone_until_init_db_has_set_it_up(studio, monkeypa
         real_ensure = database.ensure_schema
 
         def slow_ensure(*args, **kwargs):
-            time.sleep(0.2)
+            # Long enough for several looks on the slowest runner measured.
+            time.sleep(0.5)
             return real_ensure(*args, **kwargs)
 
         monkeypatch.setattr(database, "ensure_schema", slow_ensure)
