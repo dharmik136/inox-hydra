@@ -68,6 +68,12 @@ CHAT_ID_SHAPE = re.compile(r"^\d{1,20}$")
 # the panel can stop saying it has not been seen working. Removed whenever
 # the chat id changes: a message from one chat says nothing about another.
 SETTINGS_HEARD_KEY = "telegram_chat_heard_at"
+# When the chat saved in a profile was paired there (phase 4): what was saved
+# from Telegram before it came from another chat, so it does not count as
+# seen working for this one. A chat paired before this was kept has none, and
+# then anything saved from Telegram counts, since only the paired chat's
+# messages are ever saved. Removed with the bot.
+SETTINGS_PAIRED_KEY = "telegram_chat_paired_at"
 # The ingress met the real Telegram service on the owner's install on
 # 2026-10-28: polling worked, a chat that was not the one saved was refused,
 # and once the right chat was paired its message was saved. On another
@@ -1187,6 +1193,63 @@ def _note_heard() -> None:
         conn.close()
 
 
+def _when(text: Any) -> Optional[datetime]:
+    """A time as the settings and the collection keep it, or None."""
+    try:
+        when = datetime.fromisoformat(str(text or "").strip().replace(" ", "T", 1))
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+# What a message from the paired chat leaves in a profile, by when it was saved.
+_SAVED_FROM_TELEGRAM = (("collection_items", "received_at"), ("remembered", "created_at"), ("asks", "created_at"))
+
+
+def _seen_working(conn) -> Optional[str]:
+    """
+    Whether a message from the chat saved here has been saved here, and since
+    when: the marker, or else the first thing this profile holds from
+    Telegram since that chat was paired (an item in the collection, a thing
+    to remember, an ask). Only the paired chat's messages are ever saved, so
+    each came from it. Found once, the marker is set to that thing's time, so
+    the answer stays when the thing is removed (phase 4, item 1).
+    """
+    heard = conn.execute("SELECT value FROM settings WHERE key = ?", (SETTINGS_HEARD_KEY,)).fetchone()
+    if heard:
+        return heard["value"]
+    paired = conn.execute("SELECT value FROM settings WHERE key = ?", (SETTINGS_PAIRED_KEY,)).fetchone()
+    since = _when(paired["value"]) if paired else None
+    earliest: Optional[tuple] = None
+    for table, column in _SAVED_FROM_TELEGRAM:
+        try:
+            if since is None:
+                rows = conn.execute(f"SELECT {column} FROM {table} WHERE source = 'telegram'")
+            else:
+                # The date part reads alike in every form a time is kept in.
+                rows = conn.execute(f"SELECT {column} FROM {table} WHERE source = 'telegram' "
+                                    f"AND substr({column}, 1, 10) >= ?", (since.date().isoformat(),))
+            for (kept,) in rows:
+                when = _when(kept)
+                if when is not None and (since is None or when >= since) and (earliest is None or when < earliest[0]):
+                    earliest = (when, str(kept))
+        except Exception:
+            # A profile from before one of these tables keeps nothing in it.
+            continue
+    if earliest is None:
+        return None
+    with conn:
+        conn.execute("INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+                     (SETTINGS_HEARD_KEY, earliest[1]))
+    # A derived fact, kept so it is not worked out again: no window need read again for it.
+    try:
+        from . import changes
+    except ImportError:
+        import changes
+    changes.derived_written()
+    return earliest[1]
+
+
 def read_settings(profile_id: Optional[str] = None) -> Dict[str, str]:
     """The bot token (unsealed, for the worker) and chat id held in a profile, the open one by default."""
     with (paths.using_profile(profile_id) if profile_id else nullcontext()):
@@ -1248,8 +1311,8 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
         conn = get_db()
         try:
             with conn:
-                conn.execute("DELETE FROM settings WHERE key IN (?, ?, ?)",
-                             (SETTINGS_TOKEN_KEY, SETTINGS_CHAT_KEY, SETTINGS_HEARD_KEY))
+                conn.execute("DELETE FROM settings WHERE key IN (?, ?, ?, ?)",
+                             (SETTINGS_TOKEN_KEY, SETTINGS_CHAT_KEY, SETTINGS_HEARD_KEY, SETTINGS_PAIRED_KEY))
         finally:
             conn.close()
         apply_settings()
@@ -1289,6 +1352,11 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
                     (SETTINGS_CHAT_KEY, chat))
             if chat != held["chat_id"]:
                 conn.execute("DELETE FROM settings WHERE key = ?", (SETTINGS_HEARD_KEY,))
+                if chat:
+                    conn.execute(
+                        "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+                        (SETTINGS_PAIRED_KEY, datetime.now(timezone.utc).isoformat()))
     finally:
         conn.close()
     apply_settings()
@@ -1331,7 +1399,7 @@ def describe_settings() -> Dict[str, Any]:
         desk_requests.settle(conn)
         waiting = desk_requests.open_count(conn)
         links = desk_requests.recent(conn)
-        heard = conn.execute("SELECT value FROM settings WHERE key = ?", (SETTINGS_HEARD_KEY,)).fetchone()
+        heard = _seen_working(conn) if held["chat_id"] else None
     finally:
         conn.close()
     active = paths.get_active_profile_id()

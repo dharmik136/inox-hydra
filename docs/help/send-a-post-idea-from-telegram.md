@@ -11,7 +11,7 @@ Make a Telegram bot of your own, set it up under Local security, and everything 
 - The bot belongs to the creator profile you set it up in, and its messages are saved there whichever profile is open. One bot is asked at a time: the one saved most recently, or when the studio starts, the first profile that has one. A profile whose bot is not the one being asked says so in its panel.
 
 > [!NOTE]
-> First tested against the real Telegram service on 2026-10-28, on the owner's computer: the studio asked Telegram for messages, refused a chat that was not the one saved, and saved a message once the right chat was paired. Until a message from your own chat has been saved on your computer, the panel says it has not been seen working there.
+> First tested against the real Telegram service on 2026-10-28, on the owner's computer: the studio asked Telegram for messages, refused a chat that was not the one saved, and saved a message once the right chat was paired. Until something from your own chat has been saved on your computer, the panel says it has not been seen working there. Anything saved from your chat counts, whenever it came: an item in your collection, a thing to remember or an ask, including what was saved before this version. After you pair a different chat, only what comes from that chat counts.
 
 ## What you need
 

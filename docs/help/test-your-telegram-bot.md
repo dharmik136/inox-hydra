@@ -51,6 +51,10 @@ These need a post to come due, or an hour to come round, so they take as long as
 12. In the Composer, start a new post that mentions pricing and open **From your collection** above the editor: your unused idea about pricing is there. Press **Add to the draft**, save, and **Your collection** lists it as used, with the draft as what it became.
 13. Photos and voice notes: send a photo with a caption. The bot answers "Saved to your collection.", and **Your collection** shows the photo with your caption under it and "KEPT AS IT IS: NEVER READ". Press **Add to your media library**: the item says "In your media library", and the Composer's **Media** tab lists the photo. Send a voice note: it is listed with a player, and plays at this computer; it is never transcribed.
 
+## Phase 4 on your phone (optional)
+
+1. Seen working: open **Settings**, then **Local security**. If your bot has saved anything from your chat before, even before this version, the orange "Not yet seen working on this computer" sentence is gone.
+
 ## When a step does not match
 
 | You see | Look at |
