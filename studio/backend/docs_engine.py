@@ -744,6 +744,9 @@ HELP_SECTIONS = [
             "quality/cycle4/telegram-bot.md",
             # Phase 3: the collection box, written before its code, then its record.
             "quality/cycle4/collection-box.md",
+            # Phase 4: nothing lost quietly, the / menu, posts shaped from the
+            # phone; written before its code. Its record is in telegram-bot.md.
+            "quality/cycle4/bot-phase4.md",
             # Cycle 4, track 6: the phone pairing design (item 27) and the
             # answer on LinkedIn's public-client OAuth flow (decision D2).
             "PHONE_PAIRING_DESIGN.md",
