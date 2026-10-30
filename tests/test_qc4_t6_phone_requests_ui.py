@@ -76,6 +76,11 @@ def _axe_section_with(page, words):
     if not os.path.exists(AXE_JS):
         pytest.skip("axe-core is not installed with the UI dependencies")
     page.add_script_tag(path=AXE_JS)
+    # Colours are measured at rest. With transitions running, a theme change
+    # was measured halfway on slow runners (macOS on CI), so they are stilled
+    # while axe measures, and allowed again after.
+    still = page.add_style_tag(content="*, *::before, *::after { transition: none !important; "
+                                       "animation: none !important; }")
     found = []
     for theme in ("dark", "light"):
         page.evaluate("(t) => document.documentElement.setAttribute('data-theme', t)", theme)
@@ -86,6 +91,7 @@ def _axe_section_with(page, words):
             const r = await axe.run(el, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] } });
             return r.violations.map(v => v.id + ': ' + v.nodes.map(n => n.target.join(' ')).join(', '));
         }""", words)
+    still.evaluate("(el) => el.remove()")
     return found
 
 

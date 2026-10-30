@@ -146,7 +146,10 @@ def test_a_429_is_waited_out_for_as_long_as_telegram_asked(bot):
     assert _until(lambda: _collected() == ["after the wait"])
 
 
-def test_a_dropped_connection_is_retried_with_backoff_and_recovers(bot):
+def test_a_dropped_connection_is_retried_with_backoff_and_recovers(bot, monkeypatch):
+    # A base wait whose doubling outgrows a slow runner's jitter: at 0.05 s the
+    # 0.1 s of growth was lost in macOS's noise on CI.
+    monkeypatch.setattr(bot["daemon"], "base_delay", 0.25)
     bot["fake"].plan("getUpdates", ("drop",), ("drop",))
     _save(bot)
     assert _until(lambda: len(bot["fake"].calls_of("getUpdates")) >= 3, timeout=6.0)

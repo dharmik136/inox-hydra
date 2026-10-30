@@ -109,8 +109,11 @@ def test_the_latest_posts_reading_at_about_24_hours_is_said_once_with_its_own_fi
     bot = notifying
     _saved(bot)
     latest = _record(latest_days=1.1, read_hours_ago=1)
-    bot["client"].post("/api/v1/ingress/options", json={"notify_24h": True})
+    # In the record before the switch goes on: switched on first, a slow
+    # runner's worker told the reading an hour old (also about 24 hours)
+    # before this one was added (Windows on CI).
     _reading_at_24_hours(latest)
+    bot["client"].post("/api/v1/ingress/options", json={"notify_24h": True})
     assert _until(lambda: len(_texts(bot)) == 1), _texts(bot)
     [told] = _texts(bot)
     assert told == ("Your latest post at about 24 hours: 880 impressions, 31 reactions, 4 comments, "
