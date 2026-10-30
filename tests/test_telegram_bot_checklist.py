@@ -145,3 +145,13 @@ def test_phase_4_the_whole_post_and_the_rewrite_quote_the_bot_and_the_studio():
     writing_view = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "WritingPreferences.tsx"),
                         encoding="utf-8").read()
     assert "Rewrite buttons on your bot" in article and "Rewrite buttons on your bot" in writing_view
+
+
+def test_phase_4_building_an_idea_up_quotes_the_bot_and_the_panel():
+    """Phase 4, item 6: a reply's answer, the box's line, and the panel's switch."""
+    article = _article()
+    assert telegram_bot.SENTENCES["added"] in article
+    assert "A reply adds to what it replies to" in article and "A reply adds to what it replies to" in _panel()
+    box = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "CollectionPanel.tsx"),
+               encoding="utf-8").read()
+    assert "of your messages" in article and "of your messages" in box

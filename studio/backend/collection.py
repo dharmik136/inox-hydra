@@ -90,6 +90,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _when(text: Any) -> Optional[datetime]:
+    """A time as the collection keeps it, or None."""
+    try:
+        when = datetime.fromisoformat(str(text or "").strip())
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
 def canonical_post_link(activity_urn: str) -> str:
     """A post's address from its id alone: names no one, carries no words."""
     return f"https://www.linkedin.com/feed/update/{activity_urn}/"
@@ -153,6 +162,12 @@ def _row(conn, row) -> Dict[str, Any]:
     item["media"] = media if isinstance(media, dict) else None
     item["kind_said"] = KIND_SAID.get(item["kind"], item["kind"])
     item["became"] = became(conn, item)
+    # Phase 4: how many of the creator's messages it is built from, and
+    # whether one was edited on the phone (and after it was used).
+    linked = _linked_mine(conn, item["id"])
+    item["messages"] = len(linked)
+    edited = [m["edited_at"] for m in linked if m["edited_at"]]
+    item["edited_at"] = max(edited) if edited else None
     return item
 
 
@@ -174,6 +189,142 @@ def became(conn, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         said = desk_requests.SAID_SHORT if waiting else desk_requests.SAID.get(request["state"], "")
         return {"kind": "request", "said": said}
     return None
+
+
+# ---------------------------------------------------------------------------
+# Messages linked to items (phase 4): a reply adds to its item, an edit follows it
+# ---------------------------------------------------------------------------
+
+def _linked_mine(conn, item_id: int) -> List[Dict[str, Any]]:
+    try:
+        return [dict(r) for r in conn.execute(
+            "SELECT id, chat_id, message_id, words, at, edited_at FROM collection_messages "
+            "WHERE item_id = ? AND whose = 'yours' ORDER BY id", (int(item_id),))]
+    except Exception:
+        # A database from before the links were kept holds none.
+        return []
+
+
+def link_message(item_id: Any, chat_id: Any, message_id: Any, whose: str, words: Optional[str] = None,
+                 conn=None) -> None:
+    """
+    One Telegram message linked to the item it is about: the creator's own
+    (with the words it gave the item) or the bot's answer about it. A message
+    linked once stays linked to its first item; a message id of 0 (an
+    ephemeral message) is never linked.
+    """
+    if whose not in ("yours", "bot") or not isinstance(message_id, int) or message_id <= 0 or not str(chat_id or ""):
+        return
+    own = conn is None
+    conn = conn or get_db()
+    try:
+        with conn:
+            conn.execute("INSERT OR IGNORE INTO collection_messages (item_id, chat_id, message_id, whose, words, at) "
+                         "VALUES (?, ?, ?, ?, ?, ?)", (int(item_id), str(chat_id), message_id, whose,
+                                                       None if whose == "bot" else (words or ""), _now()))
+    finally:
+        if own:
+            conn.close()
+
+
+def item_for_message(chat_id: Any, message_id: Any) -> Optional[Dict[str, Any]]:
+    """The item a message from this chat is linked to, the creator's or the bot's, while the item is kept."""
+    if not isinstance(message_id, int) or message_id <= 0:
+        return None
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT c.* FROM collection_messages m JOIN collection_items c ON c.id = m.item_id "
+                           "WHERE m.chat_id = ? AND m.message_id = ?", (str(chat_id), message_id)).fetchone()
+        return _row(conn, row) if row else None
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def _retag(old_text: str, new_text: str, tags: List[str]) -> List[str]:
+    """The tags that came from the old words go, those of the new words come; any other tag stays."""
+    gone = set(hashtags(old_text))
+    kept = [t for t in tags if t not in gone]
+    return (kept + [t for t in hashtags(new_text) if t not in kept])[:TAGS_KEPT]
+
+
+def _rewords(conn, item: Dict[str, Any]) -> str:
+    """
+    An item's own words from the messages it is built from, their words
+    joined by a blank line, written onto it with its tags and topic. An item
+    with no message of the creator's linked keeps its words.
+    """
+    parts = [m["words"] for m in _linked_mine(conn, item["id"])]
+    if not parts:
+        return item["text"]
+    text = "\n\n".join(p.strip() for p in parts if (p or "").strip())
+    tags = _retag(item["text"], text, item["tags"])
+    conn.execute("UPDATE collection_items SET text = ?, tags = ?, topic = ?, updated_at = ? WHERE id = ?",
+                 (text, json.dumps(tags), topic_of(conn, text, tags), _now(), item["id"]))
+    return text
+
+
+def add_words(item_id: Any, chat_id: Any, message_id: Any, words: str) -> Optional[Dict[str, Any]]:
+    """
+    A reply from the phone: its words added to the item it replies to, as a
+    part of its own after the others, whatever the item became. Handled
+    again, nothing is added twice. Returns the item, or None when it is gone.
+    """
+    words = clean_links((words or "").strip())[:50000]
+    conn = get_db()
+    try:
+        item = get(conn, int(item_id))
+        if item is None or not words:
+            return item
+        with conn:
+            if not _linked_mine(conn, item["id"]) and item["text"].strip():
+                # Its own words first, from before its messages were linked.
+                conn.execute("INSERT INTO collection_messages (item_id, chat_id, message_id, whose, words, at) "
+                             "VALUES (?, '', NULL, 'yours', ?, ?)", (item["id"], item["text"], item["received_at"]))
+            conn.execute("INSERT OR IGNORE INTO collection_messages (item_id, chat_id, message_id, whose, words, at) "
+                         "VALUES (?, ?, ?, 'yours', ?, ?)", (item["id"], str(chat_id), message_id, words, _now()))
+            _rewords(conn, item)
+        item = get(conn, item["id"])
+    finally:
+        conn.close()
+    changes.publish("collection")
+    return item
+
+
+def take_words_back(item_id: Any, chat_id: Any, message_id: Any) -> str:
+    """
+    Undo under "Added to the item": the reply's words taken back off the
+    item, while it has not been used since they were added. A key of
+    telegram_bot.SENTENCES.
+    """
+    conn = get_db()
+    try:
+        item = get(conn, int(item_id)) if str(item_id or "").isdigit() else None
+        if item is None:
+            return "undo_item_gone"
+        row = conn.execute("SELECT id, at FROM collection_messages WHERE item_id = ? AND chat_id = ? AND message_id = ? "
+                           "AND whose = 'yours'", (item["id"], str(chat_id), message_id)).fetchone()
+        if row is None:
+            return "added_gone"
+        used, added = _when(item.get("used_at")), _when(row["at"])
+        if used is not None and added is not None and used > added:
+            return "added_kept"
+        with conn:
+            conn.execute("DELETE FROM collection_messages WHERE id = ?", (row["id"],))
+            _rewords(conn, item)
+    finally:
+        conn.close()
+    changes.publish("collection")
+    return "added_undone"
+
+
+def _forget_links(conn, item_ids: Iterable[int]) -> None:
+    for item_id in item_ids:
+        try:
+            conn.execute("DELETE FROM collection_messages WHERE item_id = ?", (int(item_id),))
+        except Exception:
+            return
 
 
 def by_origin(origin_ref: str) -> Optional[Dict[str, Any]]:
@@ -302,6 +453,8 @@ def remove(item_id: int) -> bool:
         row = conn.execute("SELECT media FROM collection_items WHERE id = ?", (int(item_id),)).fetchone()
         with conn:
             gone = conn.execute("DELETE FROM collection_items WHERE id = ?", (int(item_id),)).rowcount
+            if gone:
+                _forget_links(conn, [item_id])
     finally:
         conn.close()
     if gone:
@@ -392,6 +545,8 @@ def undo(item_id: Any) -> str:
         with conn:
             gone = conn.execute("DELETE FROM collection_items WHERE id = ? AND status = 'new' AND post_id IS NULL",
                                 (item_id,)).rowcount
+            if gone:
+                _forget_links(conn, [item_id])
     finally:
         conn.close()
     if gone:
@@ -496,6 +651,8 @@ def forget_draft(conn, post_id: str) -> None:
     """A draft taken back with the bot's Undo: the item that recorded it goes with it, and any file of its."""
     files = [row[0] for row in conn.execute("SELECT media FROM collection_items WHERE post_id = ? AND media IS NOT NULL",
                                             (post_id,))]
+    _forget_links(conn, [row[0] for row in conn.execute("SELECT id FROM collection_items WHERE post_id = ?",
+                                                        (post_id,))])
     conn.execute("DELETE FROM collection_items WHERE post_id = ?", (post_id,))
     for media in files:
         phone_media.discard(media)
@@ -516,6 +673,10 @@ def drafts_made(conn, start: datetime, end: datetime) -> int:
 
 
 def forget(conn) -> None:
-    """Delete everything: every item the creator sent, and every photo and voice note with them."""
+    """Delete everything: every item the creator sent, the messages linked to them, and every file with them."""
     conn.execute("DELETE FROM collection_items")
+    try:
+        conn.execute("DELETE FROM collection_messages")
+    except Exception:
+        pass
     phone_media.forget()

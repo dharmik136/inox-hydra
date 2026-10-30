@@ -117,7 +117,7 @@ EXPORTABLE_TABLES = ("drafts", "posts", "leads", "lead_interactions",
                      "insight_readings", "insight_daily_points", "own_reposts",
                      # Phase 3 of the Telegram bot: everything sent to the bot,
                      # and the things to remember the creator told the studio.
-                     "collection_items", "remembered")
+                     "collection_items", "collection_messages", "remembered")
 
 EXPORT_FORMATS = ("json", "csv", "obsidian")
 

@@ -340,6 +340,9 @@ class TelegramIngressDaemon:
         # so the profile is not read at every turn, and when it last refused.
         self._menu_held: Optional[str] = None
         self._menu_refused_at = 0.0
+        # Phase 4, item 6: each of the bot's answers about an item is linked to
+        # it once Telegram says it took it, so a reply to the answer finds it.
+        self.outbox.on_sent = self._linked_answer
 
     def configure(self, bot_token: str, authorized_chat_id: str, origin: Optional[str],
                   profile_id: Optional[str] = None) -> None:
@@ -491,9 +494,20 @@ class TelegramIngressDaemon:
             return paths.using_profile(self.profile_id)
         return nullcontext()
 
+    def _linked_answer(self, about: Dict[str, Any], message_id: int) -> None:
+        """A message of the bot's about an item went: linked to the item, in the bot's profile."""
+        profile = about.get("profile")
+        pinned = profile if profile and profile in paths.profile_ids() else None
+        with (paths.using_profile(pinned) if pinned else nullcontext()):
+            collection.link_message(about["item"], about["chat"], message_id, "bot")
+
+    def _about(self, chat_id: str, item_id: Optional[int]) -> Optional[Dict[str, Any]]:
+        return {"item": item_id, "chat": str(chat_id), "profile": self.profile_id} if item_id is not None else None
+
     def _reply(self, chat_id: str, text: Optional[str], always: bool = False,
                draft_id: Optional[int] = None, item: Optional[Dict[str, Any]] = None,
-               fact_id: Optional[int] = None) -> None:
+               fact_id: Optional[int] = None, about_item: Optional[int] = None,
+               added: Optional[Dict[str, Any]] = None) -> None:
         """
         Queues one of the bot's fixed sentences for a chat: a confirmation when
         the bot confirms messages, and an answer to a question (always) in any
@@ -509,7 +523,11 @@ class TelegramIngressDaemon:
                         return
             except Exception:
                 return
-        if draft_id is not None:
+        if added is not None:
+            # A reply added to an item (phase 4): Undo takes those words back off.
+            keyboard = self._buttons(chat_id, text, "added", item=added["item"]["id"], message=added["message"])
+            about_item = added["item"]["id"]
+        elif draft_id is not None:
             keyboard = self._buttons(chat_id, text, "undo", draft=draft_id)
         elif fact_id is not None:
             keyboard = self._buttons(chat_id, text, "fact", fact=fact_id)
@@ -519,7 +537,26 @@ class TelegramIngressDaemon:
             keyboard = self._buttons(chat_id, text, kind, item=item["id"])
         else:
             keyboard = None
-        self.outbox.put(chat_id, text, keyboard)
+        self.outbox.put(chat_id, text, keyboard, about=self._about(chat_id, about_item))
+
+    def _add_to_replied(self, chat_id: str, message: Dict[str, Any], text: str) -> Optional[Dict[str, Any]]:
+        """
+        A reply (phase 4, item 6): when the creator lets a reply add to what it
+        replies to, and it replies to one of their messages or to the bot's
+        answer about one, its words go on that item instead of a new one.
+        None when it is to be saved as a message of its own.
+        """
+        replied = message.get("reply_to_message")
+        if not isinstance(replied, dict) or not (text or "").strip() or not telegram_bot.replies_add_on():
+            return None
+        target = collection.item_for_message(chat_id, replied.get("message_id"))
+        if target is None:
+            return None
+        words = text.replace(chr(0x2014), " -- ").replace(chr(0x2013), "-")
+        item = collection.add_words(target["id"], chat_id, message.get("message_id"), words)
+        if item is None:
+            return None
+        return {"kind": "added", "item": item, "message": message.get("message_id")}
 
     def _start_job(self, job: Dict[str, Any], chat_id: str) -> None:
         """
@@ -613,7 +650,9 @@ class TelegramIngressDaemon:
                 keyboard = self._buttons(chat, item["text"], "morning", **item["morning"])
             else:
                 keyboard = None
-            self.outbox.put(chat, item["text"], keyboard)
+            # The morning idea is about one item: a reply to it adds to that item.
+            self.outbox.put(chat, item["text"], keyboard,
+                            about=self._about(chat, (item.get("morning") or {}).get("item")))
         if said:
             self.flush_replies()
 
@@ -772,7 +811,13 @@ class TelegramIngressDaemon:
         with (paths.using_profile(pinned) if pinned else nullcontext()):
             # A forwarded "/help" is someone else's words, not the creator's command.
             command = None if forwarded or media else telegram_bot.parse_command(text)
-            if media:
+            # A reply that adds to what it replies to (phase 4); a command in
+            # a reply is a command, and a file in one is an item of its own.
+            added = self._add_to_replied(chat_id, message, text) if from_telegram and not (
+                media or command or forwarded) else None
+            if added is not None:
+                stored, question, answer = added, False, telegram_bot.added_sentence(added["item"])
+            elif media:
                 stored = self._store_media(media, message.get("caption"), _origin(update, from_telegram))
                 question, answer = False, telegram_bot.answer_for(stored)
             elif command:
@@ -783,10 +828,20 @@ class TelegramIngressDaemon:
                 question, answer = False, telegram_bot.answer_for(stored)
             if from_telegram and stored is not None and stored.get("kind") not in ("too_big", "media_failed"):
                 _note_heard()
+            if from_telegram and added is None:
+                # The creator's message, linked to the item it made, with the words it gave it (phase 4).
+                made = telegram_bot.item_record(stored)
+                if made:
+                    collection.link_message(made["id"], chat_id, message.get("message_id"), "yours",
+                                            words=made.get("text") or "")
         if from_telegram:
-            self._reply(chat_id, answer, always=question, draft_id=telegram_bot.draft_of(stored),
-                        item=telegram_bot.item_of(stored),
-                        fact_id=stored.get("id") if isinstance(stored, dict) and stored.get("kind") == "fact" else None)
+            if added is not None:
+                self._reply(chat_id, answer, added=added)
+            else:
+                self._reply(chat_id, answer, always=question, draft_id=telegram_bot.draft_of(stored),
+                            item=telegram_bot.item_of(stored),
+                            fact_id=stored.get("id") if isinstance(stored, dict) and stored.get("kind") == "fact"
+                            else None, about_item=telegram_bot.item_id_of(stored))
         return stored
 
     def _press(self, callback: Dict[str, Any]) -> None:

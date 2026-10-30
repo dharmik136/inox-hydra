@@ -83,6 +83,12 @@ Your unused items come back while you write. In the Composer, **From your collec
 
 Your collection is counted in **Storage and privacy** as "Your collection: what you sent your bot", is in the data export and in backups like everything else, and is deleted when you delete everything the studio holds about you. A message is kept once, even if Telegram sends it again after a restart.
 
+### Build an idea up over the day
+
+Reply in Telegram to something you sent your bot, or to the bot's answer about it, and your new words go on that item in your collection, after its words, instead of making a new item: press and hold the message, choose **Reply**, and write. The bot answers "Added to the item in your collection.", with **Undo** under it, which takes those words back off while you have not used the item since. With **The bot may send me what it writes from my collection** on, the answer also says the item's first line, so you can see which it was. If the item already became a draft, the words still go on the item, and the bot adds "The draft made from it was not changed." In **Your collection**, an item built this way says "from 3 of your messages".
+
+A command in a reply is still a command, a photo or a file in a reply is an item of its own, and a reply to something no longer in your collection makes a new item. **A reply adds to what it replies to**, in the panel, is on until you untick it; off, a reply is an item of its own. To follow a reply, the studio keeps which of your messages, and which of the bot's answers, each item came from (their numbers in your chat with the bot), from this version on: a message sent before it cannot be replied to this way.
+
 ## Make something out of it
 
 In the studio, on an item of **Your collection**:
@@ -228,6 +234,7 @@ These messages carry buttons, which you press in Telegram:
 | The same | **Undo** | Takes it out of your collection, while it is still new there: never used as a draft and never set aside |
 | "An idea from your collection:" | **Write it up** and **Not today** | See [A morning idea](#a-morning-idea) |
 | "Kept in your things to remember." | **Undo** | Removes it from your things to remember: "Undone: it is no longer kept." |
+| "Added to the item in your collection." | **Undo** | Takes those words back off the item, while you have not used it since: "Undone: those words are taken back off the item." Otherwise "Not undone: you have used the item in your studio since, so the words stay on it." |
 | "Saved as a draft in your studio." | **Undo** | Removes that draft from your studio, and its line in your collection, while it is untouched there: still a draft, with the words, tags and media the bot saved, never queued or published. A draft you changed is kept |
 | "A post in your queue is due now." | **Remind me in an hour** | The bot tells you again in an hour, if the post is still due then, with the same two buttons |
 | The same | **Done** | Clears the reminder, and that is all: nothing is marked as posted, and nothing is done on LinkedIn. The post stays due in your studio until you post it |
@@ -280,6 +287,8 @@ Each message gets one short sentence back, the same words every time. None carri
 | A message from a chat that is not the paired one | This bot takes messages only from the chat its owner paired. |
 | `/ask` | Remembered. Your studio uses it when it picks what to write about, from tomorrow's cards. |
 | `/remember` | Kept in your things to remember. Your studio's writing reads it, as you chose in Brand, under Writing. (With **Undo** under it.) |
+| A reply that added to an item | Added to the item in your collection. (With **Undo** under it; with the words switch on, "Added to the item in your collection that begins:" and its first line.) |
+| A reply that added to an item that became a draft | Added to the item in your collection. The draft made from it was not changed. |
 | `/remember` with more than 300 characters | A thing to remember is at most 300 characters. Send it shorter, or as two. |
 | `/forget`, with one match | Forgotten: one thing you asked me to remember. |
 | `/forget`, with several matches | 2 things to remember hold those words. Say more of it, or remove it in your studio. |

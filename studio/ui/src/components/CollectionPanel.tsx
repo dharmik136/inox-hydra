@@ -295,6 +295,7 @@ export function CollectionPanel({
                 <span>{formatLocal(item.received_at)}</span>
                 {item.source === "studio" && <span>from this computer</span>}
                 {item.topic && <span>topic: {item.topic}</span>}
+                {item.messages > 1 && <span>from {item.messages} of your messages</span>}
                 {item.tags.length > 0 && <span>{item.tags.map((tag) => `#${tag}`).join(" ")}</span>}
               </p>
               {item.media && <KeptAsItIs item={item} media={item.media} />}

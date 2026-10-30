@@ -71,6 +71,11 @@ class FakeTelegram:
         self.max_wait = max_wait
         self._updates: List[Dict[str, Any]] = []
         self._next_update = 1
+        # Message ids, one sequence for a chat's messages both ways, as in
+        # Telegram, where the phone's and the bot's never share an id; and
+        # each pushed update's message id, by its update id.
+        self._next_message_id = 1
+        self.message_ids: Dict[int, int] = {}
         self.sent: List[Dict[str, Any]] = []
         self.calls: List[Dict[str, Any]] = []
         self.blocked_chats = set()
@@ -133,13 +138,20 @@ class FakeTelegram:
         with self._cond:
             update_id = self._next_update
             self._next_update += 1
-            body = {"message_id": update_id, "date": int(time.time()), "chat": {"id": int(chat_id), "type": "private"},
+            message_id = self._take_message_id()
+            self.message_ids[update_id] = message_id
+            body = {"message_id": message_id, "date": int(time.time()), "chat": {"id": int(chat_id), "type": "private"},
                     **message}
             if text is not None:
                 body["text"] = text
             self._updates.append({"update_id": update_id, "message": body})
             self._cond.notify_all()
         return update_id
+
+    def _take_message_id(self) -> int:
+        taken = self._next_message_id
+        self._next_message_id += 1
+        return taken
 
     def add_file(self, file_id: str, data: bytes, file_path: Optional[str] = None,
                  file_size: Optional[int] = None) -> None:
@@ -465,7 +477,7 @@ class FakeTelegram:
                     return self._answer(handler, 400, {"ok": False, "error_code": 400,
                                                        "description": "Bad Request: BUTTON_DATA_INVALID"})
         with self._cond:
-            message_id = len(self.sent) + 1
+            message_id = self._take_message_id()
             self.sent.append({"chat_id": chat, "text": params.get("text"), "params": dict(params),
                               "message_id": message_id, "reply_markup": markup})
             self.messages[message_id] = {"chat_id": chat, "text": params.get("text"), "reply_markup": markup}

@@ -117,9 +117,11 @@ RESHAPE_LETTERS = "efghij"
 # the creator's own words, so it goes only with the words switch on.
 REWRITTEN_WORDS = "Rewritten in your studio ({label}). It begins:"
 BUTTON_ROWS = {"undo": (("u",),), "item": (("w", "a"), ("u",)), "item_bare": (("u",),),
-               "due": (("r",), ("d",)), "morning": (("w", "n"),), "fact": (("u",),)}
+               "due": (("r",), ("d",)), "morning": (("w", "n"),), "fact": (("u",),), "added": (("u",),)}
 # The bot may send what it writes from the collection (its words): off unless "on".
 COLLECTION_WORDS_KEY = "telegram_collection_words"
+# Phase 4, item 6: a reply adds to what it replies to: on unless "off".
+REPLY_ADDS_KEY = "telegram_reply_adds"
 # /recall lists at most this many first lines, newest first.
 RECALL_LINES = 5
 # The morning idea, off by default: {on, days (0 is Monday), hour, since}.
@@ -206,6 +208,13 @@ SENTENCES = {
     "reshape_off": ("Nothing was rewritten: your studio no longer sends your words here. Turn on The bot may send "
                     "me what it writes from my collection under Local security."),
     "reshape_undone": "Undone: the draft is back as it was before the rewrite.",
+    # Phase 4, item 6: a reply adds to what it replies to.
+    "added": "Added to the item in your collection.",
+    "added_words": "Added to the item in your collection that begins:",
+    "added_draft": "Added to the item in your collection. The draft made from it was not changed.",
+    "added_undone": "Undone: those words are taken back off the item.",
+    "added_kept": "Not undone: you have used the item in your studio since, so the words stay on it.",
+    "added_gone": "Nothing to undo: those words are no longer on the item.",
     # Phase 3: everything sent lands in the collection.
     "collected": "Saved to your collection.",
     "bookmarked": "Saved to your collection as a bookmark. Your studio never opens other people's posts.",
@@ -466,7 +475,10 @@ def call(token: str, method: str, params: Dict[str, Any], timeout: float = SEND_
         body = {}
     body = body if isinstance(body, dict) else {}
     if res.status_code == 200 and body.get("ok"):
-        return {"ok": True, "kind": "sent", "said": None, "retry_after": None}
+        result = body.get("result") if isinstance(body.get("result"), dict) else {}
+        # The message Telegram made, so what it is about can be linked to it (phase 4).
+        return {"ok": True, "kind": "sent", "said": None, "retry_after": None,
+                "message_id": result.get("message_id") if isinstance(result.get("message_id"), int) else None}
     description = str(body.get("description") or "")
     if res.status_code == 400 and any(method.startswith(m) and w in description.lower() for m, w in _ALREADY):
         return {"ok": True, "kind": "already", "said": None, "retry_after": None}
@@ -511,15 +523,21 @@ class Outbox:
         self.last_error: Optional[str] = None
         self.last_error_at: Optional[str] = None
         self.sent = 0
+        # Told (what the message was about, Telegram's id for it) once a
+        # message that is about something has gone (phase 4): the worker
+        # links the bot's answer to its item, so a reply to it finds it.
+        self.on_sent = None
 
-    def put(self, chat_id: Any, text: str, keyboard: Optional[Dict[str, Any]] = None) -> None:
-        """A message to a chat, with its buttons when it has any."""
-        self.put_call("sendMessage", message_params(chat_id, text, keyboard))
+    def put(self, chat_id: Any, text: str, keyboard: Optional[Dict[str, Any]] = None,
+            about: Optional[Dict[str, Any]] = None) -> None:
+        """A message to a chat, with its buttons when it has any, and what it is about when it is about an item."""
+        self.put_call("sendMessage", message_params(chat_id, text, keyboard), about=about)
 
-    def put_call(self, method: str, params: Dict[str, Any]) -> None:
+    def put_call(self, method: str, params: Dict[str, Any], about: Optional[Dict[str, Any]] = None) -> None:
         """Any Bot API request: the answer to a press, an edit."""
         with self._lock:
-            self._items.append({"method": method, "params": dict(params), "attempts": 0, "not_before": 0.0})
+            self._items.append({"method": method, "params": dict(params), "attempts": 0, "not_before": 0.0,
+                                "about": about})
             # A bot that cannot reach Telegram for a day keeps the newest few.
             del self._items[:-OUTBOX_KEPT]
 
@@ -546,6 +564,12 @@ class Outbox:
                     if item["not_before"] > now:
                         return
                 result = call(token, item["method"], item["params"])
+                if result["ok"] and item.get("about") and result.get("message_id") and self.on_sent:
+                    try:
+                        self.on_sent(item["about"], result["message_id"])
+                    except Exception as error:
+                        logger.warning("A message went, and what it was about was not linked: %s",
+                                       type(error).__name__)
                 with self._lock:
                     if result["ok"]:
                         self._items.pop(0)
@@ -955,6 +979,24 @@ def collection_words_on() -> bool:
     return (_setting(COLLECTION_WORDS_KEY) or "off") == "on"
 
 
+def replies_add_on() -> bool:
+    """Whether a reply adds to the item it replies to, in the open profile (phase 4). On unless turned off."""
+    return (_setting(REPLY_ADDS_KEY) or "on") != "off"
+
+
+def added_sentence(item: Dict[str, Any]) -> str:
+    """
+    What the bot answers a reply that added to an item: the item's first line
+    only with the words switch on, and that a draft made from it was not
+    changed, when it became one.
+    """
+    drafted = bool(item.get("post_id"))
+    if collection_words_on() and (item.get("text") or "").strip():
+        said = SENTENCES["added_words"] + "\n\n" + _first_line(item["text"])
+        return said + ("\n\nThe draft made from it was not changed." if drafted else "")
+    return SENTENCES["added_draft"] if drafted else SENTENCES["added"]
+
+
 def morning() -> Dict[str, Any]:
     """The morning idea's setting in the open profile: {on, days, hour, since}. Off, Monday to Friday, 08:00."""
     try:
@@ -977,7 +1019,7 @@ def options() -> Dict[str, Any]:
             "notify_24h": notify_24h_on(), "quiet_hours": quiet["on"], "quiet_from": quiet["from"],
             "quiet_to": quiet["to"], "weekly": week["on"], "weekly_day": week["day"], "weekly_hour": week["hour"],
             "collection_words": collection_words_on(), "morning": early["on"], "morning_days": early["days"],
-            "morning_hour": early["hour"],
+            "morning_hour": early["hour"], "replies_add": replies_add_on(),
             # Shown beside the bot's button, set in Brand under Writing.
             "angles": writing.preferences()["angles"]}
 
@@ -988,7 +1030,8 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
                  quiet_to: Optional[int] = None, weekly_on: Optional[bool] = None,
                  weekly_day: Optional[int] = None, weekly_hour: Optional[int] = None,
                  collection_words: Optional[bool] = None, morning_on: Optional[bool] = None,
-                 morning_days: Optional[List[int]] = None, morning_hour: Optional[int] = None) -> Dict[str, Any]:
+                 morning_days: Optional[List[int]] = None, morning_hour: Optional[int] = None,
+                 replies_add: Optional[bool] = None) -> Dict[str, Any]:
     """
     Saves the switches the panel sent; a switch not sent is left as it is.
     Quiet hours run from one whole hour to another that differs from it;
@@ -1024,6 +1067,8 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
                                           "hour": hour, "since": local_now().astimezone(timezone.utc).isoformat()})
     if collection_words is not None:
         changes[COLLECTION_WORDS_KEY] = "on" if collection_words else "off"
+    if replies_add is not None:
+        changes[REPLY_ADDS_KEY] = "on" if replies_add else "off"
     if morning_on is not None or morning_days is not None or morning_hour is not None:
         held = morning()
         days = held["days"] if morning_days is None else morning_days
@@ -1058,6 +1103,21 @@ def draft_of(record: Optional[Dict[str, Any]]) -> Optional[int]:
         return int(record["id"])
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def item_record(record: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The collection item a message made or went to, whatever it became since: a draft, a request, a note."""
+    if not record:
+        return None
+    for held in (_item(record), record.get("collection_item") or {}, record.get("item") or {}):
+        if isinstance(held, dict) and isinstance(held.get("id"), int):
+            return held
+    return None
+
+
+def item_id_of(record: Optional[Dict[str, Any]]) -> Optional[int]:
+    held = item_record(record)
+    return held["id"] if held else None
 
 
 def _item(record: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1622,6 +1682,8 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 key = "forgot_it" if remembered.remove(record.get("fact")) else "button_old"
             elif letter == "u" and record.get("kind") == "reshaped":
                 key = writing.undo_reshape(record.get("post"), record.get("mark"))
+            elif letter == "u" and record.get("kind") == "added":
+                key = collection.take_words_back(record.get("item"), record.get("chat"), record.get("message"))
             elif letter == "u":
                 key = _undo(conn, record.get("draft"))
             elif letter == "r":

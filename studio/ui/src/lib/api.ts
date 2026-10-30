@@ -3767,6 +3767,10 @@ export interface CollectionItem {
   media: CollectionMedia | null;
   /** Opening lines Angles found for it, kept for the box and the bot. */
   angles: string[];
+  /** How many of the creator's messages it is built from: a reply adds to what it replies to (phase 4). */
+  messages: number;
+  /** When one of its messages was last edited on the phone, or null (phase 4). */
+  edited_at: string | null;
 }
 
 export interface CollectionListing {
@@ -4133,6 +4137,8 @@ export interface IngressOptions {
   morning_hour: number;
   /** The angles button's number, set in Brand under Writing; shown here. */
   angles?: number;
+  /** A reply adds to the item it replies to, instead of making a new one. On unless turned off (phase 4). */
+  replies_add: boolean;
   /** Send a weekly summary to the paired chat. Off unless turned on. */
   weekly: boolean;
   /** The weekly summary's day, 0 is Monday, and its whole hour on the computer's clock: Monday 09:00 unless changed. */

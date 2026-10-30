@@ -2285,6 +2285,39 @@ def _migrate_phone_media(cursor: sqlite3.Cursor) -> None:
         cursor.execute("ALTER TABLE collection_items ADD COLUMN media_asset_id TEXT")
 
 
+def _migrate_message_links(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 41 (phase 4 of the Telegram bot, item 6):
+    A message from the phone is linked to the item it made, so a reply or an
+    edit can follow it.
+
+    collection_messages: one row per Telegram message about an item of the
+    collection, by its chat and message id: the creator's own (whose
+    'yours'), with the words it gave the item, its text or its caption, so a
+    reply adds them, Undo takes them back off and an edit replaces them; and
+    the bot's answers about an item (whose 'bot'), with no words, so a reply
+    to an answer finds its item too. `edited_at` says when the creator last
+    edited theirs. An item's own words are its rows' words joined by a blank
+    line. Nothing is recorded for what was sent before this table existed:
+    those messages' ids were never kept.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS collection_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER NOT NULL,
+            chat_id TEXT NOT NULL,
+            message_id INTEGER,
+            whose TEXT NOT NULL CHECK (whose IN ('yours', 'bot')),
+            words TEXT,
+            at TEXT NOT NULL,
+            edited_at TEXT
+        )
+    """)
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_collection_messages_message "
+                   "ON collection_messages(chat_id, message_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_collection_messages_item ON collection_messages(item_id)")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -2342,6 +2375,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
      _migrate_things_to_remember),
     (40, "A photo or a voice note sent to the bot is kept as it is, beside the item it made",
      _migrate_phone_media),
+    (41, "A message from the phone is linked to the item it made, so a reply or an edit can follow it",
+     _migrate_message_links),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

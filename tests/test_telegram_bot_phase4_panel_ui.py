@@ -11,6 +11,8 @@ new control is checked with axe in both themes.
            did not check, with Got it
   item 3   the row that says whether Telegram holds the / menu for the
            paired chat
+  item 6   "A reply adds to what it replies to", on by default; and Your
+           collection saying an item is built from several messages
 
 docs/quality/cycle4/bot-phase4.md.
 
@@ -87,3 +89,32 @@ def test_the_menu_row_says_whether_telegram_holds_it(page, studio, fake):
     expect(row.locator("dd")).to_have_text("SET")
     assert [c["command"] for c in fake.menu(held["chat_id"])][:2] == ["help", "idea"]
     assert _axe(page, PANEL) == []
+
+
+def test_a_reply_adds_to_what_it_replies_to_is_on_by_default_and_can_be_turned_off(page, studio, fake):
+    """Item 6: the switch, on until unticked, in both themes."""
+    _saved_in_the_panel(page, studio)
+    adds = page.get_by_role("checkbox", name="A reply adds to what it replies to")
+    expect(adds).to_be_checked()
+    expect(page.get_by_text("Off, a reply is an item of its own.", exact=False)).to_be_visible()
+    assert _axe(page, PANEL) == []
+    adds.click()
+    expect(page.get_by_text("A reply is an item of its own.", exact=True)).to_be_visible()
+    expect(adds).not_to_be_checked()
+    assert telegram_bot.replies_add_on() is False
+    assert _axe(page, PANEL) == []
+
+
+def test_your_collection_says_an_item_is_built_from_several_messages(page, studio):
+    """Item 6: an item a reply added to says how many of the creator's messages it is built from."""
+    import collection
+
+    item = collection.add("note", "pricing is a design decision")
+    collection.link_message(item["id"], "487215963", 11, "yours", words=item["text"])
+    collection.add_words(item["id"], "487215963", 12, "and the price page is the brief")
+    page.goto(studio["url"] + "/#/record", wait_until="networkidle")
+    page.get_by_role("button", name="Your collection").click()
+    level = page.locator("section[aria-labelledby='collection-title']")
+    expect(level.get_by_text("from 2 of your messages")).to_be_visible()
+    expect(level.get_by_text("and the price page is the brief", exact=False)).to_be_visible()
+    assert _axe(page, "section[aria-labelledby='collection-title']") == []

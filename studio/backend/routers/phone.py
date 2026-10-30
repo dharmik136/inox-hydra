@@ -49,6 +49,7 @@ class IngressOptionsPayload(BaseModel):
     morning_hour: Optional[int] = Field(None, ge=0, le=23, description="The morning idea's hour, a whole hour")
     weekly_day: Optional[int] = Field(None, ge=0, le=6, description="The weekly summary's day, 0 is Monday")
     weekly_hour: Optional[int] = Field(None, ge=0, le=23, description="The weekly summary's hour, a whole hour")
+    replies_add: Optional[bool] = Field(None, description="A reply adds to the item it replies to")
 
 
 class IngressSettingsPayload(BaseModel):
@@ -106,7 +107,7 @@ def post_ingress_options(payload: IngressOptionsPayload):
                                   weekly_on=payload.weekly, weekly_day=payload.weekly_day,
                                   weekly_hour=payload.weekly_hour, collection_words=payload.collection_words,
                                   morning_on=payload.morning, morning_days=payload.morning_days,
-                                  morning_hour=payload.morning_hour)
+                                  morning_hour=payload.morning_hour, replies_add=payload.replies_add)
     except ValueError as refused:
         raise HTTPException(status_code=400, detail=str(refused))
     return ingress.describe_settings()

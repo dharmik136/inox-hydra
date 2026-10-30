@@ -246,6 +246,15 @@ export function TelegramIngressPanel() {
                 onChange={(on) => void setOption({ replies: on }, on ? "The bot confirms each message." : "The bot no longer confirms messages.")}
               />
               <OptionRow
+                label="A reply adds to what it replies to"
+                detail="Reply in Telegram to something you sent, or to my answer about it, and your new words go on that item in your collection instead of a new one, with Undo under my answer. If it already became a draft, the draft is not changed. Off, a reply is an item of its own."
+                checked={state.options.replies_add}
+                disabled={busy}
+                onChange={(on) =>
+                  void setOption({ replies_add: on }, on ? "A reply adds to what it replies to." : "A reply is an item of its own.")
+                }
+              />
+              <OptionRow
                 label="The bot may answer with your figures"
                 detail="When on, /today answers with your latest post's figures, how many replies are waiting and when your next post is scheduled. Those figures then sit on Telegram's servers, as everything in the chat does. Never anyone else's name or comment."
                 checked={state.options.figures}
