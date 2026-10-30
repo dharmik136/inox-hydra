@@ -69,6 +69,7 @@ How the studio writes for you. Every writing request reads these: **Make a post*
 | Ending | A thoughtful question or takeaway |
 | Words to avoid | In today's fast-paced world, game-changer, delve, testament |
 | Angles | 3 opening lines (2 to 5) |
+| Most items in one draft | 10 items (2 to 20), for **Combine** in your collection and `/write` on your bot |
 | Rewrite buttons on your bot | **Shorter** ("Make it about a third shorter. Keep its point, its first line and its voice."), **New opening** ("Write a new first line for it, as the opening line preference says. Keep the rest as it is.") and **Another angle** ("Rewrite it from another angle on the same notes, at about the same length.") |
 
 **Rewrite buttons on your bot** are the buttons under a draft your Telegram bot wrote: each has the label your phone shows, up to 24 characters, and what it asks for, in your words, up to 200. Change either, **Remove** one, or **Add a rewrite button**, up to six; with none, a draft from the bot carries none. See [Rewrite a draft from your phone](send-a-post-idea-from-telegram.md#rewrite-a-draft-from-your-phone).

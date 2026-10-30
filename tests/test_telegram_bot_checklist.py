@@ -165,3 +165,12 @@ def test_phase_4_edits_quote_the_bot_and_the_box():
     box = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "CollectionPanel.tsx"),
                encoding="utf-8").read()
     assert "edited on your phone" in article and "edited on your phone" in box
+
+
+def test_phase_4_write_quotes_the_bot_and_the_writing_view():
+    """Phase 4, item 9: /write's answer, and the preference it reads."""
+    article = _article()
+    assert telegram_bot.SENTENCES["write_from"].format(count=2) in article
+    writing_view = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "WritingPreferences.tsx"),
+                        encoding="utf-8").read()
+    assert "Most items in one draft" in article and "Most items in one draft" in writing_view

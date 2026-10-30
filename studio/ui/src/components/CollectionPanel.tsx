@@ -19,8 +19,8 @@ import { formatLocal } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { useWritingPreferences, WritingSummary } from "./WritingPreferences";
 
-/** Combine takes this many at most, as the server does, so one request stays small. */
-const COMBINE_AT_MOST = 10;
+/** Combine takes this many at most until the preferences are read: today's default (writing.py). */
+const COMBINE_DEFAULT = 10;
 
 /**
  * Your collection: everything the creator sent their Telegram bot, in one
@@ -69,6 +69,8 @@ export function CollectionPanel({
   const [writingNow, setWritingNow] = useState<string | null>(null);
   const [described] = useWritingPreferences();
   const angleCount = described?.values.angles;
+  // The most items one draft is written from: the creator's own (Brand, Writing), as the server reads it.
+  const combineAtMost = described?.values.combine_at_most ?? COMBINE_DEFAULT;
 
   const load = useCallback(() => {
     return fetchCollection({ status, kind, q: words })
@@ -153,7 +155,7 @@ export function CollectionPanel({
   }
 
   function choose(item: CollectionItem, on: boolean) {
-    setChosen((current) => (on ? [...current, item.id].slice(0, COMBINE_AT_MOST) : current.filter((id) => id !== item.id)));
+    setChosen((current) => (on ? [...current, item.id].slice(0, combineAtMost) : current.filter((id) => id !== item.id)));
   }
 
   async function openDraft(postId: string) {
@@ -233,7 +235,7 @@ export function CollectionPanel({
 
       <WritingSummary
         described={described}
-        fields={["length_words", "tone", "language", "opening", "emojis", "hashtags", "line_breaks", "ending", "avoid", "angles", "memory"]}
+        fields={["length_words", "tone", "language", "opening", "emojis", "hashtags", "line_breaks", "ending", "avoid", "angles", "combine_at_most", "memory"]}
         title="How Make a post, Combine and Angles write"
       />
 

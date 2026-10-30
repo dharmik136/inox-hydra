@@ -101,7 +101,7 @@ In the studio, on an item of **Your collection**:
 
 - **Make a post** writes a draft from it through your own AI provider and opens it in the Composer. The item is then used.
 - The **Angles** button, which says how many it offers (**3 angles** unless you change it), finds that many opening lines for a post from it, and lists them under the item, each with **Write it up**.
-- Tick two or more items, up to ten, and **Combine** writes one draft from all of them.
+- Tick two or more items, up to your **Most items in one draft** (ten unless you change it under **Brand**, then **Writing**), and **Combine** writes one draft from all of them.
 
 On your bot, under "Saved to your collection.", **Write it up** and the **Angles** button do the same. The bot answers at once ("Writing it up in your studio.") and keeps answering everything else while your provider writes; when it is done it sends a new message, which your phone notifies.
 
@@ -181,9 +181,10 @@ The commands are in Telegram's **/** menu of your chat too: type `/` in the chat
 | `/remember something` | It is kept in your things to remember, with **Undo** under the answer. See [Things to remember](#things-to-remember) |
 | `/forget words` | The one thing to remember that holds those words is removed; with several, nothing is, and the bot says how many |
 | `/recall word` | How many items in your collection hold the word, and their first lines only with **The bot may send me what it writes from my collection** on |
+| `/write word` or `/write #tag` | One draft from the unused items in your collection that hold the word, or carry the tag, newest first, up to your **Most items in one draft**, through your own AI provider as **Combine** writes: "Writing one post from 3 items in your collection.", then "Draft ready in your studio." Those items are then used. Nothing matching: "Nothing new in your collection holds that word, so nothing was written." |
 | Any other command | "I do not know that command. Send /help to see what I do." |
 
-`/start`, `/help`, `/status`, `/today`, `/drafts`, `/forget` and `/recall` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
+`/start`, `/help`, `/status`, `/today`, `/drafts`, `/forget`, `/recall` and `/write` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
 
 ## Your figures on Telegram, only if you allow it
 
@@ -309,7 +310,9 @@ Each message gets one short sentence back, the same words every time. None carri
 | `/forget`, with several matches | 2 things to remember hold those words. Say more of it, or remove it in your studio. |
 | `/forget`, with none | Nothing you asked me to remember holds those words. |
 | `/recall` | 2 items in your collection hold that word. (Or "One item in your collection holds that word.", or "Nothing in your collection holds that word.") |
-| `/idea`, `/ask`, `/remember`, `/forget` or `/recall` with nothing after it | How to send one, with an example |
+| `/idea`, `/ask`, `/remember`, `/forget`, `/recall` or `/write` with nothing after it | How to send one, with an example |
+| `/write` | Writing one post from 3 items in your collection. (Or "Writing one post from one item in your collection.") Then, as for **Write it up**, "Draft ready in your studio." |
+| `/write`, with nothing new that matches | Nothing new in your collection holds that word, so nothing was written. |
 
 A chat that is refused is answered at most once in ten minutes. The answers are on by default; to stop them, untick **The bot confirms each message** in the panel. Your messages are still saved. If a sentence cannot be sent, the panel says why under **Last message the bot could not send**, and the studio tries again after a network fault or when Telegram asks it to wait.
 

@@ -19,6 +19,8 @@ in the studio and on the bot:
   angles        how many opening lines Angles offers    Angles, and the bot's button
   reshapes      the rewrite buttons under a draft the   the bot (phase 4)
                 bot wrote: each a label and what it asks
+  combine_at_most  the most items one draft is written    Combine, /write (phase 4; it was a
+                from                                    fixed ten)
 
 The defaults keep what Command said until now (its tone, its paragraphs,
 its first-line rule, its ending, its four phrases), so a fresh profile
@@ -101,6 +103,10 @@ DEFAULT_RESHAPES = (
 )
 # The texts a draft's rewrites replaced, kept on it, the newest last.
 EARLIER_KEPT = 10
+# The most items one draft is written from (Combine, /write): a preference
+# since phase 4, ten by default as it was fixed before, from 2 to 20.
+COMBINE_AT_MOST = 10
+COMBINE_CHOICES = tuple(range(2, 21))
 
 DEFAULTS: Dict[str, Any] = {
     "length_words": 150,
@@ -124,6 +130,8 @@ DEFAULTS: Dict[str, Any] = {
     "ideas": 3,
     # The rewrite buttons under a draft the bot wrote (phase 4).
     "reshapes": [dict(b) for b in DEFAULT_RESHAPES],
+    # The most items one draft is written from: Combine and /write (phase 4).
+    "combine_at_most": COMBINE_AT_MOST,
 }
 SOURCES = ("collection", "posts", "asks")
 MEMORY = ("all", "chosen", "off")
@@ -136,8 +144,6 @@ DEFAULT_OPENING_WORDS = "a first line that stops the scroll"
 FORMS = {"question": "open with a question", "story": "open with something that happened to them",
          "short": "open with one short line", "statement": "open with a plain, bold statement"}
 
-# Combine takes this many items at most, so one request stays small.
-COMBINE_AT_MOST = 10
 # An opening line Angles offers fits before LinkedIn's "see more".
 ANGLE_CHARS = 200
 
@@ -181,6 +187,8 @@ def _valid(field: str, value: Any) -> bool:
         return value in MEMORY
     if field == "ideas":
         return value in IDEA_COUNTS and not isinstance(value, bool)
+    if field == "combine_at_most":
+        return value in COMBINE_CHOICES and not isinstance(value, bool)
     if field == "reshapes":
         if not isinstance(value, list) or len(value) > RESHAPES_MAX:
             return False
@@ -261,6 +269,8 @@ _REFUSALS = {
     "memory": "Things to remember go with all writing, only the ones ticked, or none. Nothing was saved.",
     "ideas": (f"The daily idea asks for {', '.join(str(n) for n in IDEA_COUNTS[:-1])} or {IDEA_COUNTS[-1]} ideas. "
               "Nothing was saved."),
+    "combine_at_most": (f"One draft is written from {COMBINE_CHOICES[0]} to {COMBINE_CHOICES[-1]} items at most. "
+                        "Nothing was saved."),
     "reshapes": (f"Rewrite buttons are at most {RESHAPES_MAX}, each with its own label of up to {RESHAPE_LABEL_MAX} "
                  f"characters and what it asks for in up to {RESHAPE_ASKS_MAX}. Nothing was saved."),
 }
@@ -297,6 +307,7 @@ def described() -> Dict[str, Any]:
             "sources": list(SOURCES),
             "memory": list(MEMORY),
             "ideas": list(IDEA_COUNTS),
+            "combine_at_most": list(COMBINE_CHOICES),
         },
         # Each choice as the creator reads it, beside the feature it shapes.
         "labels": {
@@ -506,8 +517,10 @@ def _materials(conn, item_ids: Iterable[Any]) -> List[Dict[str, Any]]:
             ids.append(value)
     if not ids:
         raise Refused("Choose an item to write from.")
-    if len(ids) > COMBINE_AT_MOST:
-        raise Refused(f"Combine takes ten items at most ({COMBINE_AT_MOST}), so one request stays small.")
+    most = preferences(conn)["combine_at_most"]
+    if len(ids) > most:
+        raise Refused(f"One draft is written from {most} items at most, as set in Brand, under Writing, so one "
+                      "request stays small.")
     items = []
     for item_id in ids:
         item = collection.get(conn, item_id)

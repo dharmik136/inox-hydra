@@ -35,6 +35,7 @@ const LABELS: Record<PreferenceField, string> = {
   memory: "Things to remember",
   ideas: "Ideas asked for each day",
   reshapes: "Rewrite buttons on your bot",
+  combine_at_most: "Most items in one draft",
 };
 
 /** The preferences this view edits with its Save; the others are set beside their own feature. */
@@ -49,6 +50,7 @@ const EDITED_HERE: PreferenceField[] = [
   "ending",
   "avoid",
   "angles",
+  "combine_at_most",
   "reshapes",
 ];
 
@@ -88,6 +90,8 @@ export function preferenceWords(field: PreferenceField, values: WritingPreferenc
       return values.ideas === 1 ? "one idea" : `${values.ideas} ideas`;
     case "reshapes":
       return values.reshapes.length ? values.reshapes.map((button) => button.label).join(", ") : "none";
+    case "combine_at_most":
+      return `${values.combine_at_most} items`;
   }
 }
 
@@ -282,6 +286,18 @@ export function WritingPreferencesPanel({ children }: { children?: ReactNode } =
           "writing-avoid",
           <input id="writing-avoid" className={INPUT} value={avoidText} disabled={busy}
             placeholder="Words and phrases, separated by commas" onChange={(event) => setAvoidText(event.target.value)} />,
+        )}
+        {row(
+          "combine_at_most",
+          "writing-combine",
+          <select id="writing-combine" className={SELECT} value={draft.combine_at_most} disabled={busy}
+            onChange={(event) => set("combine_at_most", Number(event.target.value))}>
+            {choices.combine_at_most.map((n) => (
+              <option key={n} value={n}>
+                {n} items, for Combine and /write
+              </option>
+            ))}
+          </select>,
         )}
         <RewriteButtons
           value={draft.reshapes}

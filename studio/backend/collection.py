@@ -676,6 +676,35 @@ def waiting(conn) -> int:
                         "AND TRIM(text) != ''", MATERIAL).fetchone()[0]
 
 
+def unused_matching(asked: str, most: int) -> List[Dict[str, Any]]:
+    """
+    /write (phase 4): the unused items with words (new, of a kind to write
+    from) that hold every word asked, or carry the tag asked as #tag, newest
+    first, at most `most`.
+    """
+    asked = (asked or "").strip()
+    tag = asked[1:].strip().lower() if asked.startswith("#") else None
+    words = re.findall(r"\w+", asked.lower()) if tag is None else []
+    if not (tag or words):
+        return []
+    marks = ", ".join("?" for _ in MATERIAL)
+    conn = get_db()
+    try:
+        found = []
+        for row in conn.execute(f"SELECT * FROM collection_items WHERE status = 'new' AND kind IN ({marks}) "
+                                "AND TRIM(text) != '' ORDER BY received_at DESC, id DESC", MATERIAL):
+            item = _row(conn, row)
+            tags = [str(t).lower() for t in item["tags"]]
+            held = set(re.findall(r"\w+", item["text"].lower())) | set(tags)
+            if (tag in tags) if tag is not None else all(w in held for w in words):
+                found.append(item)
+            if len(found) >= max(1, int(most)):
+                break
+        return found
+    finally:
+        conn.close()
+
+
 def matching(word: str) -> List[Dict[str, Any]]:
     """/recall: the items whose words hold a word, newest first."""
     words = re.findall(r"\w+", (word or "").lower())

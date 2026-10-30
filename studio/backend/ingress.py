@@ -843,6 +843,9 @@ class TelegramIngressDaemon:
         if from_telegram:
             if added is not None:
                 self._reply(chat_id, answer, added=added)
+            elif isinstance(stored, dict) and stored.get("job"):
+                self._reply(chat_id, answer, always=question)
+                self._start_job(stored["job"], chat_id)
             else:
                 self._reply(chat_id, answer, always=question, draft_id=telegram_bot.draft_of(stored),
                             item=telegram_bot.item_of(stored),
@@ -989,6 +992,11 @@ class TelegramIngressDaemon:
             if not argument.strip():
                 return done, telegram_bot.SENTENCES["empty_recall"], True
             return done, telegram_bot.recall_answer(argument), True
+        if name == "write":
+            # One draft from the unused items that match (phase 4), written
+            # beside the bot's loop once its answer is on its way.
+            said, job = telegram_bot.write_command(argument)
+            return ({**done, "job": job} if job else done), said, True
         if name == "ask":
             # An explicit act of the creator's, so it goes through the asks
             # store's own rule (record_store.py), from the paired chat only.

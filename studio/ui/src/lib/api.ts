@@ -3867,6 +3867,8 @@ export interface WritingPreferences {
   ideas: number;
   /** The rewrite buttons under a draft the bot wrote (phase 4): each a label and what it asks for. */
   reshapes: ReshapeButton[];
+  /** The most items one draft is written from: Combine, and /write on the bot (phase 4; it was a fixed ten). */
+  combine_at_most: number;
 }
 
 /** One rewrite button: its label on the phone, and what it asks the writer for, in the creator's words. */
@@ -3886,6 +3888,7 @@ export interface WritingDescribed {
     hashtags: Record<string, string>;
     line_breaks: Record<string, string>;
     ending: Record<string, string>;
+    combine_at_most: number[];
     sources: IdeaSource[];
     memory: string[];
     ideas: number[];

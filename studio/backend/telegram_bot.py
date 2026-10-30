@@ -225,6 +225,11 @@ SENTENCES = {
     "remember_undone": "Undone: it is no longer kept, and it is new in your collection again.",
     "remember_already": "That is already in your things to remember, so nothing more was kept.",
     "remember_used": "Not kept: you have used it in your studio since, so nothing was done.",
+    # Phase 4, item 9: /write.
+    "write_from": "Writing one post from {count} items in your collection.",
+    "write_from_one": "Writing one post from one item in your collection.",
+    "write_none": "Nothing new in your collection holds that word, so nothing was written.",
+    "empty_write": "Send /write with a word or a #tag, for example /write pricing.",
     # Phase 3: everything sent lands in the collection.
     "collected": "Saved to your collection.",
     "bookmarked": "Saved to your collection as a bookmark. Your studio never opens other people's posts.",
@@ -293,6 +298,7 @@ FIGURE_WORDS = (("impressions", "impressions"), ("reactions", "reactions"), ("co
 BOT_COMMANDS = (
     ("help", "What I do, how to pair a chat, and what I send only if you allow it"),
     ("idea", "Your idea after it, kept in your collection as an idea"),
+    ("write", "A word or a #tag after it, and I write one draft from your unused items that hold it"),
     ("remember", "A fact after it about you, your audience, an offer or a date, which your studio's writing reads"),
     ("forget", "Words after it from something you asked me to remember, which is then removed"),
     ("recall", "A word after it, and I say how many items in your collection hold it"),
@@ -345,7 +351,7 @@ _HELP_AFTER = (
 HELP = _help()
 
 # Commands answered whatever the confirmations switch says: they are questions.
-QUESTIONS = ("start", "help", "status", "today", "drafts", "forget", "recall")
+QUESTIONS = ("start", "help", "status", "today", "drafts", "forget", "recall", "write")
 _COMMAND = re.compile(r"^/([A-Za-z][A-Za-z0-9_]{0,31})(?:@[A-Za-z0-9_]{1,64})?(?:\s+(.*))?$", re.DOTALL)
 
 
@@ -714,6 +720,24 @@ def recall_answer(word: str) -> str:
     if not collection_words_on():
         return said
     return said + "\n\n" + "\n".join(f"- {_first_line(item['text'])}" for item in found[:RECALL_LINES])
+
+
+def write_command(argument: str) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """
+    /write and a word or a #tag (phase 4, item 9): the answer, and what is to
+    be written beside the bot's loop, if anything: one draft from the unused
+    items that match, newest first, up to the creator's most items in one
+    draft, through Combine.
+    """
+    if not (argument or "").strip().lstrip("#").strip():
+        return SENTENCES["empty_write"], None
+    found = collection.unused_matching(argument, writing.preferences()["combine_at_most"])
+    if not found:
+        return SENTENCES["write_none"], None
+    if not writing.model_gateway.get_current_ai_config().is_configured:
+        return SENTENCES["no_provider"], None
+    said = SENTENCES["write_from_one"] if len(found) == 1 else SENTENCES["write_from"].format(count=len(found))
+    return said, {"kind": "combine", "items": [item["id"] for item in found]}
 
 
 def drafts_answer() -> str:
@@ -1758,6 +1782,9 @@ def run_job(job: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, 
             return _reshaped(writing.reshape(job.get("post"), job.get("label")), chat_id)
         if job.get("kind") == "angles":
             result = writing.angles(job.get("item"))
+        elif job.get("kind") == "combine":
+            # /write (phase 4): the matching items, through Combine.
+            result = writing.make_post(job.get("items") or [])
         else:
             result = writing.make_post([job.get("item")], angle=job.get("angle"), form=job.get("form"))
     except (writing.Refused, LookupError):
