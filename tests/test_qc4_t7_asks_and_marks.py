@@ -189,7 +189,12 @@ def test_more_of_this_writes_the_cards_topic_as_an_ask(client):
     assert answer.status_code == 200, answer.text
     kept = asks()
     assert kept and kept[-1]["source"] == "more_of_this"
-    assert kept[-1]["text"] in ("Hiring", "Pricing") or len(kept[-1]["text"]) > 10
+    # The card's topic is one of the creator's recurring words (from these
+    # posts, "Changed" and "Pricing"), or its excerpt; which card is shown
+    # depends on the day, so the word was "Changed" on some days.
+    import evidence_briefing
+    words = [label for _key, label in evidence_briefing.derive_topic_vocabulary(POSTS)]
+    assert kept[-1]["text"] in words + ["Hiring", "Pricing"] or len(kept[-1]["text"]) > 10
 
 
 def test_draft_from_this_records_the_card_and_posting_it_writes_posted(client):

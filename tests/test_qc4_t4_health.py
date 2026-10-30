@@ -209,8 +209,13 @@ def test_health_and_the_onboarding_state_list_the_same_readers(client):
 
 def test_the_day_rows_carry_their_own_window(client):
     import migrations
-    _capture("engagers", _now() - timedelta(days=20), items_seen=3, items_kept=3)
-    _capture("engagers", _now() - timedelta(days=20, hours=3), items_seen=1, items_kept=1)
+    # Two runs on one day 20 days ago, at midday and three hours before, by
+    # the UTC date a capture's day is counted on. Measured back from the
+    # clock, the second crossed midnight whenever the suite ran between
+    # 00:00 and 03:00 UTC, and the day held three days.
+    twenty_days_ago = (_now() - timedelta(days=20)).replace(hour=12, minute=0, second=0, microsecond=0)
+    _capture("engagers", twenty_days_ago, items_seen=3, items_kept=3)
+    _capture("engagers", twenty_days_ago - timedelta(hours=3), items_seen=1, items_kept=1)
     _capture("engagers", _now() - timedelta(hours=1))
     body = client.get("/api/v1/bridge/readers").json()
     assert body["days_window"]["days"] == migrations.CAPTURE_DAYS_KEPT
@@ -218,7 +223,7 @@ def test_the_day_rows_carry_their_own_window(client):
     assert {r["extractor"]: r for r in body["readers"]}["engagers"]["days_held"] == 2
     detail = client.get("/api/v1/bridge/readers/engagers").json()
     assert detail["days_window"] == body["days_window"]
-    old_day = (_now() - timedelta(days=20)).strftime("%Y-%m-%d")
+    old_day = twenty_days_ago.strftime("%Y-%m-%d")
     by_day = {d["day"]: d for d in detail["days"]}
     assert old_day in by_day, "a day older than the log's week is still here"
     assert by_day[old_day]["runs"] == 2 and by_day[old_day]["items_seen"] == 4
