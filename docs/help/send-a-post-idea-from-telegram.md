@@ -156,6 +156,8 @@ It carries your words, so it comes only while **The bot may send me what it writ
 
 Tell the studio facts about you that every writing request should know: about you, your audience, an offer, or a date. Send `/remember` and a sentence, for example `/remember I write for founders of small design studios`. Start it with `audience:`, `offer:` or `date:` to say what it is about, as in `/remember offer: a workshop for small studios`; without one, it is about you. The bot answers "Kept in your things to remember.", with **Undo** under it.
 
+Or keep a note you sent as one: under "Saved to your collection.", a note or an idea of at most 300 characters carries **Remember this**. Press it and its words are kept as a thing to remember, about you, or about what a prefix such as `offer:` at its start says, as `/remember` reads it. The message then says "Kept in your things to remember. In your collection it is set as used.", with **Undo**, and **Your collection** lists the item as used, "Kept in your things to remember". **Undo** removes the thing to remember and puts the item back with the new ones. A forward, a link and a file never carry it: a forward's words are someone else's.
+
 `/forget` and words from one of them removes it: "Forgotten: one thing you asked me to remember." If the words match several, nothing is removed and the bot says how many, so you can say more of it, or remove it in your studio. It never guesses.
 
 In the studio they are listed under **Brand**, then **Writing**, under **Things to remember**, where you can add, edit, tick, untick and remove them, and choose which go with writing: all of them (the default), only the ones ticked, or none. See [Set up your Brand and your Settings](set-up-brand-studio.md#things-to-remember).
@@ -238,6 +240,8 @@ These messages carry buttons, which you press in Telegram:
 | "Saved to your collection." | **Write it up** | Writes a draft from it through your own AI provider. See [Make something out of it](#make-something-out-of-it) |
 | The same | The **Angles** button | Finds your number of opening lines for a post from it |
 | The same | **Undo** | Takes it out of your collection, while it is still new there: never used as a draft and never set aside |
+| The same, for a note or an idea of at most 300 characters | **Remember this** | Keeps its words as a thing to remember, and the item is used. See [Things to remember](#things-to-remember) |
+| "Kept in your things to remember. In your collection it is set as used." | **Undo** | Removes that thing to remember, and the item is new again: "Undone: it is no longer kept, and it is new in your collection again." |
 | "An idea from your collection:" | **Write it up** and **Not today** | See [A morning idea](#a-morning-idea) |
 | "Kept in your things to remember." | **Undo** | Removes it from your things to remember: "Undone: it is no longer kept." |
 | "Added to the item in your collection." | **Undo** | Takes those words back off the item, while you have not used it since: "Undone: those words are taken back off the item." Otherwise "Not undone: you have used the item in your studio since, so the words stay on it." |
@@ -293,6 +297,8 @@ Each message gets one short sentence back, the same words every time. None carri
 | A message from a chat that is not the paired one | This bot takes messages only from the chat its owner paired. |
 | `/ask` | Remembered. Your studio uses it when it picks what to write about, from tomorrow's cards. |
 | `/remember` | Kept in your things to remember. Your studio's writing reads it, as you chose in Brand, under Writing. (With **Undo** under it.) |
+| **Remember this**, with words already kept | That is already in your things to remember, so nothing more was kept. |
+| **Remember this**, on a note you used since | Not kept: you have used it in your studio since, so nothing was done. |
 | A reply that added to an item | Added to the item in your collection. (With **Undo** under it; with the words switch on, "Added to the item in your collection that begins:" and its first line.) |
 | A reply that added to an item that became a draft | Added to the item in your collection. The draft made from it was not changed. |
 | You edited a message on your phone | Updated in your collection. |

@@ -79,7 +79,7 @@ Two more choices are set beside the feature they shape: **Ideas draw on** (your 
 
 ### Things to remember
 
-Under the preferences, **Things to remember** holds facts about you that the studio should know when it writes: about you, your audience, an offer, or a date, such as "My course opens on 1 March" or "I write for founders of small studios". Type one into **A thing to remember**, pick what it is about, and press **Remember this**, or send `/remember` and the sentence to your Telegram bot. Each one lists where it came from and how many writing requests it went with.
+Under the preferences, **Things to remember** holds facts about you that the studio should know when it writes: about you, your audience, an offer, or a date, such as "My course opens on 1 March" or "I write for founders of small studios". Type one into **A thing to remember**, pick what it is about, and press **Remember this**, or send `/remember` and the sentence to your Telegram bot, or press **Remember this** under a note your bot saved. Each one lists where it came from and how many writing requests it went with.
 
 | Control | What it does |
 | --- | --- |

@@ -102,7 +102,7 @@ WEEKLY_POSTS_SHOWN = 7
 # message of each kind carries. "a" says the creator's own number of angles
 # (writing.py), and a digit writes up the angle it numbers.
 BUTTON_LABELS = {"u": "Undo", "r": "Remind me in an hour", "d": "Done", "w": "Write it up", "a": "Angles",
-                 "n": "Not today", "p": "Send me the whole post", "q": "Send me the posts"}
+                 "n": "Not today", "p": "Send me the whole post", "q": "Send me the posts", "m": "Remember this"}
 # Phase 4, item 4: the buttons that send something and leave the message's
 # other buttons as they are (the post itself, for long-press, Copy).
 KEEPS_THE_REST = ("p", "q")
@@ -117,7 +117,8 @@ RESHAPE_LETTERS = "efghij"
 # the creator's own words, so it goes only with the words switch on.
 REWRITTEN_WORDS = "Rewritten in your studio ({label}). It begins:"
 BUTTON_ROWS = {"undo": (("u",),), "item": (("w", "a"), ("u",)), "item_bare": (("u",),),
-               "due": (("r",), ("d",)), "morning": (("w", "n"),), "fact": (("u",),), "added": (("u",),)}
+               "due": (("r",), ("d",)), "morning": (("w", "n"),), "fact": (("u",),), "added": (("u",),),
+               "kept": (("u",),)}
 # The bot may send what it writes from the collection (its words): off unless "on".
 COLLECTION_WORDS_KEY = "telegram_collection_words"
 # Phase 4, item 6: a reply adds to what it replies to: on unless "off".
@@ -219,6 +220,11 @@ SENTENCES = {
     "edited": "Updated in your collection.",
     "edited_draft": "Updated in your collection. The draft made from it was not changed.",
     "edit_nothing": "That edit changed nothing in your studio: the message it edits made nothing in your collection.",
+    # Phase 4, item 8: Remember this.
+    "remembered_item": "Kept in your things to remember. In your collection it is set as used.",
+    "remember_undone": "Undone: it is no longer kept, and it is new in your collection again.",
+    "remember_already": "That is already in your things to remember, so nothing more was kept.",
+    "remember_used": "Not kept: you have used it in your studio since, so nothing was done.",
     # Phase 3: everything sent lands in the collection.
     "collected": "Saved to your collection.",
     "bookmarked": "Saved to your collection as a bookmark. Your studio never opens other people's posts.",
@@ -1527,6 +1533,24 @@ def draft_rows(undo: bool = False) -> List[List[str]]:
     return rows + [["u"]] if undo else rows
 
 
+def item_rows(item: Dict[str, Any]) -> List[List[str]]:
+    """Under "Saved to your collection.": Write it up and the angles, then Remember this for a note that fits, and Undo."""
+    if collection.fits_a_fact(item):
+        return [["w", "a"], ["m", "u"]]
+    return [list(row) for row in BUTTON_ROWS["item"]]
+
+
+def _new_record(records: List[Dict[str, Any]], chat_id: Any, kind: str, said: str, rows: List[List[str]],
+                **target: Any) -> Dict[str, Any]:
+    """A message's buttons made while the buttons are held (a press), appended to them; returns the keyboard."""
+    token = secrets.token_urlsafe(9)
+    record = {"id": token, "kind": kind, "chat": str(chat_id), "at": _now(), "said": said, "used": None,
+              "letters": [letter for row in rows for letter in row], "rows": rows, **target}
+    records.append(record)
+    del records[:-max(1, int(BUTTONS_KEPT))]
+    return _keyboard(token, rows)
+
+
 def due_rows(count: int) -> List[List[str]]:
     """A due post's buttons: the post itself to copy, only while the words switch is on, then Remind and Done."""
     rows = [list(row) for row in BUTTON_ROWS["due"]]
@@ -1655,6 +1679,7 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                         "keep": _keyboard(token, rest, record.get("reshape_labels")) if any(rest) else None,
                         "kept": True}
             job = None
+            markup = None
             if letter in RESHAPE_LETTERS:
                 # A rewrite of a draft the bot wrote: shown only with the words
                 # switch on, written beside the bot's loop, with a provider.
@@ -1680,6 +1705,16 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                                            "form": record.get("form")}
             elif letter == "n":
                 key = "not_today"
+            elif letter == "m":
+                # Remember this (phase 4): the note kept as a thing to remember; Undo stays on the message.
+                key, fact_id = collection.keep_as_fact(record.get("item"))
+                if fact_id is not None:
+                    said = str(record.get("said") or "")
+                    shown = f"{said}\n\n{SENTENCES[key]}" if said else SENTENCES[key]
+                    markup = _new_record(records, chat_id, "kept", shown, [["u"]], item=record.get("item"),
+                                         fact=fact_id)
+            elif letter == "u" and record.get("kind") == "kept":
+                key = collection.unkeep_fact(record.get("item"), record.get("fact"))
             elif letter == "u" and record.get("kind") in ("item", "item_bare"):
                 key = collection.undo(record.get("item"))
             elif letter == "u" and record.get("kind") == "fact":
@@ -1703,7 +1738,7 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
             conn.close()
     said = str(record.get("said") or "")
     edit = f"{said}\n\n{SENTENCES[key]}" if said else SENTENCES[key]
-    return {"key": key, "answer": SENTENCES[key], "edit": edit, "job": job}
+    return {"key": key, "answer": SENTENCES[key], "edit": edit, "job": job, "markup": markup}
 
 
 def _first_line(text: str) -> str:

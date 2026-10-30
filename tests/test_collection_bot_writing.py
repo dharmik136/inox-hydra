@@ -92,7 +92,8 @@ def _words_on(bot):
 def test_saved_to_your_collection_offers_write_it_up_angles_and_undo(bot, provider):
     _saved(bot)
     _collect(bot)
-    assert _labels(bot) == ["Write it up", "3 angles", "Undo"]
+    # Phase 4: a note that fits a thing to remember carries Remember this too.
+    assert _labels(bot) == ["Write it up", "3 angles", "Remember this", "Undo"]
 
 
 def test_write_it_up_answers_at_once_and_says_when_the_draft_is_ready(bot, provider):
@@ -122,7 +123,7 @@ def test_angles_follow_the_creators_number_and_write_up_the_one_pressed(bot, pro
     _words_on(bot)
     assert bot["client"].put("/api/v1/writing/preferences", json={"angles": 4}).status_code == 200
     _collect(bot)
-    assert _labels(bot) == ["Write it up", "4 angles", "Undo"]
+    assert _labels(bot) == ["Write it up", "4 angles", "Remember this", "Undo"]
     bot["fake"].press_button("4 angles", OWNER)
     assert _until(lambda: _texts(bot)[-1].startswith(SAID["angles_here"])), _texts(bot)
     listed = _texts(bot)[-1]

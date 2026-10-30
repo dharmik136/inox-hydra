@@ -534,7 +534,8 @@ class TelegramIngressDaemon:
         elif item is not None:
             # Something to write from: Write it up and the angles; a link alone: Undo only.
             kind = "item" if (item.get("text") or "").strip() else "item_bare"
-            keyboard = self._buttons(chat_id, text, kind, item=item["id"])
+            keyboard = self._buttons(chat_id, text, kind, item=item["id"],
+                                     **({"rows": telegram_bot.item_rows(item)} if kind == "item" else {}))
         else:
             keyboard = None
         self.outbox.put(chat_id, text, keyboard, about=self._about(chat_id, about_item))
@@ -931,9 +932,12 @@ class TelegramIngressDaemon:
             self.outbox.put_call("editMessageReplyMarkup", params)
         elif isinstance(message_id, int):
             if done["edit"]:
-                # No reply_markup: the edit takes the message's buttons away.
-                self.outbox.put_call("editMessageText", {"chat_id": chat_id, "message_id": message_id,
-                                                         "text": done["edit"]})
+                # No reply_markup: the edit takes the message's buttons away,
+                # unless what was done has an Undo of its own (Remember this).
+                params = {"chat_id": chat_id, "message_id": message_id, "text": done["edit"]}
+                if done.get("markup"):
+                    params["reply_markup"] = done["markup"]
+                self.outbox.put_call("editMessageText", params)
             else:
                 self.outbox.put_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message_id})
         for text in done.get("send") or []:

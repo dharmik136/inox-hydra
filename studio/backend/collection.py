@@ -37,13 +37,14 @@ from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import unquote
 
 try:
-    from . import changes, desk_requests, phone_media, post_identity
+    from . import changes, desk_requests, phone_media, post_identity, remembered
     from .database import get_db
 except ImportError:
     import changes
     import desk_requests
     import phone_media
     import post_identity
+    import remembered
     from database import get_db
 
 KINDS = ("note", "idea", "forward", "post", "link", "bookmark", "photo", "voice")
@@ -80,6 +81,11 @@ GONE_SAID = "A draft since deleted in the studio"
 # A photo put in the media library, where the images for a post are kept.
 MEDIA_SAID = "In your media library"
 MEDIA_GONE_SAID = "Put in your media library, and since deleted there"
+# Phase 4, item 8: a note kept as a thing to remember, by the bot's Remember this.
+FACT_SAID = "Kept in your things to remember"
+FACT_GONE_SAID = "Kept in your things to remember, and since removed there"
+# The kinds whose words may become a thing to remember: the creator's own notes and ideas.
+FACT_KINDS = ("note", "idea")
 
 
 class Refused(ValueError):
@@ -180,6 +186,13 @@ def became(conn, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if item.get("media_asset_id"):
         held = conn.execute("SELECT 1 FROM media_assets WHERE id = ?", (item["media_asset_id"],)).fetchone()
         return {"kind": "media", "said": MEDIA_SAID if held else MEDIA_GONE_SAID}
+    if item.get("status") == "used" and item.get("kind") in FACT_KINDS:
+        try:
+            kept = conn.execute("SELECT 1 FROM remembered WHERE origin_ref = ?", (f"item:{item['id']}",)).fetchone()
+        except Exception:
+            kept = None
+        if kept is not None:
+            return {"kind": "fact", "said": FACT_SAID}
     if item.get("desk_request_id"):
         request = conn.execute("SELECT id, activity_urn, state, link FROM desk_requests WHERE id = ?",
                                (item["desk_request_id"],)).fetchone()
@@ -728,3 +741,62 @@ def forget(conn) -> None:
     except Exception:
         pass
     phone_media.forget()
+
+
+# ---------------------------------------------------------------------------
+# Remember this (phase 4, item 8): a note kept as a thing to remember
+# ---------------------------------------------------------------------------
+
+def fits_a_fact(item: Dict[str, Any]) -> bool:
+    """Whether an item's words may become a thing to remember: a note or an idea, within its length."""
+    if item.get("kind") not in FACT_KINDS or item.get("status") != "new":
+        return False
+    _about, words = remembered.parse_phone(item.get("text") or "")
+    return 0 < len(" ".join(words.split())) <= remembered.TEXT_MAX
+
+
+def keep_as_fact(item_id: Any):
+    """
+    Remember this: the item's words kept as a thing to remember (about you,
+    or what a prefix such as offer: says, as /remember reads it), tied to the
+    item it came from, and the item used. Returns (a key of
+    telegram_bot.SENTENCES, the fact's id or None).
+    """
+    conn = get_db()
+    try:
+        item = get(conn, int(item_id)) if str(item_id or "").isdigit() else None
+        if item is None:
+            return "undo_item_gone", None
+        if item["status"] != "new" or item["kind"] not in FACT_KINDS:
+            return "remember_used", None
+        about, words = remembered.parse_phone(item["text"])
+        try:
+            fact = remembered.add(words, about, "telegram", origin_ref=f"item:{item['id']}")
+        except remembered.Refused:
+            return "remember_long", None
+        if fact.get("origin_ref") != f"item:{item['id']}":
+            # The same words were kept already: nothing more is kept, and the item stays new.
+            return "remember_already", None
+        now = _now()
+        with conn:
+            conn.execute("UPDATE collection_items SET status = 'used', used_at = ?, updated_at = ? WHERE id = ? "
+                         "AND status = 'new'", (now, now, item["id"]))
+    finally:
+        conn.close()
+    changes.publish("collection")
+    return "remembered_item", fact["id"]
+
+
+def unkeep_fact(item_id: Any, fact_id: Any) -> str:
+    """Undo under Remember this: the thing to remember removed, and the item new again unless used since."""
+    remembered.remove(fact_id)
+    conn = get_db()
+    try:
+        with conn:
+            conn.execute("UPDATE collection_items SET status = 'new', used_at = NULL, updated_at = ? WHERE id = ? "
+                         "AND status = 'used' AND post_id IS NULL AND media_asset_id IS NULL",
+                         (_now(), int(item_id) if str(item_id or "").isdigit() else -1))
+    finally:
+        conn.close()
+    changes.publish("collection")
+    return "remember_undone"
