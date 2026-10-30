@@ -1667,10 +1667,14 @@ def _whole_posts(conn, record: Dict[str, Any]) -> List[str]:
 def press(data: Any, chat_id: Any) -> Dict[str, Any]:
     """
     A press of one of the bot's buttons, from the paired chat, in the open
-    profile. Returns {key, answer, edit, job}: the notice the phone shows,
-    the message's text to put in its place, its buttons gone, or None to
-    take only the buttons away (an old button, one already used), and what
-    is to be written beside the bot's loop, if anything (run_job). Acts once.
+    profile. Returns {key, answer, edit, job, markup}: the notice the phone
+    shows, the message's text to put in its place, its buttons gone, or None
+    to take only the buttons away (an old button, one already used), what is
+    to be written beside the bot's loop, if anything (run_job), and the
+    buttons the edited message keeps when what was done has an Undo of its
+    own (Remember this). A button that sends something (the whole post)
+    returns {kept: True, keep, send} instead: the message's other buttons,
+    which stay, and the messages to send. Acts once.
     """
     token, _dot, letter = str(data or "").partition(".")
     with _BUTTONS_LOCK:

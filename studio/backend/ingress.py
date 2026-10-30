@@ -796,11 +796,12 @@ class TelegramIngressDaemon:
                 logger.warning(f"Unauthorized ingress attempt from chat_id: {chat_id}")
                 return None
 
-        # A photo or a voice note is kept as it is (phase 3, item 4), never
-        # read. Only from Telegram: the local route has no file to fetch.
+        # A photo or a voice note is kept as it is (phase 3, item 4), and a
+        # document or a video since phase 4, never read. Only from Telegram:
+        # the local route has no file to fetch.
         media = phone_media.wanted(message) if from_telegram else None
         if not text and not media:
-            # A sticker, a document, a video: nothing of it is kept, and the
+            # A sticker, a location, a contact: nothing of it is kept, and the
             # chat is told. (A voice note once left a placeholder draft
             # promising a transcription that never came.)
             if from_telegram:

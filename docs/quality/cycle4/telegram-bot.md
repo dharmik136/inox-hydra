@@ -70,3 +70,84 @@ The real service: everything here runs against the fake, as in phase 1. In parti
 ### Suite
 
 As CI runs it, at the end, on 6d5e2a7, from 23:26 to 23:43 on this computer's clock, inside the default quiet hours: the interface built, then `pytest tests studio/tests -q -rs`, 4,267 passed, 0 failed, 17 skipped (each skip names a Windows or macOS primitive, a workstation's browser, or a missing yaml module, as in phase 1): phase 1's 4,216 and the 51 this phase added. Also, on the same code (6d5e2a7 changed tests only): flake8 with CI's selection, 0; `tools/sync_version.py --check`, in sync at 2.10.1; `tests/test_studio_backend.py`, all nine suites passed; `tools/ui_audit.py`, 68 screens, 0 with blocking findings. Before it the same suite ran twice: on 3163393, before 23:00, 4,267 passed; on fb365aa, across 23:00, 8 failed, which 6d5e2a7 fixed (above).
+
+## Phase 4
+
+The record of the fourth phase, asked for on 2026-10-30 ("see what more can be done in it") and written down before its code in [the phase 4 PRD](bot-phase4.md). Branch `qc4/bot-phase4`, from `8962bce` (2.12.0, schema 40). Twelve items, in the owner's order, each with a failing test first, the code, one guard falsified, and one commit. No independent review. The version stays 2.12.0.
+
+### How it is tested
+
+The fake Bot API (`tests/telegram_fake.py`) gained what this phase meets, each as Telegram does it: setMyCommands, getMyCommands and deleteMyCommands kept per scope with Telegram's limits (100 commands; 1 to 32 lowercase letters, digits and underscores; descriptions of 1 to 256 characters); `edit`, an edited_message update delivered only to a poll that asks for one; a refusal of a message over 4096 characters (counted in UTF-16 code units) and of a button whose callback_data is over 64 bytes; and one message-id sequence per chat both ways, as in Telegram, where the phone's messages and the bot's never share an id (they used to, which made a reply look like one of the bot's own messages). Documents, videos and albums go through the fake's getFile as photos did. The writing runs against the fake provider (`tests/ai_fake.py`). Nothing reaches the network.
+
+### Items
+
+Census in `tests/test_endpoint_reachability.py` as total paths / reached by the interface / unreachable.
+
+| Item | Commit | What changed for the creator | Test first | How the guard was falsified | Census | Suite at the commit |
+| --- | --- | --- | --- | --- | --- | --- |
+| The PRD | c285666 | Nothing yet: each item's build, place, storage, what may leave and under which switch, preferences and what was decided against; Telegram's rules quoted from the Bot API page | | | 240/192/48 | The docs suites, 89 passed |
+| 1. Seen working, truthfully | 09020b8 | The panel's orange "Not yet seen working" sentence goes once anything from the paired chat is in the profile (an item, a thing to remember, an ask), including what was saved before the marker existed; the marker is then set, so it stays. The moment a chat is paired is kept, so after a change of chat only what came after counts | `tests/test_telegram_bot_seen_working.py` (6) | The pairing moment ignored: the new chat-change test and the pairing suite's "goes with the chat" failed | 240/192/48 | Neighbours, 61 passed |
+| 2. Nothing lost silently | 20ebfe3 | The last successful check is kept in the bot's profile (at most once a minute, and when the worker stops). A check more than a day after the last one is told once on the bot ("Your studio did not check Telegram for your messages from ... until ..."), after quiet hours if it is quiet, whatever the notification switches say, and in the panel at once until **Got it**: never "lost", never a count. The panel says when Telegram was last checked; /status says when the studio last checked before the message; /help says the studio must run at least once a day | `tests/test_telegram_bot_gap.py` (12), the notice in a browser with axe in both themes | The gap never recorded: seven of the twelve failed | 241/193/48 (`/api/v1/ingress/gap/seen`) | The Telegram, collection and phone suites: 532 passed and 1 failed, phase 1's sentence rule (the notice carried times in a sentence over 200 characters); the notice moved out of SENTENCES, as the weekly summary is, and those files rerun, 41 passed |
+| 3. The "/" menu | 21c29ac | Typing / in the chat lists the bot's commands, registered with setMyCommands for the paired chat's scope only, through the egress check, counted without the token; again only when the chat or the list changes (a fingerprint is kept), a refusal tried again after ten minutes; another chat paired, or the bot removed or replaced, takes the menu away. /help's command lines are written from the same list. The panel says "The / menu in your chat: SET" | `tests/test_telegram_bot_menu.py` (9), the panel's row in a browser | The fingerprint ignored: "not sent again at every start" and "a changed list is registered once" failed | 241/193/48 | Neighbours, 92 passed |
+| 4. Post from the phone | 6f58012 | With the words switch on, "Draft ready" and a due post carry **Send me the whole post** (**Send me the posts** when several are due): the post as the studio holds it now, alone in a message, for press and hold, Copy; over 4096 characters it is cut between paragraphs, each part beginning "Part 1 of 2". The message keeps its other buttons. Off, no button, and a press on an older message says why | `tests/test_telegram_bot_whole_post.py` (11) | The switch not checked at the press: "a press on an older message after the switch went off" failed | 241/193/48 | 560 passed and 2 failed: the policy did not name Send me the posts, and a phase 3 test listed the Telegram methods without setMyCommands (item 3's, fixed inside its commit); both fixed and their files rerun, 41 passed |
+| 5. Shape a draft from the phone | 98f4bb8 | Under a draft the bot wrote (words switch on), the creator's rewrite buttons (Shorter, New opening, Another angle by default), each rewriting through their own provider beside the loop, grounded as every draft is; the draft changes in place only while it is unchanged since it was read; the text it replaced is kept on the draft (the ten newest), listed in the Composer with **Put it back in the editor**, and the bot's answer has **Undo**. An open Composer with nothing unsaved follows the change | `tests/test_telegram_bot_reshape.py` (19), `tests/test_telegram_bot_reshape_ui.py` (2, axe in both themes) | The "unchanged since it was read" condition dropped: "a draft changed at the desk while it was rewritten is kept" failed | 241/193/48 | 633 passed |
+| 6. Build an idea up | 21abe5e | A Telegram reply to the creator's message, or to the bot's answer about one, adds its words to that item instead of a new one, with **Undo**; a drafted item takes the words and the bot says the draft was not changed. "A reply adds to what it replies to", on by default, in the panel. The box says "from 3 of your messages" | `tests/test_telegram_bot_build_up.py` (16, with the migration and the table's custody), the switch and the box's line in a browser | The switch not read: "switched off, a reply is an item of its own" failed | 241/193/48 | 1,049 passed |
+| 7. Edits follow | 76169ca | The poll asks for edited_message. An edit updates the item it made, live, read as the message was; once used, the draft is kept and the bot says so; the box marks "edited on your phone". An edit from any other chat is refused like a stranger's message | `tests/test_telegram_bot_edits.py` (9), the box's mark in a browser | The paired-chat check on an edit dropped: "an edit from another chat is refused" failed | 241/193/48 | 1,059 passed |
+| 8. Remember this | cad0171 | Under "Saved to your collection.", a note or an idea that fits (300 characters) carries **Remember this**: its words become a thing to remember, the item is used ("Kept in your things to remember"), and **Undo** undoes both | `tests/test_telegram_bot_remember_this.py` (6) | The kinds it is offered for not checked: "not offered for a forward, a link or words too long" failed | 241/193/48 | 1,063 passed and 2 failed: phase 3's tests of the buttons under a note, which now list Remember this; updated and rerun, 17 passed |
+| 9. `/write` | e2831de | `/write pricing` or `/write #pricing`: one draft from the unused items that match, newest first, through Combine; nothing matching is said and nothing is asked. Combine's fixed ten is now the preference "Most items in one draft", read by Combine and /write | `tests/test_telegram_bot_write_command.py` (10), `tests/test_telegram_bot_write_ui.py` (1) | /write took used items too: "one draft from the unused items" failed | 241/193/48 | 1,077 passed |
+| 10. Everything in one box | 4e6890b | Albums arrive as one item, answered once; documents and videos are kept as they are, with their own names, within 20 MB, never read. A file the studio cannot show is a download only, never opened in its window. The box shows View and Download, plays a video, shows an album together; **Add to your media library** only for what the library takes (an image, a PDF as a carousel, an MP4 or WebM video), each checked by its first bytes | `tests/test_phone_files.py` (11, with the migration), `tests/test_phone_files_ui.py` (1) | A file stored under its own extension, so a web page was served as one: three tests failed | 241/193/48 | 1,105 passed and 3 failed: phase 3's tests that a document or a video is not kept and that only a photo goes into the library; updated and their files rerun, 46 passed |
+| 11. Text kept whole | c02a584 | A link hidden behind words (a text_link entity, UTF-16 offsets) is written into the words after them; a LinkedIn post link behind words is taken as a visible one. `/recall #tag` reads tags. A link's #fragment is no longer taken as a hashtag | `tests/test_telegram_bot_entities.py` (9) | The offsets read as Python characters: the emoji test failed | 241/193/48 | 1,379 passed |
+| 12. One line per failed check | 65e3554 | A failed check is logged once; a read timeout, a dropped connection and this computer's own egress switch are warnings, anything else an error; the token stays redacted | `tests/test_telegram_bot_logs.py` (3) | The loop logging every failure again: all three failed | 241/193/48 | The bot's and the ingress suites, 506 passed |
+
+"Suite at the commit" is the set run before that commit: the Telegram bot's, the collection's, the phone's, memory's, the ingress's and pairing's suites, the census, and every test that reads the writing preferences, the migration ledger or the custody lists, as each item touched them.
+
+### Migrations
+
+- **41** (item 6), `collection_messages`: one row per Telegram message about an item, the creator's own with the words it gave the item, and the bot's answers once Telegram took them, by chat and message id. Replies and edits name a message that way, and nothing kept held its id; changing `origin_ref` instead would have let a message handled again across the upgrade be kept twice. Counted in Storage with the collection, exported, removed with an item, Undo and Delete everything, kept in backups.
+- **42** (item 10), `collection_items` rebuilt for the kinds `document` and `video` (a CHECK constraint, which SQLite changes only by rebuilding the table), every row copied with its id and the id sequence carried over, so a removed item's id is never given again to an old button; and `media_group`.
+
+Both forward only, re-runnable, behind the automatic backup before any migration, each with a test that an older database gains it and a second run adds nothing, and neither named with a word an earlier migration's test finds it by.
+
+### Preferences added
+
+| Preference | Default | Set in | Read by |
+| --- | --- | --- | --- |
+| Rewrite buttons on your bot (`reshapes`) | Shorter ("Make it about a third shorter. Keep its point, its first line and its voice."), New opening ("Write a new first line for it, as the opening line preference says. Keep the rest as it is."), Another angle ("Rewrite it from another angle on the same notes, at about the same length."); up to six, labels up to 24 characters, instructions up to 200, none allowed | Brand, Writing; named on the Telegram panel | the bot's rewrite buttons |
+| Most items in one draft (`combine_at_most`) | 10 (the fixed limit until now), from 2 to 20 | Brand, Writing | Combine in Your collection, /write |
+| A reply adds to what it replies to | on | the Telegram panel | the bot |
+
+### Changed in earlier phases' tests, and why
+
+- Phase 1's /status test pinned "no digit at all": the owner asked for the last check time, so it now allows that one sentence and still refuses any figure.
+- Phase 2's and phase 3's tests that list the Telegram methods a press or a voice note involves now include setMyCommands, the menu (fixed inside item 3's commit, which first missed them).
+- Phase 3's tests of the buttons under a note now list **Remember this**; "a document or a video is not kept" became "a sticker is not kept"; "only a photo goes into the media library" now says what the library takes.
+
+### Decided against, while building
+
+- Saying anything about a gap under a day (Telegram still holds it all), or counting what may be missing.
+- A switch for the gap notice: it carries only times, once per gap, and a creator who ticked nothing needs it most.
+- The default command scope, and a list per language.
+- A link that opens LinkedIn with the post filled in: copy and paste, nothing automated.
+- Rewriting with the words switch off, a new draft per rewrite, and versions for every Composer save.
+- Matching a reply by its date or words; adding a photo to an item by replying with it.
+- Following an edit into a draft.
+- Remember this on a forward, a link or a file.
+- /write from used items.
+- A local Bot API server for files over 20 MB; reading any file.
+- Keeping bold or italic formatting; a separate column of links.
+
+### What remains unverified
+
+The real service: everything here runs against the fake. In particular, on the real Bot API: that setMyCommands with a chat scope shows in the phone's / menu at once; that a caption's edit arrives as edited_message (the Bot API page does not say so in words; `edited_message` is "New version of a message that is known to the bot and was edited"); how an album's messages are spread over getUpdates batches; and that the phone's long-press Copy takes the message's text exactly. The owner's checklist covers each, in "Phase 4 on your phone".
+
+### Found by the full suite, and fixed
+
+The full suite run at the end, at 02:22 UTC, failed two tests outside the bot, and both fail the same way on the released 8962bce (2.12.0): commit 533e0da. `tests/test_qc4_t4_health.py` placed two captures "20 days ago" three hours apart, measured back from the clock; a capture's day is its UTC date, so between 00:00 and 03:00 UTC they fell on two days. `tests/test_qc4_t7_asks_and_marks.py` expected "More of this" to write Hiring or Pricing, but the recurring words of the posts it seeds are "Changed" and "Pricing", and which card is shown depends on the day. Test-only fixes; both pass at the hour they failed, under five time zones.
+
+### Found while building, not fixed here
+
+`tests/test_privacy_page_is_the_policy.py` puts `tools/` first on `sys.path`, and `tools/library_bundle.py` then shadows the backend's `library_bundle` for a test run that imports `app` for the first time after it (running that file and `tests/test_telegram_bot_commands.py` alone, in that order, errors). The full suite imports `app` earlier, so CI never meets it.
+
+### Suite
+
+As CI runs it, at the end: the interface built, then `pytest tests studio/tests -q -rs`. The first run, on 65e3554, ending at 02:22 UTC: 4,492 passed, 2 failed, 17 skipped; the two failures were the clock-dependent tests above, which fail the same way on 8962bce, fixed in 533e0da. The second run, on 533e0da with this record and two comment corrections: 4,493 passed, 0 failed, 18 skipped (each skip names a Windows or macOS primitive, a workstation's browser, or a missing yaml module, as before; the eighteenth is `tests/test_qc2_r1_launcher.py`, which skips when the kernel leaves no TIME_WAIT on the port). 4,511 tests collected: phase 3's 4,375 and the 136 this phase added (129 in sixteen new files, 7 in the checklist's test). Also: flake8 with CI's selection, 0; `tools/sync_version.py --check`, in sync at 2.12.0; `tools/ui_audit.py` on a fresh install, 68 screens, 0 with blocking findings.
