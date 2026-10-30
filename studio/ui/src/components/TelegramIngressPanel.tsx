@@ -254,7 +254,7 @@ export function TelegramIngressPanel() {
               />
               <OptionRow
                 label="The bot may send me what it writes from my collection"
-                detail="When on, what Write it up and the angles make, and the morning idea, come to your phone with their words: a draft's first line, the angles, your idea's first line. Those words of yours then sit on Telegram's servers, as everything in the chat does. Off, the bot says only that it is done."
+                detail="When on, what Write it up and the angles make, and the morning idea, come to your phone with their words: a draft's first line, the angles, your idea's first line. Under a draft, and under a due post, Send me the whole post sends the post itself, to copy into the LinkedIn app. Those words of yours then sit on Telegram's servers, as everything in the chat does. Off, the bot says only that it is done."
                 checked={state.options.collection_words}
                 disabled={busy}
                 onChange={(on) =>

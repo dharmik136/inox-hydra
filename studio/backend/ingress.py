@@ -818,13 +818,22 @@ class TelegramIngressDaemon:
         if query_id:
             self.outbox.put_call("answerCallbackQuery", {"callback_query_id": query_id, "text": done["answer"]})
         message_id = held.get("message_id")
-        if isinstance(message_id, int):
+        if isinstance(message_id, int) and done.get("kept"):
+            # A button that sends something (phase 4): only it goes, the others stay.
+            params = {"chat_id": chat_id, "message_id": message_id}
+            if done.get("keep"):
+                params["reply_markup"] = done["keep"]
+            self.outbox.put_call("editMessageReplyMarkup", params)
+        elif isinstance(message_id, int):
             if done["edit"]:
                 # No reply_markup: the edit takes the message's buttons away.
                 self.outbox.put_call("editMessageText", {"chat_id": chat_id, "message_id": message_id,
                                                          "text": done["edit"]})
             else:
                 self.outbox.put_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message_id})
+        for text in done.get("send") or []:
+            # The post as it is, a message of its own, with nothing of the bot's around it.
+            self.outbox.put(chat_id, text)
         if done.get("job"):
             self._start_job(done["job"], chat_id)
 

@@ -102,7 +102,13 @@ WEEKLY_POSTS_SHOWN = 7
 # message of each kind carries. "a" says the creator's own number of angles
 # (writing.py), and a digit writes up the angle it numbers.
 BUTTON_LABELS = {"u": "Undo", "r": "Remind me in an hour", "d": "Done", "w": "Write it up", "a": "Angles",
-                 "n": "Not today"}
+                 "n": "Not today", "p": "Send me the whole post", "q": "Send me the posts"}
+# Phase 4, item 4: the buttons that send something and leave the message's
+# other buttons as they are (the post itself, for long-press, Copy).
+KEEPS_THE_REST = ("p", "q")
+# Telegram's limit for one message, "1-4096 characters after entities
+# parsing", counted in UTF-16 code units as Telegram counts its text.
+TELEGRAM_TEXT_MAX = 4096
 BUTTON_ROWS = {"undo": (("u",),), "item": (("w", "a"), ("u",)), "item_bare": (("u",),),
                "due": (("r",), ("d",)), "morning": (("w", "n"),), "fact": (("u",),)}
 # The bot may send what it writes from the collection (its words): off unless "on".
@@ -177,6 +183,12 @@ SENTENCES = {
     "press_failed": "Your studio could not do that. Open the studio to see why.",
     "drafts": "Drafts made from what you sent, in the last seven days: {count}.",
     "drafts_none": "No draft was made from what you sent in the last seven days.",
+    # Phase 4, item 4: the whole post, to copy and paste into the LinkedIn app.
+    "whole_sent": "Sent below as a message of its own: press and hold it, then Copy, and paste it into LinkedIn.",
+    "posts_sent": "Sent below, each post a message of its own: press and hold one, then Copy, and paste it into LinkedIn.",
+    "whole_off": ("Nothing was sent: your studio no longer sends your words here. Turn on The bot may send me what it "
+                  "writes from my collection under Local security."),
+    "whole_gone": "Nothing was sent: that post is no longer in your studio.",
     # Phase 3: everything sent lands in the collection.
     "collected": "Saved to your collection.",
     "bookmarked": "Saved to your collection as a bookmark. Your studio never opens other people's posts.",
@@ -1392,10 +1404,12 @@ def issue_buttons(chat_id: Any, kind: str, said: str, rows: Optional[List[List[s
     button's data is the message's opaque id and the button's letter, and
     nothing else.
     """
+    if rows is None and kind == "due":
+        rows = due_rows(len(target.get("due") or []))
     rows = [list(row) for row in (rows or BUTTON_ROWS[kind])]
     token = secrets.token_urlsafe(9)
     record = {"id": token, "kind": kind, "chat": str(chat_id), "at": _now(), "said": said, "used": None,
-              "letters": [letter for row in rows for letter in row]}
+              "letters": [letter for row in rows for letter in row], "rows": rows}
     record.update(target)
     with _BUTTONS_LOCK:
         conn = get_db()
@@ -1405,8 +1419,100 @@ def issue_buttons(chat_id: Any, kind: str, said: str, rows: Optional[List[List[s
             _write_json(conn, BUTTONS_KEY, records[-max(1, int(BUTTONS_KEPT)):])
         finally:
             conn.close()
+    return _keyboard(token, rows)
+
+
+def _keyboard(token: str, rows: List[List[str]]) -> Dict[str, Any]:
     return {"inline_keyboard": [[{"text": _label(letter), "callback_data": f"{token}.{letter}"}
-                                 for letter in row] for row in rows]}
+                                 for letter in row] for row in rows if row]}
+
+
+def due_rows(count: int) -> List[List[str]]:
+    """A due post's buttons: the post itself to copy, only while the words switch is on, then Remind and Done."""
+    rows = [list(row) for row in BUTTON_ROWS["due"]]
+    if collection_words_on() and count:
+        rows.insert(0, ["p" if count == 1 else "q"])
+    return rows
+
+
+def _units(text: str) -> int:
+    """A text's length as Telegram counts it: UTF-16 code units, so an emoji outside the basic plane is two."""
+    return len(text.encode("utf-16-le")) // 2
+
+
+_CUTS = (r"\n[ \t]*\n", r"\n", r" +")
+
+
+def _cut(text: str, room: int, level: int = 0):
+    """
+    (what came before it, piece) for each piece of `text` no longer than
+    `room`, cut at paragraphs, then lines, then spaces, and only a word
+    longer than a whole message anywhere, never inside a character.
+    """
+    if _units(text) <= room:
+        yield "", text
+        return
+    if level >= len(_CUTS):
+        piece, size = "", 0
+        for character in text:
+            width = 2 if ord(character) > 0xFFFF else 1
+            if piece and size + width > room:
+                yield "", piece
+                piece, size = "", 0
+            piece, size = piece + character, size + width
+        if piece:
+            yield "", piece
+        return
+    parts = re.split(f"({_CUTS[level]})", text)
+    before = ""
+    for index in range(0, len(parts), 2):
+        first = True
+        for inner, piece in _cut(parts[index], room, level + 1):
+            yield (before if first else inner), piece
+            first = False
+        before = parts[index + 1] if index + 1 < len(parts) else ""
+
+
+def whole_post_messages(text: str) -> List[str]:
+    """
+    A post as the messages that carry it whole (phase 4, item 4): itself, as
+    it is, when it fits in one; else parts cut at paragraph boundaries (then
+    lines, then spaces), each beginning "Part 1 of 2", none over Telegram's
+    limit.
+    """
+    post = (text or "").strip()
+    if not post:
+        return []
+    if _units(post) <= TELEGRAM_TEXT_MAX:
+        return [post]
+    room = TELEGRAM_TEXT_MAX - _units("Part 9999 of 9999\n\n")
+    pieces: List[str] = []
+    current = ""
+    for before, piece in _cut(post, room):
+        if current and _units(current) + _units(before) + _units(piece) <= room:
+            current += before + piece
+        else:
+            if current:
+                pieces.append(current)
+            current = piece
+    if current:
+        pieces.append(current)
+    return [f"Part {n} of {len(pieces)}\n\n{piece}" for n, piece in enumerate(pieces, 1)]
+
+
+def _whole_posts(conn, record: Dict[str, Any]) -> List[str]:
+    """The posts a message's Send me the whole post is about, as the studio holds them now."""
+    if record.get("kind") == "draft":
+        ids = [record.get("post")]
+    else:
+        ids = [str(key).split(":", 2)[1] for key in record.get("due") or [] if str(key).startswith("due:")
+               and str(key).count(":") >= 2]
+    found = []
+    for post_id in ids:
+        row = conn.execute("SELECT content FROM posts WHERE id = ?", (str(post_id or ""),)).fetchone()
+        if row and (row[0] or "").strip():
+            found.append(row[0].strip())
+    return found
 
 
 def press(data: Any, chat_id: Any) -> Dict[str, Any]:
@@ -1429,8 +1535,24 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 letters = [x for row in BUTTON_ROWS.get(record.get("kind"), ()) for x in row]
             if record is None or record.get("chat") != str(chat_id) or letter not in (letters or ()):
                 return {"key": "button_old", "answer": SENTENCES["button_old"], "edit": None}
-            if record.get("used"):
+            if record.get("used") or letter in (record.get("spent") or []):
                 return {"key": "button_used", "answer": SENTENCES["button_used"], "edit": None}
+            if letter in KEEPS_THE_REST:
+                # The post itself, to copy: only while the creator lets the bot
+                # send their words, and the message keeps its other buttons.
+                send: List[str] = []
+                if not collection_words_on():
+                    key = "whole_off"
+                else:
+                    posts = _whole_posts(conn, record)
+                    send = [part for post in posts for part in whole_post_messages(post)]
+                    key = ("whole_sent" if letter == "p" else "posts_sent") if posts else "whole_gone"
+                record["spent"] = list(record.get("spent") or []) + [letter]
+                _write_json(conn, BUTTONS_KEY, records)
+                rest = [[x for x in row if x not in record["spent"]] for row in
+                        (record.get("rows") or [[x] for x in letters])]
+                return {"key": key, "answer": SENTENCES[key], "edit": None, "job": None, "send": send,
+                        "keep": _keyboard(token, rest) if any(rest) else None, "kept": True}
             job = None
             if letter in ("w", "a") or letter.isdigit():
                 # Something to write: never in the bot's loop, and only with a provider.
@@ -1503,7 +1625,8 @@ def run_job(job: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, 
         return text, issue_buttons(chat_id, "angles", text, rows=rows, item=job.get("item"), angles=offered)
     if not words:
         return SENTENCES["draft_ready"], None
-    return SENTENCES["draft_ready_words"] + "\n\n" + _first_line(result.get("content") or ""), None
+    text = SENTENCES["draft_ready_words"] + "\n\n" + _first_line(result.get("content") or "")
+    return text, issue_buttons(chat_id, "draft", text, rows=[["p"]], post=result.get("id"))
 
 
 def _undo(conn, draft_id: Any) -> str:

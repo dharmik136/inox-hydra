@@ -99,6 +99,10 @@ What is kept is only what you sent: a draft or an angle that carries a figure, o
 
 **The bot may send me what it writes from my collection**, in the panel, is off until you tick it. Off, the bot says only "Draft ready in your studio." or that the angles are ready in your studio. On, its message carries what was written: a draft's first line, or the angles, each with a **Write up** button. Those words of yours then sit on Telegram's servers, as everything in the chat does.
 
+### Post from your phone
+
+With that switch on, "Draft ready in your studio. It begins:" carries **Send me the whole post**, and so does "A post in your queue is due now." and its reminder (**Send me the posts** when several are due). Press it and the bot sends the post as your studio holds it now, changes you made at the desk included, as a message of its own with nothing else in it: press and hold it, choose **Copy**, and paste it into the LinkedIn app. Nothing is posted for you, and nothing reaches LinkedIn from the studio. The message keeps its other buttons. A post longer than one Telegram message (4,096 characters, more than LinkedIn takes in one post) comes in parts, cut between paragraphs, each beginning "Part 1 of 2": copy each without that line. With the switch off the button is not there, and pressing it on an older message says why and sends nothing.
+
 | What happened | The bot says |
 | --- | --- |
 | You pressed **Write it up** | Writing it up in your studio. |
@@ -208,6 +212,7 @@ These messages carry buttons, which you press in Telegram:
 | "Saved as a draft in your studio." | **Undo** | Removes that draft from your studio, and its line in your collection, while it is untouched there: still a draft, with the words, tags and media the bot saved, never queued or published. A draft you changed is kept |
 | "A post in your queue is due now." | **Remind me in an hour** | The bot tells you again in an hour, if the post is still due then, with the same two buttons |
 | The same | **Done** | Clears the reminder, and that is all: nothing is marked as posted, and nothing is done on LinkedIn. The post stays due in your studio until you post it |
+| The same, and "Draft ready in your studio. It begins:", with **The bot may send me what it writes from my collection** on | **Send me the whole post**, or **Send me the posts** when several are due | Sends each post as a message of its own, to copy into the LinkedIn app. See [Post from your phone](#post-from-your-phone). The message keeps its other buttons |
 
 After a press your phone shows a short notice, the message says under its first words what became of it, and its buttons go:
 
@@ -222,6 +227,10 @@ After a press your phone shows a short notice, the message says under its first 
 | **Remind me in an hour** | I will remind you in an hour if it is still due. |
 | An hour later, still due | Reminder: a post in your queue is still due. Open your studio to post it. |
 | **Done** | Reminder cleared. Nothing was marked as posted: it stays due in your studio until you post it. |
+| **Send me the whole post** | Sent below as a message of its own: press and hold it, then Copy, and paste it into LinkedIn. |
+| **Send me the posts** | Sent below, each post a message of its own: press and hold one, then Copy, and paste it into LinkedIn. |
+| Either, after you turned the switch off | Nothing was sent: your studio no longer sends your words here. Turn on The bot may send me what it writes from my collection under Local security. |
+| Either, for a post deleted in the studio since | Nothing was sent: that post is no longer in your studio. |
 | A button pressed a second time | That button was already used, so nothing more was done. |
 | A button the studio no longer knows, such as one from long ago, or from before you deleted everything | That button is old, so nothing was done. |
 | A press your studio could not carry out, after three tries | Your studio could not do that. Open the studio to see why. |

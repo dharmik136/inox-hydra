@@ -16,7 +16,9 @@ What it does, as the Bot API does:
                remembered, as Telegram remembers it, and only those kinds
                of update are delivered
   sendMessage  records the chat, the text and any inline keyboard, and
-               answers with a message
+               answers with a message; refuses a text over 4096 characters
+               (counted in UTF-16 code units, as Telegram counts) and a
+               button whose callback_data is over 64 bytes, as Telegram does
   answerCallbackQuery
                answers a button press once, with an optional notice; a
                press answered twice, or never pressed, is refused as
@@ -452,6 +454,16 @@ class FakeTelegram:
         markup = params.get("reply_markup") or None
         if isinstance(markup, str):
             markup = json.loads(markup) or None
+        text = str(params.get("text") or "")
+        if not text or len(text.encode("utf-16-le")) // 2 > 4096:
+            return self._answer(handler, 400, {"ok": False, "error_code": 400,
+                                               "description": "Bad Request: message is too long" if text
+                                               else "Bad Request: message text is empty"})
+        for row in (markup or {}).get("inline_keyboard") or []:
+            for button in row:
+                if not 1 <= len(str(button.get("callback_data") or "").encode("utf-8")) <= 64:
+                    return self._answer(handler, 400, {"ok": False, "error_code": 400,
+                                                       "description": "Bad Request: BUTTON_DATA_INVALID"})
         with self._cond:
             message_id = len(self.sent) + 1
             self.sent.append({"chat_id": chat, "text": params.get("text"), "params": dict(params),
