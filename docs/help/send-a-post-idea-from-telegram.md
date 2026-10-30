@@ -55,7 +55,9 @@ Send the bot a message. You can start it with a prefix, in any letter case. Noth
 | A video, a round video message, or a GIF | Your collection, as a video, kept as it is and never transcribed |
 | A sticker, a location, a contact or other message with no text | Nothing. It is skipped |
 
-Any `#hashtag` in the text is one of the item's tags, up to 30, and its topic is the first of your own topics from Setup ("What you write about") that its words name, or else its first hashtag. An em dash in your message is saved as ` -- `.
+A link you hid behind words in Telegram (words you made into a link) is kept too: its address is written into the item's words right after them, and a LinkedIn post link behind words is taken as if you had pasted it, so one of your posts is asked for on Today and anyone else's is a bookmark, without the name and words its address carries. The same goes for a caption.
+
+Any `#hashtag` in the text is one of the item's tags, up to 30 (a link's `#fragment` is not one), and its topic is the first of your own topics from Setup ("What you write about") that its words name, or else its first hashtag. An em dash in your message is saved as ` -- `.
 
 > [!WARNING]
 > `Schedule <when>:` does not schedule anything. The time is read but not stored, and the post is saved as an ordinary draft. Voice notes are kept as they are, and never transcribed.
@@ -185,7 +187,7 @@ The commands are in Telegram's **/** menu of your chat too: type `/` in the chat
 | `/drafts` | How many drafts were made from what you sent in the last seven days: "Drafts made from what you sent, in the last seven days: 5." A `Draft:` message, or an item you used as a draft. A count, never their words |
 | `/remember something` | It is kept in your things to remember, with **Undo** under the answer. See [Things to remember](#things-to-remember) |
 | `/forget words` | The one thing to remember that holds those words is removed; with several, nothing is, and the bot says how many |
-| `/recall word` | How many items in your collection hold the word, and their first lines only with **The bot may send me what it writes from my collection** on |
+| `/recall word` | How many items in your collection hold the word, as a word or a tag, and their first lines only with **The bot may send me what it writes from my collection** on. `/recall #tag` counts the items that carry the tag |
 | `/write word` or `/write #tag` | One draft from the unused items in your collection that hold the word, or carry the tag, newest first, up to your **Most items in one draft**, through your own AI provider as **Combine** writes: "Writing one post from 3 items in your collection.", then "Draft ready in your studio." Those items are then used. Nothing matching: "Nothing new in your collection holds that word, so nothing was written." |
 | Any other command | "I do not know that command. Send /help to see what I do." |
 

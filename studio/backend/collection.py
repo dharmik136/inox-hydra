@@ -121,9 +121,9 @@ def clean_links(text: str) -> str:
 
 
 def hashtags(text: str) -> List[str]:
-    """The words' hashtags, lower case, each once, in the order written."""
+    """The words' hashtags, lower case, each once, in the order written; a link's #fragment is not one."""
     seen: List[str] = []
-    for tag in HASHTAG.findall(text or ""):
+    for tag in HASHTAG.findall(re.sub(r"https?://\S+", " ", text or "")):
         tag = tag.lower()
         if tag not in seen:
             seen.append(tag)
@@ -759,16 +759,29 @@ def unused_matching(asked: str, most: int) -> List[Dict[str, Any]]:
 
 
 def matching(word: str) -> List[Dict[str, Any]]:
-    """/recall: the items whose words hold a word, newest first."""
-    words = re.findall(r"\w+", (word or "").lower())
-    if not words:
+    """
+    /recall: the items whose words hold a word, or that carry it as a tag,
+    newest first; "#tag" asks for the tag (phase 4).
+    """
+    asked = (word or "").strip()
+    tag = asked[1:].strip().lower() if asked.startswith("#") else None
+    words = re.findall(r"\w+", asked.lower()) if tag is None else []
+    if not (tag or words):
         return []
     conn = get_db()
     try:
         found = []
-        for row in conn.execute("SELECT * FROM collection_items WHERE TRIM(text) != '' ORDER BY received_at DESC, id DESC"):
-            held = set(re.findall(r"\w+", row["text"].lower()))
-            if all(w in held for w in words):
+        for row in conn.execute("SELECT * FROM collection_items ORDER BY received_at DESC, id DESC"):
+            try:
+                tags = [str(t).lower() for t in json.loads(row["tags"] or "[]")]
+            except (TypeError, ValueError):
+                tags = []
+            if tag is not None:
+                if tag in tags:
+                    found.append(_row(conn, row))
+                continue
+            held = set(re.findall(r"\w+", (row["text"] or "").lower())) | set(tags)
+            if (row["text"] or "").strip() and all(w in held for w in words):
                 found.append(_row(conn, row))
         return found
     finally:

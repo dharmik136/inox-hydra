@@ -737,7 +737,9 @@ class TelegramIngressDaemon:
             return None
 
         chat_id = str(message.get("chat", {}).get("id", ""))
-        text = message.get("text", "")
+        # Links hidden behind words are kept in them (phase 4).
+        text = with_hidden_links(message.get("text", ""), message.get("entities")) if from_telegram else \
+            message.get("text", "")
 
         # The whitelist is not optional.
         #
@@ -824,7 +826,9 @@ class TelegramIngressDaemon:
             if added is not None:
                 stored, question, answer = added, False, telegram_bot.added_sentence(added["item"])
             elif media:
-                stored = self._store_media(media, message.get("caption"), _origin(update, from_telegram),
+                stored = self._store_media(media, with_hidden_links(message.get("caption"),
+                                                                    message.get("caption_entities")),
+                                           _origin(update, from_telegram),
                                            group=message.get("media_group_id"), chat_id=chat_id,
                                            message_id=message.get("message_id"))
                 question, answer = False, telegram_bot.answer_for(stored)
@@ -883,7 +887,8 @@ class TelegramIngressDaemon:
     def _edit_item(chat_id: str, message: Dict[str, Any]):
         """(the answer's key, the item) for an edit: its words read as its message was, then put on its item."""
         held = collection.message_of(chat_id, message.get("message_id"))
-        text, caption = message.get("text"), message.get("caption")
+        text = with_hidden_links(message.get("text"), message.get("entities"))
+        caption = with_hidden_links(message.get("caption"), message.get("caption_entities"))
         if held is None or (not isinstance(text, str) and not isinstance(caption, str)):
             return "edit_nothing", None
         if not isinstance(text, str):
@@ -1413,6 +1418,43 @@ ingress_daemon = TelegramIngressDaemon()
 # ---------------------------------------------------------------------------
 # The settings behind the Local security panel (cycle 4, decision D6)
 # ---------------------------------------------------------------------------
+
+_WEB_ADDRESS = re.compile(r"^https?://\S+$", re.IGNORECASE)
+
+
+def with_hidden_links(text: Any, entities: Any) -> Any:
+    """
+    A message's words with every link hidden behind words written in after
+    them (phase 4, item 11): Telegram sends a text_link entity beside the
+    text, never in it, with its offset and length in UTF-16 code units, so
+    the address was lost. Only a web address is written in; one already in
+    the words is left as it is. Anything else comes back unchanged.
+    """
+    if not isinstance(text, str) or not isinstance(entities, list):
+        return text
+    units = text.encode("utf-16-le")
+    found = []
+    for entity in entities:
+        if not isinstance(entity, dict) or entity.get("type") != "text_link":
+            continue
+        url = str(entity.get("url") or "").strip()
+        if not _WEB_ADDRESS.match(url) or url in text:
+            continue
+        try:
+            end = int(entity.get("offset")) + int(entity.get("length"))
+        except (TypeError, ValueError):
+            continue
+        if 0 < end * 2 <= len(units):
+            found.append((end, url))
+    # From the last to the first, so each earlier offset still holds.
+    for end, url in sorted(set(found), reverse=True):
+        try:
+            before, after = units[:end * 2].decode("utf-16-le"), units[end * 2:].decode("utf-16-le")
+        except UnicodeDecodeError:
+            continue
+        units = (before + " " + url + after).encode("utf-16-le")
+    return units.decode("utf-16-le")
+
 
 def _origin(update: Dict[str, Any], from_telegram: bool) -> Optional[str]:
     """
