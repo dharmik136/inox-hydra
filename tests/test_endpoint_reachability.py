@@ -455,8 +455,14 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # (/api/v1/collection/{item_id}/media), which the collection level presses.
 # Total 239 -> 240, reached 191 -> 192, unreachable stays 48.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 240
-REACHED_BY_INTERFACE = 192
+# ---------------------------------------------------------------------------
+# Phase 4 of the Telegram bot, item 2: Got it under the notice of a day the
+# studio did not check Telegram (/api/v1/ingress/gap/seen), which the
+# Telegram panel presses. Total 240 -> 241, reached 192 -> 193, unreachable
+# stays 48.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 241
+REACHED_BY_INTERFACE = 193
 UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

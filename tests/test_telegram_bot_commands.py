@@ -119,10 +119,13 @@ def test_status_says_whether_the_studio_and_the_bridge_are_running_with_no_figur
     _saved(bot)
     [quiet] = _ask(bot, "/status")
     assert quiet.startswith("Your studio is running.") and "bridge" in quiet
-    assert not re.search(r"\d", quiet), "the status carried a figure"
+    # Phase 4: the one time it carries is when the studio last checked Telegram
+    # before the message (the owner asked for it); still no figure.
+    said = re.sub(r" Before this message, it last checked Telegram for your messages .*\.$", "", quiet)
+    assert not re.search(r"\d", said), "the status carried a figure"
     bot["client"].post("/api/v1/bridge/heartbeat", json={"extension_version": "test"})
     _ask(bot, "/status", count=2)
-    assert _texts(bot)[1] == "Your studio is running. " + SAID["bridge_connected"]
+    assert _texts(bot)[1].startswith("Your studio is running. " + SAID["bridge_connected"])
 
 
 def test_a_command_it_does_not_know_says_how_to_see_what_it_does(bot):

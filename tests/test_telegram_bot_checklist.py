@@ -109,3 +109,18 @@ def test_the_memory_steps_quote_the_bot_and_the_studio():
     assert "Things to remember" in article and "Things to remember" in remember
     for words in ("What this draft was written from", "From your collection", "Add to the draft"):
         assert words in article and words in composer, words
+
+
+def _panel():
+    return open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "TelegramIngressPanel.tsx"),
+                encoding="utf-8").read()
+
+
+def test_phase_4_seen_working_and_a_day_not_checked_quote_the_bot_and_the_panel():
+    """Phase 4, items 1 and 2: the orange sentence, the last check, the notice of a day not checked."""
+    import ingress
+    article = _article()
+    assert ingress.NOT_YET_TESTED.split(":")[0] in article
+    assert telegram_bot.GAP_NOTICE.split(" from {start}")[0] in article
+    for words in ("Last checked Telegram", "A DAY THE STUDIO DID NOT CHECK TELEGRAM", "Got it"):
+        assert words in article and words in _panel(), words

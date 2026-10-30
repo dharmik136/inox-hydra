@@ -4167,6 +4167,14 @@ export interface IngressSettings {
   /** Why the bot's last message to Telegram did not go, in plain words; null when it went. */
   last_send_error: string | null;
   replies_waiting: number;
+  /** The last time Telegram answered the studio's check for messages; null before the first. */
+  last_check_at: string | null;
+  /**
+   * A day the studio did not check Telegram (phase 4): when it last checked,
+   * when it checked again, the moment a day before that, and the server's own
+   * words for it. Shown until Got it; null when there is none.
+   */
+  gap: { from: string; to: string; since: string; said: string } | null;
 }
 
 export async function fetchIngressSettings(): Promise<IngressSettings> {
@@ -4182,6 +4190,11 @@ export async function fetchIngressSettings(): Promise<IngressSettings> {
 export async function sendIngressTestMessage(): Promise<{ sent: boolean; said: string }> {
   const data = await call<{ sent?: boolean; said?: string }>("/api/v1/ingress/test-message", { method: "POST" });
   return { sent: !!data.sent, said: data.said ?? "" };
+}
+
+/** Got it, under the notice of a day the studio did not check Telegram: the panel stops showing it. */
+export async function seeIngressGap(): Promise<IngressSettings> {
+  return call<IngressSettings>("/api/v1/ingress/gap/seen", { method: "POST" });
 }
 
 /** Saves the switches sent; a switch left out keeps its value. */

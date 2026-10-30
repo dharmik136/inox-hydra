@@ -114,6 +114,18 @@ MORNING_DAYS, MORNING_HOUR = (0, 1, 2, 3, 4), 8
 
 # The worker looks for something to tell between polls, at most this often.
 NOTIFY_EVERY_SECONDS = 60.0
+
+# Phase 4, item 2: Telegram keeps a bot's incoming messages for at most a
+# day ("they will not be kept longer than 24 hours", the Bot API's
+# getUpdates), so a check more than a day after the last one may have missed
+# something, which the studio cannot see and never counts. The time of the
+# last successful check is kept in the bot's profile, written at most once
+# a minute and when the worker stops; a gap is kept as one notice, told once
+# on the bot (waiting for quiet hours) and shown in the panel until Got it.
+CHECKED_KEY = "telegram_checked_at"
+CHECKED_WRITTEN_EVERY_SECONDS = 60.0
+GAP_KEY = "telegram_gap"
+TELEGRAM_KEEPS_HOURS = 24.0
 # A reading this old counts as "about 24 hours", and is told only while the
 # post is still under two days old.
 DAY_READING_HOURS = (20.0, 30.0)
@@ -204,6 +216,15 @@ SENTENCES = {
     "empty_recall": "Send /recall with a word, for example /recall pricing.",
 }
 
+# Phase 4, item 2: two messages that carry times, the studio's own and on the
+# computer's clock, kept apart from SENTENCES as the weekly summary is. The
+# notice never says a message was lost, and never counts any: the studio
+# cannot know what Telegram did not keep.
+GAP_NOTICE = ("Your studio did not check Telegram for your messages from {start} until {end}, on your computer's "
+              "clock. Telegram keeps a bot's messages for one day, so anything you sent before {since} may not have "
+              "arrived. Send again whatever is missing from Your collection.")
+CHECKED_BEFORE = "Before this message, it last checked Telegram for your messages {ago} ({when} on your computer's clock)."
+
 # Where a figure was read, as /today says it.
 SOURCE_WORDS = {
     "post_analytics": "on its analytics page",
@@ -238,6 +259,9 @@ HELP = "\n".join((
     "",
     "Press Undo under my answer to take it back, while it is still new in your studio.",
     "",
+    "Your studio must run at least once a day: Telegram keeps my messages for one day, so anything you send while "
+    "it is off for longer may never arrive.",
+    "",
     "To pair a chat: in your studio, open Settings, then Local security, and press This is me beside it.",
     "",
     "I send your own words back only if you allow it in your studio, your figures only if you allow them, and "
@@ -257,8 +281,26 @@ def parse_command(text: str) -> Optional[Tuple[str, str]]:
     return found.group(1).lower(), (found.group(2) or "").strip()
 
 
-def status_sentence() -> str:
-    """/status: whether the studio and its bridge are running. No figure, no time, no count."""
+def clock(when: datetime) -> str:
+    """A moment on the computer's own clock, as the bot says it: "Thu 29 Oct, 18:02"."""
+    return when.astimezone().strftime("%a %d %b, %H:%M")
+
+
+def checked_before(previous: Optional[datetime]) -> Optional[str]:
+    """/status's word on the check before the message it answers, or None when there was none (phase 4)."""
+    if previous is None:
+        return None
+    seconds = (datetime.now(timezone.utc) - previous).total_seconds()
+    said = "moments ago" if seconds < 60 else ago(previous)
+    return CHECKED_BEFORE.format(ago=said, when=clock(previous))
+
+
+def status_sentence(previous: Optional[datetime] = None) -> str:
+    """
+    /status: whether the studio and its bridge are running, and, since phase
+    4, when the studio last checked Telegram before the message it answers.
+    No figure, no count.
+    """
     try:
         from . import onboarding
     except ImportError:
@@ -273,7 +315,8 @@ def status_sentence() -> str:
         said = SENTENCES["bridge_quiet"]
     else:
         said = SENTENCES["bridge_never"]
-    return f"Your studio is running. {said}"
+    before = checked_before(previous)
+    return f"Your studio is running. {said}" + (f" {before}" if before else "")
 
 # A chat the bot refused is answered at most this often, so a stranger who
 # writes twenty times is answered once, and the owner who writes twice before
@@ -645,6 +688,104 @@ def _setting(key: str) -> Optional[str]:
     finally:
         conn.close()
     return row["value"] if row else None
+
+
+def last_checked() -> Optional[datetime]:
+    """The last successful check of Telegram kept in the open profile, or None (phase 4, item 2)."""
+    return _instant(_setting(CHECKED_KEY))
+
+
+def note_checked(now: datetime, before: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
+    """
+    Keeps the time of a successful check in the open profile, and, when the
+    check before it was more than a day earlier (`before`), the notice of
+    that gap: when the studio last checked, when it checked again, and the
+    moment a day before, since Telegram keeps a bot's messages for one day.
+    The write wakes no window. Returns the notice, if one was kept.
+    """
+    gap = None
+    if before is not None and (now - before).total_seconds() > TELEGRAM_KEEPS_HOURS * 3600:
+        gap = {"from": before.astimezone(timezone.utc).isoformat(), "to": now.astimezone(timezone.utc).isoformat(),
+               "since": (now - timedelta(hours=TELEGRAM_KEEPS_HOURS)).astimezone(timezone.utc).isoformat(),
+               "bot": "waiting", "panel": "shown"}
+    conn = get_db()
+    try:
+        with conn:
+            _upsert(conn, CHECKED_KEY, now.astimezone(timezone.utc).isoformat())
+            if gap is not None:
+                _upsert(conn, GAP_KEY, json.dumps(gap))
+    finally:
+        conn.close()
+    # No window reads again for it: the panel reads its line, and any notice, when it is opened.
+    changes.derived_written()
+    return gap
+
+
+def _upsert(conn, key: str, value: str) -> None:
+    conn.execute("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP", (key, value))
+
+
+def _gap(raw: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    try:
+        held = json.loads((raw if raw is not None else _setting(GAP_KEY)) or "null")
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(held, dict) or not all(_instant(held.get(k)) for k in ("from", "to", "since")):
+        return None
+    return held
+
+
+def _gap_changed(field: str, was: str, now: str) -> Optional[Dict[str, Any]]:
+    """
+    Sets one of the notice's two marks, only on the notice as it was read:
+    the worker tells it while the panel may say Got it, or the bot may be
+    removed, so a notice deleted meanwhile is never written back. Returns the
+    notice as it was, or None when there was none to change.
+    """
+    raw = _setting(GAP_KEY)
+    gap = _gap(raw)
+    if gap is None or gap.get(field) != was:
+        return None
+    changed = dict(gap, **{field: now})
+    conn = get_db()
+    try:
+        with conn:
+            done = conn.execute("UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ? "
+                                "AND value = ?", (json.dumps(changed), GAP_KEY, raw)).rowcount
+    finally:
+        conn.close()
+    return gap if done else None
+
+
+def gap_sentence(gap: Dict[str, Any]) -> str:
+    """The notice in words: three times on the computer's clock. Never a count, never a claim of loss."""
+    return GAP_NOTICE.format(start=clock(_instant(gap["from"])), end=clock(_instant(gap["to"])),
+                                   since=clock(_instant(gap["since"])))
+
+
+def gap_shown() -> Optional[Dict[str, Any]]:
+    """The gap notice as the panel shows it until Got it, with its words; None when there is none to show."""
+    gap = _gap()
+    if gap is None or gap.get("panel") == "seen":
+        return None
+    return {"from": gap["from"], "to": gap["to"], "since": gap["since"], "said": gap_sentence(gap)}
+
+
+def gap_seen() -> None:
+    """Got it, in the panel: the notice is not shown again. The bot's message is not affected."""
+    _gap_changed("panel", "shown", "seen")
+
+
+def gap_to_tell() -> Optional[str]:
+    """The gap notice for the bot to send, once: marked told as it is handed over. None when there is none."""
+    gap = _gap_changed("bot", "waiting", "told")
+    return gap_sentence(gap) if gap else None
+
+
+def forget_checks(conn) -> None:
+    """A new bot, or none: another bot's last check, and its notice, say nothing about this one."""
+    conn.execute("DELETE FROM settings WHERE key IN (?, ?)", (CHECKED_KEY, GAP_KEY))
 
 
 def replies_on() -> bool:

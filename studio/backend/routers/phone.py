@@ -82,6 +82,16 @@ def post_ingress_test_message():
     return ingress.send_test_message()
 
 
+@router.post("/api/v1/ingress/gap/seen", tags=["Phone"])
+def post_ingress_gap_seen():
+    """
+    Got it, under the notice that the studio did not check Telegram for more
+    than a day: the panel stops showing it. The bot's own message about it
+    is sent once either way.
+    """
+    return ingress.gap_seen()
+
+
 @router.post("/api/v1/ingress/options", tags=["Phone"])
 def post_ingress_options(payload: IngressOptionsPayload):
     """

@@ -329,6 +329,13 @@ class TelegramIngressDaemon:
         self.outbox = telegram_bot.Outbox()
         self._answered_refusals: Dict[str, float] = {}
         self._last_notify_check = 0.0
+        # Phase 4, item 2: the last successful check (a getUpdates Telegram
+        # answered), on the wall clock, which goes on while a computer sleeps;
+        # the one before the batch being handled, for /status; and when the
+        # last check was last written to the bot's profile.
+        self.last_ok_at: Optional[datetime] = None
+        self.previous_ok_at: Optional[datetime] = None
+        self._checked_written_at: Optional[datetime] = None
 
     def configure(self, bot_token: str, authorized_chat_id: str, origin: Optional[str],
                   profile_id: Optional[str] = None) -> None:
@@ -350,6 +357,10 @@ class TelegramIngressDaemon:
             self.refused_chats = {}
             self.outbox.clear()
             self._answered_refusals = {}
+            # Another bot's last check says nothing about this one's messages.
+            self.last_ok_at = None
+            self.previous_ok_at = None
+            self._checked_written_at = None
         self.bot_token = token
         self.authorized_chat_id = authorized_chat_id or ""
         # A chat now saved is no longer asked about.
@@ -359,6 +370,50 @@ class TelegramIngressDaemon:
         self.consecutive_errors = 0
         self.rate_limited_until = 0.0
         self.last_error = None
+        if self.last_ok_at is None and self.configured_from == "settings" and self.profile_id:
+            # A restart: the last check this bot's profile kept, so a day the
+            # studio was off is noticed at its first check.
+            try:
+                with self._bots_profile():
+                    self.last_ok_at = telegram_bot.last_checked()
+            except Exception:
+                self.last_ok_at = None
+
+    def _note_check(self, now: datetime) -> None:
+        """
+        A successful check: kept in memory at once, and in the bot's profile
+        at most once a minute, or at once when it comes more than a day after
+        the one before, which is then kept as the gap's notice (phase 4).
+        Never raises: the check itself went well.
+        """
+        before = self.last_ok_at
+        self.previous_ok_at = before
+        self.last_ok_at = now
+        if not (self.configured_from == "settings" and self.profile_id):
+            return
+        gap = before is not None and (now - before).total_seconds() > telegram_bot.TELEGRAM_KEEPS_HOURS * 3600
+        written = self._checked_written_at
+        if not gap and written is not None and (now - written).total_seconds() < telegram_bot.CHECKED_WRITTEN_EVERY_SECONDS:
+            return
+        try:
+            with self._bots_profile():
+                telegram_bot.note_checked(now, before if gap else None)
+            self._checked_written_at = now
+        except Exception as error:
+            logger.warning("The time of the last check could not be kept: %s", type(error).__name__)
+
+    def _keep_last_check(self) -> None:
+        """When the worker stops: the last check as it was, so a restart measures from it."""
+        if self.last_ok_at is None or not (self.configured_from == "settings" and self.profile_id):
+            return
+        if self._checked_written_at is not None and self._checked_written_at >= self.last_ok_at:
+            return
+        try:
+            with self._bots_profile():
+                telegram_bot.note_checked(self.last_ok_at)
+            self._checked_written_at = self.last_ok_at
+        except Exception as error:
+            logger.warning("The time of the last check could not be kept: %s", type(error).__name__)
 
     def is_quiet_hours(self, current_time: Optional[datetime] = None) -> bool:
         """
@@ -536,7 +591,10 @@ class TelegramIngressDaemon:
                 # told, and everything waiting goes at the first check after.
                 if telegram_bot.in_quiet_hours():
                     return
-                said = telegram_bot.notifications()
+                # A day not checked (phase 4): told once, whatever the
+                # notification switches say, and before anything else.
+                gap = telegram_bot.gap_to_tell()
+                said = ([{"text": gap, "due": None}] if gap else []) + telegram_bot.notifications()
         except Exception as error:
             logger.warning("The bot's notifications could not be read: %s", type(error).__name__)
             return
@@ -742,7 +800,7 @@ class TelegramIngressDaemon:
         if name in ("start", "help"):
             return done, telegram_bot.HELP, True
         if name == "status":
-            return done, telegram_bot.status_sentence(), True
+            return done, telegram_bot.status_sentence(self.previous_ok_at if from_telegram else self.last_ok_at), True
         if name == "drafts":
             # A count of the creator's own drafts, never their words.
             return done, telegram_bot.drafts_answer(), True
@@ -998,6 +1056,9 @@ class TelegramIngressDaemon:
             if res.status_code == 200:
                 data = res.json()
                 if data.get("ok"):
+                    # Telegram answered: a successful check, kept before the
+                    # batch is handled, so /status in it says the one before.
+                    self._note_check(datetime.now(timezone.utc))
                     results = data.get("result", [])
                     processed = []
                     for update in results:
@@ -1154,11 +1215,12 @@ class TelegramIngressDaemon:
         self._thread.start()
 
     def stop_worker(self):
-        """Stop background worker gracefully."""
+        """Stop background worker gracefully, keeping the time of its last check."""
         self.is_running = False
         self._stop_event.set()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=self.STOP_JOIN_SECONDS)
+        self._keep_last_check()
 
 
 # Global singleton daemon
@@ -1313,8 +1375,12 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
             with conn:
                 conn.execute("DELETE FROM settings WHERE key IN (?, ?, ?, ?)",
                              (SETTINGS_TOKEN_KEY, SETTINGS_CHAT_KEY, SETTINGS_HEARD_KEY, SETTINGS_PAIRED_KEY))
+                telegram_bot.forget_checks(conn)
         finally:
             conn.close()
+        if ingress_daemon.configured_from == "settings" and ingress_daemon.profile_id == paths.get_active_profile_id():
+            # Removed: the worker stopping now keeps no last check for a bot that is gone.
+            ingress_daemon.last_ok_at = None
         apply_settings()
         return describe_settings()
     held = read_settings()
@@ -1345,6 +1411,7 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
                     "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
                     (SETTINGS_TOKEN_KEY, secret_settings.seal(SETTINGS_TOKEN_KEY, token)))
+                telegram_bot.forget_checks(conn)
             if chat:
                 conn.execute(
                     "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
@@ -1443,4 +1510,22 @@ def describe_settings() -> Dict[str, Any]:
         "weekly_next": telegram_bot.weekly_next(),
         "last_send_error": ingress_daemon.outbox.last_error if running_here else None,
         "replies_waiting": ingress_daemon.outbox.waiting() if running_here else 0,
+        # Phase 4, item 2: the last successful check of Telegram, and a day
+        # not checked, said until Got it.
+        "last_check_at": _last_check(running_here),
+        "gap": telegram_bot.gap_shown(),
     }
+
+
+def _last_check(running_here: bool) -> Optional[str]:
+    """The last successful check for this profile's bot: the worker's own while it asks for it, else the one kept."""
+    if running_here and ingress_daemon.last_ok_at is not None:
+        return ingress_daemon.last_ok_at.isoformat()
+    kept = telegram_bot.last_checked()
+    return kept.isoformat() if kept else None
+
+
+def gap_seen() -> Dict[str, Any]:
+    """The panel's Got it: the notice of a day not checked is not shown again."""
+    telegram_bot.gap_seen()
+    return describe_settings()

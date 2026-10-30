@@ -6,10 +6,12 @@ import {
   saveWritingPreferences,
   type IdeaSource,
   saveIngressSettings,
+  seeIngressGap,
   sendIngressTestMessage,
   type IngressOptions,
   type IngressSettings,
 } from "@/lib/api";
+import { formatLocal } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { useWritingPreferences } from "./WritingPreferences";
 
@@ -95,6 +97,19 @@ export function TelegramIngressPanel() {
     }
   }
 
+  /** Got it, under the notice of a day not checked: the panel stops showing it. */
+  async function gapSeen() {
+    setBusy(true);
+    setNote(null);
+    try {
+      setState(await seeIngressGap());
+    } catch (caught) {
+      setNote(caught instanceof Error ? caught.message : "That was not saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function setOption(change: Partial<IngressOptions>, said: string) {
     setBusy(true);
     setNote(null);
@@ -151,6 +166,16 @@ export function TelegramIngressPanel() {
           ? [{ label: "Messages saved since the studio started", value: state.total_messages_processed.toLocaleString(), good: true }]
           : []),
         { label: "Posts asked for from the phone, waiting", value: state.open_requests.toLocaleString(), good: true },
+        // When Telegram last answered the studio's check: it keeps a bot's messages for one day.
+        ...(state.has_token
+          ? [
+              {
+                label: "Last checked Telegram",
+                value: state.last_check_at ? formatLocal(state.last_check_at).toUpperCase() : "NOT YET",
+                good: !!state.last_check_at,
+              },
+            ]
+          : []),
       ]
     : [];
 
@@ -188,6 +213,24 @@ export function TelegramIngressPanel() {
               </div>
             )}
           </dl>
+          {state.gap && (
+            <div role="status" className="mt-3 flex flex-col items-start gap-1.5 rounded-md border border-edge px-3 py-2">
+              <p className="studio-meta text-signal-orange-text">A DAY THE STUDIO DID NOT CHECK TELEGRAM</p>
+              <p className="text-[12px] leading-relaxed text-ink-primary">{state.gap.said}</p>
+              <p className="text-[12px] leading-relaxed text-ink-secondary">
+                Your studio has to run at least once a day for nothing you send to be missed. The bot says this once
+                too.
+              </p>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void gapSeen()}
+                className="rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+              >
+                Got it
+              </button>
+            </div>
+          )}
           {state.has_token && (
             <div className="mt-3 flex flex-col gap-2">
               <p className="studio-meta text-ink-muted">WHAT THE BOT SAYS BACK</p>

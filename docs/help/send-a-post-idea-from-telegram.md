@@ -8,6 +8,7 @@ Make a Telegram bot of your own, set it up under Local security, and everything 
 - The phone sends a link, never a figure. Nothing you send is written as a reading: a post link becomes a request to read that post here, where the extension reads the real page.
 - The bot answers each message with one short fixed sentence, so you can tell it arrived. See [What the bot says back](#what-the-bot-says-back). Some of its messages carry buttons, such as **Undo** under what you sent. See [Buttons you can press](#buttons-you-can-press).
 - Your message text passes through Telegram's servers. See [What leaves this machine, and when](what-leaves-this-machine.md).
+- The studio must run at least once a day. Telegram keeps a bot's messages for one day, so anything you send while the studio is off, asleep or offline for longer may never arrive. When that may have happened, the bot and the panel say so once. See [A day the studio did not check](#a-day-the-studio-did-not-check).
 - The bot belongs to the creator profile you set it up in, and its messages are saved there whichever profile is open. One bot is asked at a time: the one saved most recently, or when the studio starts, the first profile that has one. A profile whose bot is not the one being asked says so in its panel.
 
 > [!NOTE]
@@ -135,7 +136,7 @@ Send a command as a message on its own, as Telegram's menu does. Letter case doe
 | `/start` or `/help` | The bot says what it does, what **Undo** does, how to pair a chat, and that it sends your words and figures only if you allow them, and nothing about anyone else |
 | `/idea your idea` | Your idea is kept in your collection as an idea, as `Idea: your idea` is. A link inside it stays part of the idea |
 | `/ask what to remember` | It is remembered as an ask in **From your record**, with the source Telegram, and listed under **What the studio knows** there, where you can change or remove it. It takes effect on tomorrow's cards. It is not kept in your collection |
-| `/status` | Whether your studio is running, and whether the bridge in your browser is connected. No figures |
+| `/status` | Whether your studio is running, whether the bridge in your browser is connected, and when the studio last checked Telegram before your message, for example "Before this message, it last checked Telegram for your messages 2 days ago (Thu 29 Oct, 18:02 on your computer's clock)." No figures |
 | `/today` | Your latest post's figures, how many replies are waiting and when your next post is scheduled, only if you turned on **The bot may answer with your figures**. Otherwise it says your figures stay in the studio |
 | `/drafts` | How many drafts were made from what you sent in the last seven days: "Drafts made from what you sent, in the last seven days: 5." A `Draft:` message, or an item you used as a draft. A count, never their words |
 | `/remember something` | It is kept in your things to remember, with **Undo** under the answer. See [Things to remember](#things-to-remember) |
@@ -241,6 +242,7 @@ Each message gets one short sentence back, the same words every time. None carri
 | A photo or a voice note Telegram would not hand over | Telegram did not hand that file over, so nothing was saved. Send it again. |
 | A sticker, a file, a video or anything else with no text | That message had no text, so nothing was saved. |
 | A message your studio could not save, after three tries | Your studio could not save that message. Open the studio to see why. |
+| The studio checked again more than a day after its last check | Your studio did not check Telegram for your messages from ... until ..., on your computer's clock. Telegram keeps a bot's messages for one day, so anything you sent before ... may not have arrived. Send again whatever is missing from Your collection. |
 | You pressed **This is me**, or saved a chat id | Paired. Messages from this chat now arrive in your studio. Send /help to see what I do. |
 | A message before any chat is paired | Not paired yet. In your studio, open Settings, then Local security, and press This is me beside chat 487215963. (Your own chat's number.) |
 | A message from a chat that is not the paired one | This bot takes messages only from the chat its owner paired. |
@@ -281,6 +283,14 @@ Each message lands in your collection, not in the Composer: open **From your rec
 
 Each check asks Telegram to wait up to 30 seconds for a new message, so a message sent during a check arrives straight away. Between checks the studio pauses about 2 seconds, 120 seconds between 23:00 and 06:00 local time, and up to 60 seconds after errors. When Telegram asks it to slow down, it waits as long as Telegram says. This night-time pause is fixed, and separate from [quiet hours](#quiet-hours), which hold only notifications.
 
+## A day the studio did not check
+
+Telegram keeps the messages you send your bot until the studio asks for them, but for one day at most. So the studio keeps the time of its last successful check, and when it checks again more than a day later (the computer was off, asleep or offline), it tells you once:
+
+> Your studio did not check Telegram for your messages from Thu 29 Oct, 18:02 until Sat 31 Oct, 09:15, on your computer's clock. Telegram keeps a bot's messages for one day, so anything you sent before Fri 30 Oct, 09:15 may not have arrived. Send again whatever is missing from Your collection.
+
+The panel shows it at once, under **A DAY THE STUDIO DID NOT CHECK TELEGRAM**, until you press **Got it**. The bot sends it once, after quiet hours if it is quiet then, whatever the notification switches say. It never says a message was lost, and never gives a number: the studio cannot know what Telegram did not keep. Anything you sent within the day before that check arrives as usual. A new bot token starts afresh, and removing the bot forgets the time and the notice.
+
 ## Check it is running
 
 The panel under **Your phone, through Telegram** reads:
@@ -288,6 +298,7 @@ The panel under **Your phone, through Telegram** reads:
 - **Asking Telegram for messages**: YES while the studio is polling.
 - **Messages saved since the studio started**: how many messages were saved since startup.
 - **Posts asked for from the phone, waiting**: open requests.
+- **Last checked Telegram**: when Telegram last answered the studio's check for messages, kept when the studio stops. NOT YET before the first.
 - **Last problem reaching Telegram**: the most recent problem, in plain words, such as Telegram not recognising the token, another program asking for the same bot's messages, or no connection. It is cleared after each successful check. After a problem the studio waits longer before asking again, and as long as Telegram asks when it says to slow down.
 - **Last message the bot could not send**: why the bot's last answer did not go, in plain words.
 
@@ -313,5 +324,5 @@ Click **Remove the bot** in the panel. The token and chat id are removed from th
 | A post link arrived but Today does not offer it | The panel lists it as not one of your posts: the studio holds no post of yours with that link. If it is yours and new, run **Posts you wrote** in Setup's step 5, then share it again |
 | Today still says "You sent a post from your phone" after you opened it | The post's page did not keep the link's ending, so the extension could not say which post it was. Press **Done** once you have seen it |
 | Arrivals are slow | Night-time polling, error backoff, or a Telegram rate limit, which the studio waits out |
-| A message sent while the studio was off is missing | It is fetched at next start only if Telegram still holds it; how long it does is Telegram's policy |
+| A message sent while the studio was off is missing | Telegram keeps a bot's messages for one day, so one sent more than a day before the studio next checked may never arrive. The panel and the bot say when that may have happened: send it again |
 | A message you sent is not in your collection | Check you are in the profile the bot was set up in, which the panel names when another profile is open. A `Draft:` message is in the Composer's **Drafts**, and listed in your collection under **Used** |
