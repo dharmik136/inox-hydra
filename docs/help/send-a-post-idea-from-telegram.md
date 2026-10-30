@@ -89,6 +89,12 @@ Reply in Telegram to something you sent your bot, or to the bot's answer about i
 
 A command in a reply is still a command, a photo or a file in a reply is an item of its own, and a reply to something no longer in your collection makes a new item. **A reply adds to what it replies to**, in the panel, is on until you untick it; off, a reply is an item of its own. To follow a reply, the studio keeps which of your messages, and which of the bot's answers, each item came from (their numbers in your chat with the bot), from this version on: a message sent before it cannot be replied to this way.
 
+### Edits follow
+
+Edit a message you sent your bot (press and hold it, then **Edit**) and the item it made changes with it, in **Your collection** at once, read as the message was: an `Idea:` or `/idea` is still an idea, without the prefix, and a post link in it does not make a second request on Today. The bot answers "Updated in your collection." The item then says "edited on your phone". Edit a reply that added to an item, and only its words change.
+
+Once you have used the item, the draft made from it is kept as it is: the item takes your edit, says it was edited after it became a draft, and the bot answers "Updated in your collection. The draft made from it was not changed." An edit of a message that made nothing, such as a command, changes nothing, and the bot says so. An edit from any chat but yours is refused like a message from it. To follow an edit, the studio uses the same record of which message each item came from as for replies, so a message sent before this version does not follow its edits.
+
 ## Make something out of it
 
 In the studio, on an item of **Your collection**:
@@ -289,6 +295,9 @@ Each message gets one short sentence back, the same words every time. None carri
 | `/remember` | Kept in your things to remember. Your studio's writing reads it, as you chose in Brand, under Writing. (With **Undo** under it.) |
 | A reply that added to an item | Added to the item in your collection. (With **Undo** under it; with the words switch on, "Added to the item in your collection that begins:" and its first line.) |
 | A reply that added to an item that became a draft | Added to the item in your collection. The draft made from it was not changed. |
+| You edited a message on your phone | Updated in your collection. |
+| You edited a message whose item became a draft | Updated in your collection. The draft made from it was not changed. |
+| You edited a message that made nothing in your collection | That edit changed nothing in your studio: the message it edits made nothing in your collection. |
 | `/remember` with more than 300 characters | A thing to remember is at most 300 characters. Send it shorter, or as two. |
 | `/forget`, with one match | Forgotten: one thing you asked me to remember. |
 | `/forget`, with several matches | 2 things to remember hold those words. Say more of it, or remove it in your studio. |

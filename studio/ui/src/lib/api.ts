@@ -3771,6 +3771,8 @@ export interface CollectionItem {
   messages: number;
   /** When one of its messages was last edited on the phone, or null (phase 4). */
   edited_at: string | null;
+  /** When something was made from it, or null. */
+  used_at: string | null;
 }
 
 export interface CollectionListing {

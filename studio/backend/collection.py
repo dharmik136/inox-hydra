@@ -292,6 +292,54 @@ def add_words(item_id: Any, chat_id: Any, message_id: Any, words: str) -> Option
     return item
 
 
+def message_of(chat_id: Any, message_id: Any) -> Optional[Dict[str, Any]]:
+    """
+    The creator's message as the collection holds it, for an edit: its row,
+    its item, and whether it is the first of the item's own messages (the
+    one that made it), which an edit reads as that message was read.
+    """
+    if not isinstance(message_id, int) or message_id <= 0:
+        return None
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM collection_messages WHERE chat_id = ? AND message_id = ? AND whose = 'yours'",
+                           (str(chat_id), message_id)).fetchone()
+        if row is None:
+            return None
+        item = get(conn, row["item_id"])
+        if item is None:
+            return None
+        first = conn.execute("SELECT MIN(id) FROM collection_messages WHERE item_id = ? AND whose = 'yours' "
+                             "AND message_id IS NOT NULL", (item["id"],)).fetchone()[0]
+        return {"row": dict(row), "item": item, "first": first == row["id"]}
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def edit_words(row_id: int, words: str) -> Optional[Dict[str, Any]]:
+    """
+    An edit on the phone: the message's words replaced on its item, whatever
+    the item became; what was made from it is not changed. Returns the item.
+    """
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT item_id FROM collection_messages WHERE id = ?", (int(row_id),)).fetchone()
+        item = get(conn, row["item_id"]) if row else None
+        if item is None:
+            return None
+        with conn:
+            conn.execute("UPDATE collection_messages SET words = ?, edited_at = ? WHERE id = ?",
+                         (clean_links((words or "").strip())[:50000], _now(), int(row_id)))
+            _rewords(conn, item)
+        item = get(conn, item["id"])
+    finally:
+        conn.close()
+    changes.publish("collection")
+    return item
+
+
 def take_words_back(item_id: Any, chat_id: Any, message_id: Any) -> str:
     """
     Undo under "Added to the item": the reply's words taken back off the

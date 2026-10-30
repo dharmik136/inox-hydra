@@ -41,7 +41,10 @@ What it does, as the Bot API does:
 
 A press of an inline button is a callback_query update, pushed with
 `press` (any data, from any chat) or `press_button` (a button the phone
-shows now, by its label).
+shows now, by its label). An edit the creator makes on the phone is an
+edited_message update, pushed with `edit`: the message as it now reads,
+with its own message id and date and an edit_date, delivered only to a bot
+whose poll asks for edited_message, as Telegram delivers it.
 
 And the failures a real bot meets, planned per method with `plan`:
 
@@ -145,6 +148,19 @@ class FakeTelegram:
             if text is not None:
                 body["text"] = text
             self._updates.append({"update_id": update_id, "message": body})
+            self._cond.notify_all()
+        return update_id
+
+    def edit(self, chat_id: Any, message_id: int, text: Optional[str] = None, **message: Any) -> int:
+        """An edit of a message the phone sent before: an edited_message update with the message as it now reads."""
+        with self._cond:
+            update_id = self._next_update
+            self._next_update += 1
+            body = {"message_id": int(message_id), "date": int(time.time()) - 60, "edit_date": int(time.time()),
+                    "chat": {"id": int(chat_id), "type": "private"}, **message}
+            if text is not None:
+                body["text"] = text
+            self._updates.append({"update_id": update_id, "edited_message": body})
             self._cond.notify_all()
         return update_id
 

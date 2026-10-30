@@ -155,3 +155,13 @@ def test_phase_4_building_an_idea_up_quotes_the_bot_and_the_panel():
     box = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "CollectionPanel.tsx"),
                encoding="utf-8").read()
     assert "of your messages" in article and "of your messages" in box
+
+
+def test_phase_4_edits_quote_the_bot_and_the_box():
+    """Phase 4, item 7: an edit's answers, and the box's mark."""
+    article = _article()
+    for key in ("edited", "edited_draft"):
+        assert telegram_bot.SENTENCES[key] in article, key
+    box = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "CollectionPanel.tsx"),
+               encoding="utf-8").read()
+    assert "edited on your phone" in article and "edited on your phone" in box

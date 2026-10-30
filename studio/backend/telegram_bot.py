@@ -215,6 +215,10 @@ SENTENCES = {
     "added_undone": "Undone: those words are taken back off the item.",
     "added_kept": "Not undone: you have used the item in your studio since, so the words stay on it.",
     "added_gone": "Nothing to undo: those words are no longer on the item.",
+    # Phase 4, item 7: an edit on the phone follows its item.
+    "edited": "Updated in your collection.",
+    "edited_draft": "Updated in your collection. The draft made from it was not changed.",
+    "edit_nothing": "That edit changed nothing in your studio: the message it edits made nothing in your collection.",
     # Phase 3: everything sent lands in the collection.
     "collected": "Saved to your collection.",
     "bookmarked": "Saved to your collection as a bookmark. Your studio never opens other people's posts.",

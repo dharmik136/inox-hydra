@@ -110,12 +110,12 @@ MAX_UPDATE_ATTEMPTS = 3
 FORWARD_FIELDS = ("forward_origin", "forward_from", "forward_from_chat", "forward_sender_name", "forward_date",
                   "forward_signature", "is_automatic_forward")
 
-# What the studio asks Telegram for: the messages sent to the bot, and the
-# presses of its buttons. Telegram keeps the kinds a bot last asked for, so
+# What the studio asks Telegram for: the messages sent to the bot, their
+# edits (phase 4: an edit follows its item), and the presses of its buttons. Telegram keeps the kinds a bot last asked for, so
 # a bot another program once set to messages alone would never hear a press
 # unless the poll names both; and nothing else (an edited message, a channel
 # post) is delivered to be confirmed unread.
-ALLOWED_UPDATES = ("message", "callback_query")
+ALLOWED_UPDATES = ("message", "edited_message", "callback_query")
 
 logger = logging.getLogger("studio.ingress")
 
@@ -726,6 +726,11 @@ class TelegramIngressDaemon:
             self._press(update["callback_query"])
             return None
 
+        # An edit on the phone (phase 4, item 7).
+        if from_telegram and isinstance(update.get("edited_message"), dict):
+            self._edited(update["edited_message"])
+            return None
+
         message = update.get("message", {})
         if not isinstance(message, dict):
             return None
@@ -843,6 +848,51 @@ class TelegramIngressDaemon:
                             fact_id=stored.get("id") if isinstance(stored, dict) and stored.get("kind") == "fact"
                             else None, about_item=telegram_bot.item_id_of(stored))
         return stored
+
+    def _edited(self, message: Dict[str, Any]) -> None:
+        """
+        An edit the creator made on the phone (phase 4, item 7). Refused like a
+        stranger's message from any chat but the paired one. Otherwise the
+        message's words are replaced on the item it made, while the item has
+        not been used or since: what was made from it is never changed, and
+        the bot says so. An edit of a message that made nothing changes
+        nothing. Answered as a message is, under the confirmations switch.
+        """
+        chat_id = str((message.get("chat") or {}).get("id", ""))
+        if not self.authorized_chat_id or chat_id != str(self.authorized_chat_id):
+            self._remember_refusal(chat_id, message)
+            self._answer_refusal(chat_id, "other_chat" if self.authorized_chat_id else "not_paired")
+            logger.warning("Refused an edit from chat_id: %s", chat_id)
+            return
+        if self.profile_id and self.profile_id not in paths.profile_ids():
+            return
+        with self._bots_profile():
+            key, item_id = self._edit_item(chat_id, message)
+        self._reply(chat_id, telegram_bot.SENTENCES[key], about_item=item_id)
+
+    @staticmethod
+    def _edit_item(chat_id: str, message: Dict[str, Any]):
+        """(the answer's key, the item) for an edit: its words read as its message was, then put on its item."""
+        held = collection.message_of(chat_id, message.get("message_id"))
+        text, caption = message.get("text"), message.get("caption")
+        if held is None or (not isinstance(text, str) and not isinstance(caption, str)):
+            return "edit_nothing", None
+        if not isinstance(text, str):
+            words = caption
+        elif held["first"]:
+            # Read as the message that made the item was: its prefix and command taken off, a post link out.
+            command = telegram_bot.parse_command(text)
+            if command and command[0] != "idea":
+                return "edit_nothing", None
+            words = command[1] if command else IngressMessageParser.parse_message(text)["raw_content"]
+        else:
+            words = text
+        words = str(words or "").replace(chr(0x2014), " -- ").replace(chr(0x2013), "-")
+        before = held["item"]
+        item = collection.edit_words(held["row"]["id"], words)
+        if item is None:
+            return "edit_nothing", None
+        return ("edited_draft" if before.get("status") == "used" and before.get("post_id") else "edited"), item["id"]
 
     def _press(self, callback: Dict[str, Any]) -> None:
         """

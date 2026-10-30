@@ -13,6 +13,7 @@ new control is checked with axe in both themes.
            paired chat
   item 6   "A reply adds to what it replies to", on by default; and Your
            collection saying an item is built from several messages
+  item 7   Your collection saying an item was edited on the phone
 
 docs/quality/cycle4/bot-phase4.md.
 
@@ -112,9 +113,12 @@ def test_your_collection_says_an_item_is_built_from_several_messages(page, studi
     item = collection.add("note", "pricing is a design decision")
     collection.link_message(item["id"], "487215963", 11, "yours", words=item["text"])
     collection.add_words(item["id"], "487215963", 12, "and the price page is the brief")
+    collection.edit_words(collection.message_of("487215963", 11)["row"]["id"], "pricing is a design choice")
     page.goto(studio["url"] + "/#/record", wait_until="networkidle")
     page.get_by_role("button", name="Your collection").click()
     level = page.locator("section[aria-labelledby='collection-title']")
     expect(level.get_by_text("from 2 of your messages")).to_be_visible()
     expect(level.get_by_text("and the price page is the brief", exact=False)).to_be_visible()
+    expect(level.get_by_text("edited on your phone")).to_be_visible()
+    expect(level.get_by_text("pricing is a design choice", exact=False)).to_be_visible()
     assert _axe(page, "section[aria-labelledby='collection-title']") == []
