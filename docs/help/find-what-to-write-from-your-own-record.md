@@ -64,7 +64,7 @@ An ask is matched to your posts from the next day's cards.
 
 ## Your collection
 
-Everything you send your Telegram bot, newest first, as it arrives: notes, ideas, messages you forward, links, and photos and voice notes kept as they are, never read, each with what it became. **Use as a draft** opens an item's words in the Composer as they are; **Not now** sets it aside; **Remove** takes it out for good. See [Your collection](send-a-post-idea-from-telegram.md#your-collection).
+Everything you send your Telegram bot, newest first, as it arrives: notes, ideas, messages you forward, links, and photos, albums, voice notes, documents and videos kept as they are, never read, each with what it became. **Use as a draft** opens an item's words in the Composer as they are; **Not now** sets it aside; **Remove** takes it out for good. See [Your collection](send-a-post-idea-from-telegram.md#your-collection).
 
 Your unused ideas come back where you write, too: the Composer's **From your collection** lists the new items that share words with your draft, and the **You asked** card may draw one, while **Ideas draw on** includes your collection.
 

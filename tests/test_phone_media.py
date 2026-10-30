@@ -173,10 +173,10 @@ def test_a_strangers_photo_is_never_fetched(bot):
     assert not os.path.isdir(phone) or os.listdir(phone) == []
 
 
-def test_a_sticker_or_a_document_is_still_not_kept(bot):
+def test_a_sticker_is_still_not_kept(bot):
+    """Phase 4 keeps a document and a video (tests/test_phone_files.py); a sticker still is not."""
     _saved(bot)
     assert _send(bot, None, sticker={"file_id": "st-1", "emoji": "x"}) == SAID["no_text"]
-    assert _send(bot, None, document={"file_id": "doc-1", "file_name": "notes.pdf"}) == SAID["no_text"]
     assert _items() == [] and bot["fake"].calls_of("getFile") == []
 
 
@@ -264,7 +264,8 @@ def test_a_voice_note_does_not_go_into_the_media_library(bot):
     _voice(bot)
     [item] = _items()
     res = bot["client"].post(f"/api/v1/collection/{item['id']}/media")
-    assert res.status_code == 400 and "photo" in res.json()["detail"]
+    # Phase 4: the refusal names what the library does take.
+    assert res.status_code == 400 and "media library takes" in res.json()["detail"]
 
 
 # ---------------------------------------------------------------------------

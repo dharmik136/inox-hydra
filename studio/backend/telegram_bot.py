@@ -326,7 +326,8 @@ def _help() -> str:
         "- any text, or a message you forward: kept in your collection, to write from when you like",
         "- a link to one of your LinkedIn posts: Today asks you to open its analytics",
         "- a link to someone else's post: kept as a bookmark, never opened",
-        "- a photo or a voice note: kept as it is in your collection, never read or transcribed",
+        "- a photo, several sent together, a voice note, a document or a video: kept as it is in your collection, "
+        "never read or transcribed",
         "- Draft: and your post: saved straight as a draft",
         "",
         "Commands, also in the / menu of this chat:",

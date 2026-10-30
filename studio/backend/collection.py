@@ -47,7 +47,7 @@ except ImportError:
     import remembered
     from database import get_db
 
-KINDS = ("note", "idea", "forward", "post", "link", "bookmark", "photo", "voice")
+KINDS = ("note", "idea", "forward", "post", "link", "bookmark", "photo", "voice", "document", "video")
 KIND_SAID = {
     "note": "Note",
     "idea": "Idea",
@@ -57,12 +57,14 @@ KIND_SAID = {
     "bookmark": "Bookmark",
     "photo": "Photo",
     "voice": "Voice note",
+    "document": "Document",
+    "video": "Video",
 }
 STATUSES = ("new", "used", "not_now")
 # The creator sets these; "used" is set by making something from an item.
 SET_BY_CREATOR = ("new", "not_now")
 # Kinds whose words are material to write from (a request on Today is not).
-MATERIAL = ("note", "idea", "forward", "bookmark", "photo", "voice")
+MATERIAL = ("note", "idea", "forward", "bookmark", "photo", "voice", "document", "video")
 
 POST_LINK = re.compile(r"https?://(?:[a-z]{1,3}\.)?linkedin\.com/[^\s<>\"']+", re.IGNORECASE)
 HASHTAG = re.compile(r"#(\w{1,50})")
@@ -166,6 +168,10 @@ def _row(conn, row) -> Dict[str, Any]:
     except (TypeError, ValueError):
         media = None
     item["media"] = media if isinstance(media, dict) else None
+    if item["media"] is not None:
+        # What the media library would keep it as (phase 4): an image, a document carousel, a video, or nothing.
+        kinds = [phone_media.library_kind(f) for f in phone_media.files_of(item["media"])]
+        item["media"]["library"] = next((k for k in kinds if k), None)
     item["kind_said"] = KIND_SAID.get(item["kind"], item["kind"])
     item["became"] = became(conn, item)
     # Phase 4: how many of the creator's messages it is built from, and
@@ -388,6 +394,49 @@ def _forget_links(conn, item_ids: Iterable[int]) -> None:
             return
 
 
+def by_media_group(group: str) -> Optional[Dict[str, Any]]:
+    """The item an album's first photo made, which the album's others join (phase 4)."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM collection_items WHERE media_group = ? ORDER BY id LIMIT 1",
+                           (str(group),)).fetchone()
+        return _row(conn, row) if row else None
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def join_album(item_id: int, kept: Dict[str, Any], chat_id: Any, message_id: Any,
+               caption: str = "") -> Optional[Dict[str, Any]]:
+    """
+    Another photo of an album joins the item its first made: its file is
+    added to the item's, its message linked with the words its caption gave
+    (an album's caption may come on any of its photos), and the item's words
+    written again from its messages. Returns the item, or None when it is gone.
+    """
+    conn = get_db()
+    try:
+        item = get(conn, item_id)
+        if item is None:
+            return None
+        media = {k: v for k, v in (item["media"] or {}).items() if k != "library"}
+        media["more"] = [f for f in media.get("more") or [] if isinstance(f, dict)] + [kept]
+        with conn:
+            conn.execute("UPDATE collection_items SET media = ?, updated_at = ? WHERE id = ?",
+                         (json.dumps(media), _now(), item_id))
+            if isinstance(message_id, int) and message_id > 0:
+                conn.execute("INSERT OR IGNORE INTO collection_messages (item_id, chat_id, message_id, whose, words, "
+                             "at) VALUES (?, ?, ?, 'yours', ?, ?)",
+                             (item_id, str(chat_id), message_id, clean_links((caption or "").strip()), _now()))
+            _rewords(conn, get(conn, item_id))
+        item = get(conn, item_id)
+    finally:
+        conn.close()
+    changes.publish("collection")
+    return item
+
+
 def by_origin(origin_ref: str) -> Optional[Dict[str, Any]]:
     """The item a message already made, if it was handled before."""
     conn = get_db()
@@ -406,7 +455,7 @@ def get(conn, item_id: int) -> Optional[Dict[str, Any]]:
 def add(kind: str, text: str = "", *, link: Optional[str] = None, activity_urn: Optional[str] = None,
         desk_request_id: Optional[int] = None, status: str = "new", post_id: Optional[str] = None,
         source: str = "telegram", origin_ref: Optional[str] = None, tags: Optional[List[str]] = None,
-        media: Optional[Dict[str, Any]] = None, conn=None) -> Dict[str, Any]:
+        media: Optional[Dict[str, Any]] = None, media_group: Optional[str] = None, conn=None) -> Dict[str, Any]:
     """
     One item in the collection, and its publication on the change stream.
     A message already recorded (the same origin_ref) is not written twice:
@@ -434,6 +483,8 @@ def add(kind: str, text: str = "", *, link: Optional[str] = None, activity_urn: 
                 (now, kind, words, link, activity_urn, desk_request_id, json.dumps(tags),
                  topic_of(conn, words, tags), status, post_id, source, origin_ref, now,
                  now if status == "used" else None, json.dumps(media) if media else None)).lastrowid
+            if media_group:
+                conn.execute("UPDATE collection_items SET media_group = ? WHERE id = ?", (str(media_group), item_id))
         item = get(conn, item_id)
     finally:
         if own:
@@ -535,16 +586,18 @@ def to_library(item_id: int) -> Dict[str, Any]:
         item = get(conn, item_id)
         if not item:
             raise LookupError("That item is no longer in your collection.")
-        if item["kind"] != "photo" or not item.get("media"):
-            raise Refused("Only a photo goes into your media library; a voice note stays in your collection.")
+        if not item.get("media") or not item["media"].get("library"):
+            raise Refused("Your media library takes images, PDFs and MP4 or WebM videos; this stays in your "
+                          "collection.")
         if item.get("became") and item["became"]["kind"] == "media" and item["became"]["said"] == MEDIA_SAID:
             return item
         now = _now()
         with conn:
             try:
-                asset_id = phone_media.to_library(conn, item["media"])
+                asset_id = phone_media.to_library(conn, {k: v for k, v in item["media"].items() if k != "library"})
             except FileNotFoundError:
-                raise Refused("The photo is no longer on this computer, so it cannot go into your media library.")
+                raise Refused("The file is no longer on this computer, or is not what its type says, so it cannot "
+                              "go into your media library.")
             conn.execute("UPDATE collection_items SET media_asset_id = ?, status = 'used', used_at = ?, updated_at = ? "
                          "WHERE id = ?", (asset_id, now, now, int(item_id)))
         item = get(conn, item_id)

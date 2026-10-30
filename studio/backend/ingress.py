@@ -824,7 +824,9 @@ class TelegramIngressDaemon:
             if added is not None:
                 stored, question, answer = added, False, telegram_bot.added_sentence(added["item"])
             elif media:
-                stored = self._store_media(media, message.get("caption"), _origin(update, from_telegram))
+                stored = self._store_media(media, message.get("caption"), _origin(update, from_telegram),
+                                           group=message.get("media_group_id"), chat_id=chat_id,
+                                           message_id=message.get("message_id"))
                 question, answer = False, telegram_bot.answer_for(stored)
             elif command:
                 stored, answer, question = self._command(command, update, from_telegram)
@@ -840,6 +842,9 @@ class TelegramIngressDaemon:
                 if made:
                     collection.link_message(made["id"], chat_id, message.get("message_id"), "yours",
                                             words=made.get("text") or "")
+        if from_telegram and isinstance(stored, dict) and stored.get("album"):
+            # Another photo of an album: the album was answered once, with its first.
+            return stored
         if from_telegram:
             if added is not None:
                 self._reply(chat_id, answer, added=added)
@@ -1011,7 +1016,8 @@ class TelegramIngressDaemon:
             return {"kind": "ask", "id": kept.get("id")}, telegram_bot.SENTENCES["ask"], False
         return done, telegram_bot.SENTENCES["unknown_command"], False
 
-    def _store_media(self, media: Dict[str, Any], caption: Any, origin: Optional[str]) -> Dict[str, Any]:
+    def _store_media(self, media: Dict[str, Any], caption: Any, origin: Optional[str], group: Any = None,
+                     chat_id: Optional[str] = None, message_id: Any = None) -> Dict[str, Any]:
         """
         A photo or a voice note, kept as it is (phase 3, item 4): fetched from
         Telegram through the egress check, into the profile's assets folder,
@@ -1023,6 +1029,12 @@ class TelegramIngressDaemon:
         held = collection.by_origin(origin) if origin else None
         if held:
             return {"kind": "collected", "archetype": held["kind"], "item": held, "desk_request": None}
+        group = str(group) if isinstance(group, (str, int)) and str(group) else None
+        album = collection.by_media_group(group) if group else None
+        if album is not None and collection.message_of(chat_id, message_id) is not None:
+            # Handled before: it joined its album then.
+            return {"kind": "collected", "archetype": album["kind"], "item": album, "desk_request": None,
+                    "album": True}
         try:
             kept = phone_media.fetch(self.bot_token, media)
         except phone_media.TooBig:
@@ -1035,7 +1047,15 @@ class TelegramIngressDaemon:
             return {"kind": "media_failed"}
         words = str(caption or "").replace(chr(0x2014), " -- ").replace(chr(0x2013), "-")
         try:
-            item = collection.add(media["kind"], words, media=kept, origin_ref=origin, source="telegram")
+            if album is not None:
+                # Photos sent together (phase 4): one item, its files and its caption.
+                item = collection.join_album(album["id"], kept, chat_id, message_id, words)
+                if item is None:
+                    raise LookupError("the album's item is gone")
+                return {"kind": "collected", "archetype": album["kind"], "item": item, "desk_request": None,
+                        "album": True}
+            item = collection.add(media["kind"], words, media=kept, origin_ref=origin, source="telegram",
+                                  media_group=group)
         except BaseException:
             phone_media.discard(kept)
             raise

@@ -18,6 +18,15 @@ A photo can be copied into the media library (media_assets), where the
 images for a post are kept, and that copy is then the creator's like any
 upload.
 
+Phase 4, item 10: documents (a PDF or any other file) and videos (a video, a
+round video message, a GIF Telegram sends as a video) are kept the same way,
+with the file's own name kept to show and to download under. The stored
+name's extension comes from SHOWN, the types the studio can show or play;
+anything else is stored as .bin and served as bytes, a download only, never
+opened in the studio's own window. The media library takes what its own
+upload takes (an image, a PDF as a document carousel, an MP4 or WebM video),
+each checked by its first bytes as the upload checks it.
+
 Strict Invariants:
 - Zero em-dashes.
 - The token is in a request's address only: never logged, kept or shown.
@@ -57,6 +66,34 @@ FILE_MAX = 20 * 1024 * 1024
 CHUNK = 64 * 1024
 TIMEOUT = 30
 KINDS = {"photo": {"mime": "image/jpeg", "ext": ".jpg"}, "voice": {"mime": "audio/ogg", "ext": ".ogg"}}
+# The types the studio shows or plays from its own folder, by the extension
+# it stores them under. An image never as SVG, which can carry a script.
+SHOWN = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
+         "image/gif": ".gif", "video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
+         "audio/mpeg": ".mp3", "audio/ogg": ".ogg", "audio/mp4": ".m4a", "audio/x-m4a": ".m4a",
+         "text/plain": ".txt"}
+DOWNLOAD_ONLY = ".bin"
+NAME_MAX = 120
+# What the media library takes, as its own upload does, and its kind there.
+LIBRARY = {"image/jpeg": "image", "image/png": "image", "image/webp": "image", "application/pdf": "carousel",
+           "video/mp4": "video", "video/webm": "video"}
+
+
+def _looks_like(mime: str, start: bytes) -> bool:
+    """Whether a file's first bytes are what its type says, as the media library's upload checks them."""
+    if mime == "image/jpeg":
+        return start.startswith(b"\xff\xd8")
+    if mime == "image/png":
+        return start.startswith(b"\x89PNG\r\n\x1a\n")
+    if mime == "image/webp":
+        return start.startswith(b"RIFF") and b"WEBP" in start[:16]
+    if mime == "application/pdf":
+        return b"%PDF-" in start[:1024]
+    if mime == "video/mp4":
+        return b"ftyp" in start[:64]
+    if mime == "video/webm":
+        return start.startswith(b"\x1aE\xdf\xa3")
+    return False
 
 
 class TooBig(ValueError):
@@ -81,12 +118,36 @@ def _int(value: Any) -> int:
         return 0
 
 
+def _name(value: Any) -> Optional[str]:
+    """A file's own name as it is kept: the last part of it, no control character, at most NAME_MAX."""
+    name = os.path.basename(str(value or "").replace("\\", "/")).strip()
+    name = "".join(c for c in name if c.isprintable() and c not in '<>:"|?*')
+    return name[:NAME_MAX] or None
+
+
+def _mime(value: Any, fallback: str) -> str:
+    mime = str(value or "").strip().lower()
+    return mime if 0 < len(mime) <= 100 and "/" in mime else fallback
+
+
+def _file(kind: str, held: Dict[str, Any], mime: str, name_default: str) -> Dict[str, Any]:
+    """A document's or a video's file as the collection keeps it: what it is, and where the studio may show it."""
+    return {"kind": kind, "file_id": str(held["file_id"]), "size": _int(held.get("file_size")) or None,
+            "mime": mime, "ext": SHOWN.get(mime, DOWNLOAD_ONLY),
+            "name": _name(held.get("file_name")) or name_default + SHOWN.get(mime, ""),
+            "duration": _int(held.get("duration")) or None,
+            "width": _int(held.get("width") or held.get("length")) or None,
+            "height": _int(held.get("height") or held.get("length")) or None}
+
+
 def wanted(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     What a message carries that the collection keeps as it is: a photo (the
     largest size that fits under FILE_MAX, or the largest there is, which
-    is then refused) or a voice note. None for anything else, such as a
-    sticker, a document or a video, which is not kept.
+    is then refused), a voice note, or since phase 4 a video (a video, a
+    round video message, a GIF, which Telegram also marks as a document) or
+    a document (any file, a music file among them). None for anything else,
+    such as a sticker, a location or a contact, which is not kept.
     """
     photo = message.get("photo") if isinstance(message, dict) else None
     if isinstance(photo, list):
@@ -101,6 +162,18 @@ def wanted(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if isinstance(voice, dict) and voice.get("file_id"):
         return {"kind": "voice", "file_id": str(voice["file_id"]), "size": _int(voice.get("file_size")) or None,
                 "duration": _int(voice.get("duration")) or None, **KINDS["voice"]}
+    if not isinstance(message, dict):
+        return None
+    # A GIF first: Telegram sets its document too, "for backward compatibility".
+    for field, default in (("animation", "A GIF from your phone"), ("video", "A video from your phone"),
+                           ("video_note", "A round video from your phone")):
+        held = message.get(field)
+        if isinstance(held, dict) and held.get("file_id"):
+            return _file("video", held, _mime(held.get("mime_type"), "video/mp4"), default)
+    for field, default in (("audio", "A sound file from your phone"), ("document", "A file from your phone")):
+        held = message.get(field)
+        if isinstance(held, dict) and held.get("file_id"):
+            return _file("document", held, _mime(held.get("mime_type"), "application/octet-stream"), default)
     return None
 
 
@@ -177,10 +250,32 @@ def fetch(token: str, file: Dict[str, Any]) -> Dict[str, Any]:
         _discard_path(partial)
         raise
     kept: Dict[str, Any] = {"path": f"/assets/{FOLDER}/{name}", "mime": file["mime"], "bytes": written}
-    for key in ("width", "height", "duration"):
+    for key in ("width", "height", "duration", "name"):
         if file.get(key):
             kept[key] = file[key]
+    if file.get("ext") == DOWNLOAD_ONLY:
+        # Kept as bytes: the studio serves it as a download, never as a page.
+        kept["download_only"] = True
     return kept
+
+
+def files_of(media: Any) -> list:
+    """Every file an item's media names: the first, and an album's others."""
+    if isinstance(media, str):
+        try:
+            media = json.loads(media)
+        except ValueError:
+            return []
+    if not isinstance(media, dict):
+        return []
+    return [media] + [f for f in media.get("more") or [] if isinstance(f, dict)]
+
+
+def library_kind(file: Any) -> Optional[str]:
+    """What the media library would keep a file as (image, carousel or video), or None when it takes no such file."""
+    if not isinstance(file, dict) or file.get("download_only"):
+        return None
+    return LIBRARY.get(str(file.get("mime") or ""))
 
 
 def on_disk(media: Any) -> Optional[str]:
@@ -209,8 +304,9 @@ def _discard_path(where: Optional[str]) -> None:
 
 
 def discard(media: Any) -> None:
-    """Removes an item's file, if it is still there."""
-    _discard_path(on_disk(media))
+    """Removes an item's files, every one of an album's, if they are still there."""
+    for file in files_of(media):
+        _discard_path(on_disk(file))
 
 
 def forget() -> None:
@@ -224,28 +320,47 @@ def forget() -> None:
 
 def to_library(conn, media: Any) -> str:
     """
-    A copy of a photo in the media library, where a post's images are kept:
-    the file copied into uploads and listed as an image. Returns the
-    library's id. The copy is the creator's like any upload, so removing the
-    item leaves it.
+    A copy of each file of an item the media library takes, where a post's
+    images, document carousels and videos are kept: copied into uploads and
+    listed as its kind, each checked by its first bytes as the library's own
+    upload checks it. Returns the first copy's id. The copies are the
+    creator's like any upload, so removing the item leaves them. Raises
+    FileNotFoundError when nothing it takes is on this computer.
     """
-    source = on_disk(media)
-    if not source or not os.path.exists(source):
-        raise FileNotFoundError("the photo is no longer on this computer")
-    held = json.loads(media) if isinstance(media, str) else media
-    name = f"{uuid.uuid4().hex[:8]}_photo_from_your_phone.jpg"
-    target = os.path.join(paths.get_uploads_dir(), name)
-    shutil.copyfile(source, target)
-    asset_id = f"asset_{uuid.uuid4().hex[:10]}"
-    dimensions = ({"width": held["width"], "height": held["height"]}
-                  if held.get("width") and held.get("height") else None)
+    made: list = []
     try:
-        conn.execute(
-            "INSERT INTO media_assets (id, filename, storage_path, media_type, mime_type, size_bytes, dimensions, "
-            "page_count) VALUES (?, ?, ?, 'image', ?, ?, ?, NULL)",
-            (asset_id, "Photo from your phone.jpg", f"/assets/uploads/{name}", held.get("mime") or "image/jpeg",
-             os.path.getsize(target), json.dumps(dimensions) if dimensions else None))
+        for held in files_of(media):
+            kind = library_kind(held)
+            source = on_disk(held)
+            if kind is None or not source or not os.path.exists(source):
+                continue
+            with open(source, "rb") as handle:
+                start = handle.read(1024)
+            if not _looks_like(held["mime"], start):
+                continue
+            ext = SHOWN.get(held["mime"], ".bin")
+            shown = held.get("name") or {"image": "Photo", "carousel": "Document", "video": "Video"}[kind] + \
+                " from your phone" + ext
+            name = f"{uuid.uuid4().hex[:8]}_from_your_phone{ext}"
+            target = os.path.join(paths.get_uploads_dir(), name)
+            shutil.copyfile(source, target)
+            asset_id = f"asset_{uuid.uuid4().hex[:10]}"
+            dimensions = ({"width": held["width"], "height": held["height"]}
+                          if kind == "image" and held.get("width") and held.get("height") else None)
+            try:
+                conn.execute(
+                    "INSERT INTO media_assets (id, filename, storage_path, media_type, mime_type, size_bytes, "
+                    "dimensions, page_count) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)",
+                    (asset_id, shown, f"/assets/uploads/{name}", kind, held["mime"], os.path.getsize(target),
+                     json.dumps(dimensions) if dimensions else None))
+            except BaseException:
+                _discard_path(target)
+                raise
+            made.append((asset_id, target))
     except BaseException:
-        _discard_path(target)
+        for _asset, target in made:
+            _discard_path(target)
         raise
-    return asset_id
+    if not made:
+        raise FileNotFoundError("nothing the media library takes is on this computer")
+    return made[0][0]

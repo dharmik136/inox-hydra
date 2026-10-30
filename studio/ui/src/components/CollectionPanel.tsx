@@ -50,6 +50,8 @@ const KIND_CHOICES: [CollectionKind | "", string][] = [
   ["link", "Links"],
   ["photo", "Photos"],
   ["voice", "Voice notes"],
+  ["document", "Documents"],
+  ["video", "Videos"],
 ];
 
 export function CollectionPanel({
@@ -380,7 +382,7 @@ export function CollectionPanel({
                     {angleCount ? `${angleCount} angles` : "Angles"}
                   </button>
                 )}
-                {item.kind === "photo" && item.media && !item.became && (
+                {item.media?.library && !item.became && (
                   <button
                     type="button"
                     disabled={busy === item.id}
@@ -388,7 +390,7 @@ export function CollectionPanel({
                       void act(
                         item,
                         () => photoToMediaLibrary(item.id),
-                        "In your media library: the Composer's Media tab lists it with your other images.",
+                        "In your media library: the Composer's Media tab lists it with your other media.",
                       )
                     }
                     className="rounded-md border border-edge px-2 py-0.5 hover:text-ink-primary disabled:opacity-40"
@@ -467,36 +469,78 @@ function sizeOf(bytes: number): string {
 }
 
 /**
- * A photo or a voice note as it was sent (phase 3, item 4): shown or played
- * from the profile's own folder, and never read. No text is taken from a
- * photo and no words from a voice note; a caption is the creator's own.
+ * What the phone sent as a file, as it was sent (phase 3, item 4, and phase
+ * 4, item 10): shown, played or offered to download from the profile's own
+ * folder, and never read. No text is taken from a photo or a document and no
+ * words from a voice note or a video; a caption is the creator's own. An
+ * album's photos are shown together. A file the studio cannot show is a
+ * download only, never opened in the studio's own window.
  */
 function KeptAsItIs({ item, media }: { item: CollectionItem; media: CollectionMedia }) {
-  const facts = [
-    media.width && media.height ? `${media.width} x ${media.height}` : null,
-    media.duration ? `${media.duration} s` : null,
-    sizeOf(media.bytes),
-  ].filter(Boolean);
+  const files = [media, ...(media.more ?? [])];
   return (
-    <div className="mt-1.5 flex flex-col gap-1">
-      {item.kind === "photo" ? (
+    <div className="mt-1.5 flex flex-col gap-1.5">
+      {files.map((file, index) => (
+        <OneFile key={file.path} item={item} file={file} index={index} count={files.length} />
+      ))}
+    </div>
+  );
+}
+
+function OneFile({ item, file, index, count }: { item: CollectionItem; file: CollectionMedia; index: number; count: number }) {
+  const facts = [
+    file.name ?? null,
+    file.width && file.height ? `${file.width} x ${file.height}` : null,
+    file.duration ? `${file.duration} s` : null,
+    sizeOf(file.bytes),
+  ].filter(Boolean);
+  const which = count > 1 ? ` ${index + 1} of ${count}` : "";
+  const label = item.text ? item.text.split("\n")[0] : "";
+  const image = file.mime.startsWith("image/") && !file.download_only;
+  const video = file.mime.startsWith("video/") && !file.download_only;
+  const sound = file.mime.startsWith("audio/") && !file.download_only;
+  const never = item.kind === "voice" || item.kind === "video" || sound ? "NEVER TRANSCRIBED" : "NEVER READ";
+  return (
+    <div className="flex flex-col gap-1">
+      {image ? (
         <img
-          src={media.path}
-          alt={item.text ? `Your photo: ${item.text.split("\n")[0]}` : "A photo you sent your bot"}
+          src={file.path}
+          alt={label ? `Your photo${which}: ${label}` : `A photo you sent your bot${which}`}
           loading="lazy"
           className="max-h-48 max-w-full self-start rounded-md border border-edge object-contain"
         />
-      ) : (
+      ) : video ? (
+        <video
+          controls
+          preload="none"
+          src={file.path}
+          aria-label={label ? `Your video${which}: ${label}` : `A video you sent your bot${which}`}
+          className="max-h-56 max-w-full self-start rounded-md border border-edge"
+        />
+      ) : sound ? (
         <audio
           controls
           preload="none"
-          src={media.path}
-          aria-label={media.duration ? `Your voice note, ${media.duration} seconds` : "Your voice note"}
+          src={file.path}
+          aria-label={file.duration ? `Your ${item.kind === "voice" ? "voice note" : "sound file"}, ${file.duration} seconds` : item.kind === "voice" ? "Your voice note" : "Your sound file"}
           className="max-w-full"
         />
+      ) : null}
+      {item.kind === "document" && (
+        <p className="flex flex-wrap gap-3 text-[12px] text-ink-secondary">
+          {!file.download_only && (
+            <a href={file.path} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-ink-primary">
+              View {file.name ?? "the file"}
+            </a>
+          )}
+          <a href={file.path} download={file.name ?? true} className="underline underline-offset-2 hover:text-ink-primary">
+            Download {file.name ?? "the file"}
+          </a>
+        </p>
       )}
       <p className="studio-meta text-[10px] text-ink-muted">
-        {facts.join(" · ")} · KEPT AS IT IS: {item.kind === "photo" ? "NEVER READ" : "NEVER TRANSCRIBED"}
+        {facts.join(" · ")} · KEPT AS IT IS: {never}
+        {file.download_only ? " · A DOWNLOAD ONLY" : ""}
       </p>
     </div>
   );

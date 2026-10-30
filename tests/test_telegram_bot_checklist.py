@@ -174,3 +174,13 @@ def test_phase_4_write_quotes_the_bot_and_the_writing_view():
     writing_view = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "WritingPreferences.tsx"),
                         encoding="utf-8").read()
     assert "Most items in one draft" in article and "Most items in one draft" in writing_view
+
+
+def test_phase_4_albums_documents_and_videos_quote_the_box():
+    """Phase 4, item 10: what the box shows of a document, and the plain answer a sticker keeps."""
+    article = _article()
+    box = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "CollectionPanel.tsx"),
+               encoding="utf-8").read()
+    for words in ("View", "Download", "Add to your media library"):
+        assert f"**{words}**" in article and words in box, words
+    assert telegram_bot.SENTENCES["no_text"] in article

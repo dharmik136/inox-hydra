@@ -281,11 +281,14 @@ def test_drafts_counts_the_drafts_made_from_what_was_sent(bot):
     assert _send(bot, "/drafts") == SAID["drafts"].format(count=2)
 
 
-def test_a_video_is_not_kept_and_says_so(bot):
-    """A photo and a voice note are kept as they are since item 4 (tests/test_phone_media.py); a video is not."""
+def test_a_sticker_is_not_kept_and_says_so(bot):
+    """
+    A photo and a voice note are kept as they are since item 4 (tests/test_phone_media.py), and a video and a
+    document since phase 4 (tests/test_phone_files.py); a sticker is not.
+    """
     _saved(bot)
-    assert _send(bot, None, video={"file_id": "video-1", "duration": 4}) == SAID["no_text"]
-    assert _items() == [] and _drafts() == [], "a video left a placeholder behind"
+    assert _send(bot, None, sticker={"file_id": "sticker-1", "emoji": "x"}) == SAID["no_text"]
+    assert _items() == [] and _drafts() == [], "a sticker left a placeholder behind"
 
 
 def test_the_maintainers_simulate_route_lands_in_the_collection_too(bot, monkeypatch):

@@ -2318,6 +2318,83 @@ def _migrate_message_links(cursor: sqlite3.Cursor) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_collection_messages_item ON collection_messages(item_id)")
 
 
+_ITEM_COLUMNS = ("id", "received_at", "kind", "text", "link", "activity_urn", "desk_request_id", "tags", "topic",
+                 "status", "post_id", "source", "origin_ref", "updated_at", "used_at", "offered_at", "angles", "media",
+                 "media_asset_id", "media_group")
+
+
+def _migrate_files_and_albums(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 42 (phase 4 of the Telegram bot, item 10):
+    An item from the phone can be a document or a video, and photos sent
+    together make one item.
+
+    collection_items gains two kinds, `document` (a PDF or any other file,
+    a music file among them) and `video` (a video, a round video message, a
+    GIF Telegram sends as a video), kept as photos are, never read. The kind
+    is a CHECK constraint, which SQLite changes only by rebuilding the table:
+    renamed, created again with the wider check, every row copied with its
+    id, the old one dropped and its indexes made again, all in this one
+    transaction. The id sequence is carried over, so a removed item's id is
+    never given again (an old button names an item by it). `media_group` is
+    an album's id, Telegram's media_group_id, so its photos join one item.
+    Run again, it finds the wider check and adds only what is missing.
+    """
+    cursor.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'collection_items'")
+    found = cursor.fetchone()
+    if found is None:
+        return
+    if "'document'" in (found[0] or ""):
+        cursor.execute("PRAGMA table_info(collection_items)")
+        if "media_group" not in {row[1] for row in cursor.fetchall()}:
+            cursor.execute("ALTER TABLE collection_items ADD COLUMN media_group TEXT")
+        return
+    cursor.execute("SELECT seq FROM sqlite_sequence WHERE name = 'collection_items'")
+    sequence = cursor.fetchone()
+    cursor.execute("PRAGMA table_info(collection_items)")
+    had = [row[1] for row in cursor.fetchall()]
+    cursor.execute("ALTER TABLE collection_items RENAME TO collection_items_before_42")
+    cursor.execute("""
+        CREATE TABLE collection_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            received_at TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN ('note', 'idea', 'forward', 'post', 'link', 'bookmark',
+                                               'photo', 'voice', 'document', 'video')),
+            text TEXT NOT NULL DEFAULT '',
+            link TEXT,
+            activity_urn TEXT,
+            desk_request_id INTEGER,
+            tags TEXT NOT NULL DEFAULT '[]',
+            topic TEXT,
+            status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'used', 'not_now')),
+            post_id TEXT,
+            source TEXT NOT NULL DEFAULT 'telegram',
+            origin_ref TEXT,
+            updated_at TEXT,
+            used_at TEXT,
+            offered_at TEXT,
+            angles TEXT,
+            media TEXT,
+            media_asset_id TEXT,
+            media_group TEXT
+        )
+    """)
+    kept = ", ".join(column for column in _ITEM_COLUMNS if column in had)
+    cursor.execute(f"INSERT INTO collection_items ({kept}) SELECT {kept} FROM collection_items_before_42")
+    cursor.execute("DROP TABLE collection_items_before_42")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_collection_items_status "
+                   "ON collection_items(status, received_at DESC)")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_collection_items_origin ON collection_items(origin_ref)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_collection_items_group ON collection_items(media_group)")
+    if sequence is not None:
+        cursor.execute("SELECT seq FROM sqlite_sequence WHERE name = 'collection_items'")
+        now = cursor.fetchone()
+        if now is None:
+            cursor.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('collection_items', ?)", (sequence[0],))
+        elif now[0] < sequence[0]:
+            cursor.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = 'collection_items'", (sequence[0],))
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -2377,6 +2454,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
      _migrate_phone_media),
     (41, "A message from the phone is linked to the item it made, so a reply or an edit can follow it",
      _migrate_message_links),
+    (42, "An item from the phone can be a document or a video, and photos sent together make one item",
+     _migrate_files_and_albums),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

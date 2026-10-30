@@ -50,7 +50,10 @@ Send the bot a message. You can start it with a prefix, in any letter case. Noth
 | A link to a profile, or any other address | Kept in the words of your note |
 | A photo, with or without a caption | Your collection, as a photo, kept as it is and never read: no text is taken from it. Its caption is your words, with **Write it up** and the angles when it has one. See [Photos and voice notes](#photos-and-voice-notes) |
 | A voice note | Your collection, as a voice note, kept as it is and never transcribed |
-| A file, a video, a sticker or other message with no text | Nothing. It is skipped, and so is any caption |
+| Photos sent together, as an album | One item, with all its photos and the caption, kept as they are |
+| A document: a PDF, or any other file, a music file among them | Your collection, as a document, kept as it is with its own name, and never read: no text is taken from it. Its caption is your words |
+| A video, a round video message, or a GIF | Your collection, as a video, kept as it is and never transcribed |
+| A sticker, a location, a contact or other message with no text | Nothing. It is skipped |
 
 Any `#hashtag` in the text is one of the item's tags, up to 30, and its topic is the first of your own topics from Setup ("What you write about") that its words name, or else its first hashtag. An em dash in your message is saved as ` -- `.
 
@@ -72,11 +75,13 @@ Everything you send your bot lands in **From your record**, on its **Your collec
 
 A link to one of your posts, and a short link, are also requests on Today, and the item says what became of the request. A link to someone else's post is a bookmark, which the studio never opens; your own browser does, if you click it. What you sent before this version is listed too, as used: each message the bot saved as a draft, and each link it asked Today to open.
 
-### Photos and voice notes
+### Photos, voice notes, documents and videos
 
 A photo or a voice note you send is downloaded from Telegram as it is, into your studio's media folder, and listed in your collection: a photo is shown, and a voice note has a player. Neither is read: no text is taken from a photo, a voice note is never transcribed, and nothing of either is sent anywhere. A photo's caption is your words, and can be written up like any note. Telegram sends the largest size of a photo it holds; a file over 20 MB is not downloaded, and the bot says so.
 
-- **Add to your media library**, under a photo, copies it into the Composer's **Media** tab, with your other images, to use in a post. The item is then used, and says "In your media library". The copy stays there even if you remove the item.
+A document or a video is kept the same way, with its own name, and never read: no text is taken from a PDF and nothing is transcribed from a video. In **Your collection** a video plays, and a document offers **View** (a PDF, a picture or a plain text) and **Download**, under its own name. A file the studio cannot show, such as a Word document or a web page, is kept as a download only, and is never opened in the studio's own window. Photos you send together, as an album, arrive as one item, all its photos shown together, with the caption you wrote on any of them as its words; the bot answers the album once.
+
+- **Add to your media library** copies what the media library takes into the Composer's **Media** tab, to use in a post: a photo or a picture (PNG, JPEG or WebP), every photo of an album, a PDF (as a document carousel) and an MP4 or WebM video, each checked as an upload is. It is not offered for anything else. The item is then used, and says "In your media library". The copy stays there even if you remove the item.
 - **Undo** under the bot's answer, and **Remove** in the box, take the file with the item. Deleting everything the studio holds about you deletes every photo and voice note you sent, but not a copy you added to your media library, which is yours like anything you upload.
 
 Your unused items come back while you write. In the Composer, **From your collection**, folded above the editor beside **What worked, from your own posts**, lists up to three new items whose words your draft shares, matched on this computer as you type, and says how many on its folded line. **Add to the draft** puts an item's words at the end of your draft, and the item is then used, with your draft as what it became; on a post you have not saved yet, that happens when you save it, if its words are still there. **UNDO** beside it takes the words back out, and the item is new again. The **You asked** card in **From your record** may draw an unused idea too, and the weekly summary counts them.
@@ -287,10 +292,10 @@ Each message gets one short sentence back, the same words every time. None carri
 | A short `lnkd.in` link | Saved to your collection. Today will ask you to open this link at your computer. |
 | A link to a post that is not yours | Saved to your collection as a bookmark. Your studio never opens other people's posts. |
 | A `Draft:` message | Saved as a draft in your studio. (With **Undo** under it.) |
-| A photo or a voice note | Saved to your collection. (With **Undo** under it, and **Write it up** and the angles when a photo has a caption.) |
-| A photo or a voice note over 20 MB | That file is larger than your studio keeps from the phone (20 MB), so nothing was saved. |
-| A photo or a voice note Telegram would not hand over | Telegram did not hand that file over, so nothing was saved. Send it again. |
-| A sticker, a file, a video or anything else with no text | That message had no text, so nothing was saved. |
+| A photo, an album, a voice note, a document or a video | Saved to your collection. (With **Undo** under it, and **Write it up** and the angles when it has a caption. An album is answered once.) |
+| A photo, a voice note, a document or a video over 20 MB | That file is larger than your studio keeps from the phone (20 MB), so nothing was saved. |
+| A file Telegram would not hand over | Telegram did not hand that file over, so nothing was saved. Send it again. |
+| A sticker, a location, a contact or anything else with no text | That message had no text, so nothing was saved. |
 | A message your studio could not save, after three tries | Your studio could not save that message. Open the studio to see why. |
 | The studio checked again more than a day after its last check | Your studio did not check Telegram for your messages from ... until ..., on your computer's clock. Telegram keeps a bot's messages for one day, so anything you sent before ... may not have arrived. Send again whatever is missing from Your collection. |
 | You pressed **This is me**, or saved a chat id | Paired. Messages from this chat now arrive in your studio. Send /help to see what I do. |

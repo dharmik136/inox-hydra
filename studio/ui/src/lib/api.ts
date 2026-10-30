@@ -3743,7 +3743,17 @@ export type RecordSetupField = "topics" | "audience" | "avoid";
 // Your collection: what the creator sent their Telegram bot
 // -------------------------------------------------------------
 
-export type CollectionKind = "note" | "idea" | "forward" | "post" | "link" | "bookmark" | "photo" | "voice";
+export type CollectionKind =
+  | "note"
+  | "idea"
+  | "forward"
+  | "post"
+  | "link"
+  | "bookmark"
+  | "photo"
+  | "voice"
+  | "document"
+  | "video";
 export type CollectionStatus = "new" | "used" | "not_now";
 
 /** One thing sent to the bot: its words, what it is, and what it became. */
@@ -3811,8 +3821,16 @@ export interface CollectionMedia {
   bytes: number;
   width?: number;
   height?: number;
-  /** A voice note's length, in seconds. */
+  /** A voice note's or a video's length, in seconds. */
   duration?: number;
+  /** A document's or a video's own name, to show and to download under (phase 4). */
+  name?: string;
+  /** Kept as bytes, a download only: the studio never opens it in its own window (phase 4). */
+  download_only?: boolean;
+  /** What the media library would keep it as, or null when it takes no such file (phase 4). */
+  library?: "image" | "carousel" | "video" | null;
+  /** An album's other files, photos sent together (phase 4). */
+  more?: CollectionMedia[];
 }
 
 /** A photo from the phone, copied into the media library, where a post's images are kept. */
