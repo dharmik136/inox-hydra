@@ -176,6 +176,10 @@ export function TelegramIngressPanel() {
               },
             ]
           : []),
+        // The bot's commands, registered for the paired chat once Telegram is reached.
+        ...(state.chat_id
+          ? [{ label: "The / menu in your chat", value: state.menu ? "SET" : "NOT YET", good: state.menu }]
+          : []),
       ]
     : [];
 

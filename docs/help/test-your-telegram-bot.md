@@ -56,6 +56,7 @@ These need a post to come due, or an hour to come round, so they take as long as
 1. Seen working: open **Settings**, then **Local security**. If your bot has saved anything from your chat before, even before this version, the orange "Not yet seen working on this computer" sentence is gone.
 2. The last check: the panel shows **Last checked Telegram** with a time a few seconds old. Send `/status`: the bot adds when the studio last checked before your message.
 3. A day off (only when it happens): if the computer is off for more than a day, at the next start the bot says "Your studio did not check Telegram for your messages from ...", and the panel shows **A DAY THE STUDIO DID NOT CHECK TELEGRAM** until you press **Got it**. Check **Your collection** and send again whatever is missing.
+4. The / menu: in the chat with your bot, type `/`. The menu lists the bot's commands, each with what it does, as `/help` says them, and the panel says SET beside **The / menu in your chat**.
 
 ## When a step does not match
 

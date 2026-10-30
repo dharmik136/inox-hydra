@@ -124,3 +124,9 @@ def test_phase_4_seen_working_and_a_day_not_checked_quote_the_bot_and_the_panel(
     assert telegram_bot.GAP_NOTICE.split(" from {start}")[0] in article
     for words in ("Last checked Telegram", "A DAY THE STUDIO DID NOT CHECK TELEGRAM", "Got it"):
         assert words in article and words in _panel(), words
+
+
+def test_phase_4_the_menu_step_names_the_panels_row():
+    """Phase 4, item 3: the / menu, and the panel's row that says Telegram took it."""
+    article = _article()
+    assert "The / menu in your chat" in article and "The / menu in your chat" in _panel()

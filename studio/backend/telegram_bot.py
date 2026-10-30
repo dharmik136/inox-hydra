@@ -36,6 +36,7 @@ Strict Invariants:
 - No message text in a log line: the logs say what kind of thing happened.
 """
 
+import hashlib
 import json
 import logging
 import re
@@ -236,27 +237,53 @@ SOURCE_WORDS = {
 FIGURE_WORDS = (("impressions", "impressions"), ("reactions", "reactions"), ("comments", "comments"),
                 ("reposts", "reposts"))
 
-# What /start and /help answer: what the bot does, how to pair, and what it
-# never sends. Fixed, like every sentence above.
-HELP = "\n".join((
-    "I am your Inox Hydra bot. Everything you send me goes into the collection in your studio on your computer.",
-    "",
-    "Send me:",
-    "- any text, or a message you forward: kept in your collection, to write from when you like",
-    "- /idea and your idea: kept in your collection as an idea",
-    "- a link to one of your LinkedIn posts: Today asks you to open its analytics",
-    "- a link to someone else's post: kept as a bookmark, never opened",
-    "- a photo or a voice note: kept as it is in your collection, never read or transcribed",
-    "- Draft: and your post: saved straight as a draft",
-    "- /ask and what your studio should remember when it picks what to write about",
-    "- /status: whether your studio and its bridge are running",
-    "- /today: your latest post's figures, replies waiting and your next scheduled post, only if you allow "
-    "figures in your studio",
-    "- /drafts: how many drafts were made from what you sent in the last seven days",
-    "- /remember and a fact about you, your audience, an offer or a date: your studio's writing reads it",
-    "- /forget and words from something you asked me to remember",
-    "- /recall and a word: how many items in your collection hold it",
-    "",
+# Phase 4, item 3: the bot's commands, as Telegram's "/" menu lists them for
+# the paired chat (setMyCommands, scoped to that chat) and as /help says them:
+# one list, so the two cannot differ. Telegram's limits: at most 100, each
+# 1 to 32 lowercase letters, digits and underscores, its description 1 to
+# 256 characters. /start is Telegram's own Start button, so it is not listed.
+BOT_COMMANDS = (
+    ("help", "What I do, how to pair a chat, and what I send only if you allow it"),
+    ("idea", "Your idea after it, kept in your collection as an idea"),
+    ("remember", "A fact after it about you, your audience, an offer or a date, which your studio's writing reads"),
+    ("forget", "Words after it from something you asked me to remember, which is then removed"),
+    ("recall", "A word after it, and I say how many items in your collection hold it"),
+    ("ask", "What your studio should keep in mind when it picks what to write about, after it"),
+    ("status", "Whether your studio and its bridge are running, and when it last checked for your messages"),
+    ("today", "Your latest post's figures, replies waiting and your next scheduled post, only if you allow "
+              "figures in your studio"),
+    ("drafts", "How many drafts were made from what you sent in the last seven days"),
+)
+# What Telegram took, so it is not sent again at every start: a fingerprint
+# of the chat and the list, the chat, and when. A refusal is tried again
+# after this long, never at every poll.
+MENU_KEY = "telegram_menu"
+MENU_RETRY_SECONDS = 600.0
+# Taking a removed bot's menu away is best effort, and the panel waits for it.
+MENU_AWAY_TIMEOUT = 3.0
+
+
+def _help() -> str:
+    """What /start and /help answer: what the bot does, its commands as the menu lists them, how to pair."""
+    return "\n".join((
+        "I am your Inox Hydra bot. Everything you send me goes into the collection in your studio on your computer.",
+        "",
+        "Send me:",
+        "- any text, or a message you forward: kept in your collection, to write from when you like",
+        "- a link to one of your LinkedIn posts: Today asks you to open its analytics",
+        "- a link to someone else's post: kept as a bookmark, never opened",
+        "- a photo or a voice note: kept as it is in your collection, never read or transcribed",
+        "- Draft: and your post: saved straight as a draft",
+        "",
+        "Commands, also in the / menu of this chat:",
+        *(f"- /{name}: {words[0].lower()}{words[1:]}" for name, words in BOT_COMMANDS),
+        "",
+        *_HELP_AFTER,
+    ))
+
+
+# What /start and /help answer after the commands. Fixed, like every sentence above.
+_HELP_AFTER = (
     "Press Undo under my answer to take it back, while it is still new in your studio.",
     "",
     "Your studio must run at least once a day: Telegram keeps my messages for one day, so anything you send while "
@@ -266,7 +293,8 @@ HELP = "\n".join((
     "",
     "I send your own words back only if you allow it in your studio, your figures only if you allow them, and "
     "never anything about other people.",
-))
+)
+HELP = _help()
 
 # Commands answered whatever the confirmations switch says: they are questions.
 QUESTIONS = ("start", "help", "status", "today", "drafts", "forget", "recall")
@@ -1236,6 +1264,88 @@ def _reminders_due(conn, due_now) -> List[Dict[str, Any]]:
     if len(waiting) != len(reminders):
         _write_json(conn, REMIND_KEY, waiting)
     return said
+
+
+# ---------------------------------------------------------------------------
+# The "/" menu (phase 4, item 3): the commands registered for the paired chat
+# ---------------------------------------------------------------------------
+
+def menu_fingerprint(chat_id: Any) -> str:
+    """What the menu Telegram should hold is, as one short value: the chat, and the commands with their words."""
+    held = json.dumps({"chat": str(chat_id), "commands": [list(c) for c in BOT_COMMANDS]}, sort_keys=True)
+    return hashlib.sha256(held.encode("utf-8")).hexdigest()[:24]
+
+
+def _menu_record(conn) -> Dict[str, Any]:
+    return _read_json(conn, MENU_KEY, {})
+
+
+def menu_registered(chat_id: Any) -> bool:
+    """Whether Telegram took this chat's menu as the commands are now, in the open profile."""
+    conn = get_db()
+    try:
+        return bool(chat_id) and _menu_record(conn).get("fingerprint") == menu_fingerprint(chat_id)
+    finally:
+        conn.close()
+
+
+def menu_due(chat_id: Any) -> Optional[Dict[str, Any]]:
+    """
+    None when Telegram already holds this chat's menu as it is now; else
+    what registering it involves: the chat an earlier menu was registered
+    for, if it is another, whose menu is then taken away.
+    """
+    conn = get_db()
+    try:
+        record = _menu_record(conn)
+    finally:
+        conn.close()
+    if record.get("fingerprint") == menu_fingerprint(chat_id):
+        return None
+    before = str(record.get("chat") or "")
+    return {"before": before if before and before != str(chat_id) else None}
+
+
+def _chat_scope(chat_id: Any) -> Dict[str, Any]:
+    return {"type": "chat", "chat_id": int(str(chat_id))}
+
+
+def register_menu(token: str, chat_id: Any, due: Dict[str, Any]) -> bool:
+    """
+    setMyCommands for the paired chat only, through the egress check, and
+    the fingerprint kept when Telegram took it. An earlier chat's menu goes
+    first. Returns whether Telegram took it.
+    """
+    if due.get("before"):
+        call(token, "deleteMyCommands", {"scope": _chat_scope(due["before"])})
+    result = call(token, "setMyCommands", {
+        "commands": [{"command": name, "description": words} for name, words in BOT_COMMANDS],
+        "scope": _chat_scope(chat_id)})
+    if not result["ok"]:
+        return False
+    conn = get_db()
+    try:
+        _write_json(conn, MENU_KEY, {"fingerprint": menu_fingerprint(chat_id), "chat": str(chat_id), "at": _now()})
+    finally:
+        conn.close()
+    return True
+
+
+def take_menu_away(token: str) -> None:
+    """
+    A bot removed or replaced: the menu Telegram holds for the chat it was
+    registered for is taken away, best effort and briefly, and what was
+    kept of it is forgotten either way.
+    """
+    conn = get_db()
+    try:
+        record = _menu_record(conn)
+        with conn:
+            conn.execute("DELETE FROM settings WHERE key = ?", (MENU_KEY,))
+    finally:
+        conn.close()
+    if token and str(record.get("chat") or "").isdigit():
+        call(token, "deleteMyCommands", {"scope": _chat_scope(record["chat"])}, timeout=MENU_AWAY_TIMEOUT)
 
 
 # ---------------------------------------------------------------------------

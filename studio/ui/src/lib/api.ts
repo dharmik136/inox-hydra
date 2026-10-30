@@ -4175,6 +4175,8 @@ export interface IngressSettings {
    * words for it. Shown until Got it; null when there is none.
    */
   gap: { from: string; to: string; since: string; said: string } | null;
+  /** Telegram holds the bot's "/" menu for the paired chat, as the commands are now (phase 4). */
+  menu: boolean;
 }
 
 export async function fetchIngressSettings(): Promise<IngressSettings> {

@@ -262,8 +262,9 @@ def test_a_due_post_has_remind_and_done_and_done_marks_nothing_as_posted(notifyi
     assert (status, published) == ("due", None), "Done marked the post as posted"
     assert _linkedin_counts() == before, "a press reached for LinkedIn"
     methods = {c["method"] for c in bot["fake"].calls}
+    # Telegram's methods only; setMyCommands is the / menu for the paired chat (phase 4).
     assert methods <= {"getUpdates", "sendMessage", "answerCallbackQuery", "editMessageText",
-                       "editMessageReplyMarkup"}, methods
+                       "editMessageReplyMarkup", "setMyCommands"}, methods
     _settle(bot)
     assert _texts(bot) == [SAID["due_one"]], "Done was followed by another message"
 

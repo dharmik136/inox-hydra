@@ -336,6 +336,10 @@ class TelegramIngressDaemon:
         self.last_ok_at: Optional[datetime] = None
         self.previous_ok_at: Optional[datetime] = None
         self._checked_written_at: Optional[datetime] = None
+        # Phase 4, item 3: the menu's fingerprint Telegram took in this run,
+        # so the profile is not read at every turn, and when it last refused.
+        self._menu_held: Optional[str] = None
+        self._menu_refused_at = 0.0
 
     def configure(self, bot_token: str, authorized_chat_id: str, origin: Optional[str],
                   profile_id: Optional[str] = None) -> None:
@@ -361,6 +365,8 @@ class TelegramIngressDaemon:
             self.last_ok_at = None
             self.previous_ok_at = None
             self._checked_written_at = None
+            self._menu_held = None
+            self._menu_refused_at = 0.0
         self.bot_token = token
         self.authorized_chat_id = authorized_chat_id or ""
         # A chat now saved is no longer asked about.
@@ -610,6 +616,35 @@ class TelegramIngressDaemon:
             self.outbox.put(chat, item["text"], keyboard)
         if said:
             self.flush_replies()
+
+    def check_menu(self) -> None:
+        """
+        After a successful check: the "/" menu for the paired chat, registered
+        with Telegram when the chat or the commands changed since Telegram last
+        took it (phase 4, item 3), and tried again after a refusal only once
+        MENU_RETRY_SECONDS have passed. Never raises: a menu is never worth a
+        lost poll.
+        """
+        chat = str(self.authorized_chat_id or "")
+        if not (self.bot_token and CHAT_ID_SHAPE.match(chat) and self.configured_from == "settings"
+                and self.last_ok_at is not None):
+            return
+        wanted = telegram_bot.menu_fingerprint(chat)
+        if wanted == self._menu_held:
+            return
+        if self._menu_refused_at and time.monotonic() - self._menu_refused_at < telegram_bot.MENU_RETRY_SECONDS:
+            return
+        try:
+            with self._bots_profile():
+                due = telegram_bot.menu_due(chat)
+                took = due is None or telegram_bot.register_menu(self.bot_token, chat, due)
+        except Exception as error:
+            logger.warning("The bot's menu could not be registered: %s", type(error).__name__)
+            took = False
+        if took:
+            self._menu_held, self._menu_refused_at = wanted, 0.0
+        else:
+            self._menu_refused_at = time.monotonic()
 
     def flush_replies(self) -> None:
         """Sends the bot's waiting replies. Never raises: a reply is never worth a lost poll."""
@@ -1206,6 +1241,8 @@ class TelegramIngressDaemon:
                     logger.error("Worker loop error: %s", self._redact(str(e)))
                 has_err = has_err or self.poll_failed
                 self.check_notifications()
+                if not has_err:
+                    self.check_menu()
 
                 delay = self.calculate_next_poll_interval(has_error=has_err)
                 if stop.wait(delay):
@@ -1370,6 +1407,8 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
     token = (bot_token or "").strip()
     chat = (chat_id or "").strip()
     if not token and not chat:
+        # The bot's menu in the chat goes with it, best effort (phase 4).
+        telegram_bot.take_menu_away(read_settings()["token"])
         conn = get_db()
         try:
             with conn:
@@ -1403,6 +1442,9 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
             "Your chat id is a number, digits only. Or leave it empty: save the token, message the bot once, "
             "then press This is me. Nothing was stored.")}
     chat = chat or held["chat_id"]
+    if held["token"] and token != held["token"]:
+        # Another bot: the one replaced takes its menu with it, best effort.
+        telegram_bot.take_menu_away(held["token"])
     conn = get_db()
     try:
         with conn:
@@ -1514,6 +1556,8 @@ def describe_settings() -> Dict[str, Any]:
         # not checked, said until Got it.
         "last_check_at": _last_check(running_here),
         "gap": telegram_bot.gap_shown(),
+        # Phase 4, item 3: Telegram holds the "/" menu for the paired chat as the commands are now.
+        "menu": telegram_bot.menu_registered(held["chat_id"]) if held["chat_id"] else False,
     }
 
 

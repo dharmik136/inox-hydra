@@ -9,6 +9,8 @@ new control is checked with axe in both themes.
 
   item 2   the last check of Telegram, and the notice of a day the studio
            did not check, with Got it
+  item 3   the row that says whether Telegram holds the / menu for the
+           paired chat
 
 docs/quality/cycle4/bot-phase4.md.
 
@@ -69,4 +71,19 @@ def test_the_notice_of_a_day_not_checked_shows_and_got_it_clears_it(page, studio
     page.get_by_role("button", name="Got it").click()
     expect(page.get_by_text("A DAY THE STUDIO DID NOT CHECK TELEGRAM")).to_have_count(0)
     assert telegram_bot.gap_shown() is None
+    assert _axe(page, PANEL) == []
+
+
+def test_the_menu_row_says_whether_telegram_holds_it(page, studio, fake):
+    """Item 3: NOT YET until Telegram took the menu, SET once it has, in both themes."""
+    _saved_in_the_panel(page, studio)
+    row = page.locator("div:has(> dt:text-is('The / menu in your chat'))")
+    expect(row.locator("dd")).to_have_text("NOT YET")
+    import ingress
+    held = ingress.read_settings()
+    assert telegram_bot.register_menu(held["token"], held["chat_id"], {"before": None})
+    page.reload(wait_until="networkidle")
+    page.get_by_role("tab", name="Local security").click()
+    expect(row.locator("dd")).to_have_text("SET")
+    assert [c["command"] for c in fake.menu(held["chat_id"])][:2] == ["help", "idea"]
     assert _axe(page, PANEL) == []

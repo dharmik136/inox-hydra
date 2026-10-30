@@ -131,9 +131,11 @@ In the studio they are listed under **Brand**, then **Writing**, under **Things 
 
 Send a command as a message on its own, as Telegram's menu does. Letter case does not matter, and `/help@YourBot` is read as `/help`.
 
+The commands are in Telegram's **/** menu of your chat too: type `/` in the chat with your bot and pick one, with what it does beside it, in the words `/help` uses. The studio registers that menu with Telegram for your paired chat only, once it reaches Telegram after you pair, and again only when a new version changes the commands. Pairing another chat takes the menu from the chat before, and **Remove the bot** takes it away, if Telegram can be reached then.
+
 | You send | What happens |
 | --- | --- |
-| `/start` or `/help` | The bot says what it does, what **Undo** does, how to pair a chat, and that it sends your words and figures only if you allow them, and nothing about anyone else |
+| `/start` or `/help` | The bot says what it does, its commands as the **/** menu lists them, what **Undo** does, how to pair a chat, and that it sends your words and figures only if you allow them, and nothing about anyone else |
 | `/idea your idea` | Your idea is kept in your collection as an idea, as `Idea: your idea` is. A link inside it stays part of the idea |
 | `/ask what to remember` | It is remembered as an ask in **From your record**, with the source Telegram, and listed under **What the studio knows** there, where you can change or remove it. It takes effect on tomorrow's cards. It is not kept in your collection |
 | `/status` | Whether your studio is running, whether the bridge in your browser is connected, and when the studio last checked Telegram before your message, for example "Before this message, it last checked Telegram for your messages 2 days ago (Thu 29 Oct, 18:02 on your computer's clock)." No figures |
@@ -299,6 +301,7 @@ The panel under **Your phone, through Telegram** reads:
 - **Messages saved since the studio started**: how many messages were saved since startup.
 - **Posts asked for from the phone, waiting**: open requests.
 - **Last checked Telegram**: when Telegram last answered the studio's check for messages, kept when the studio stops. NOT YET before the first.
+- **The / menu in your chat**: SET once Telegram took the bot's commands for your paired chat.
 - **Last problem reaching Telegram**: the most recent problem, in plain words, such as Telegram not recognising the token, another program asking for the same bot's messages, or no connection. It is cleared after each successful check. After a problem the studio waits longer before asking again, and as long as Telegram asks when it says to slow down.
 - **Last message the bot could not send**: why the bot's last answer did not go, in plain words.
 

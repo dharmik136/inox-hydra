@@ -96,7 +96,8 @@ def test_a_voice_note_is_kept_as_it_is_and_never_transcribed(bot):
     # No words to write from: Undo alone.
     assert _labels(bot) == ["Undo"]
     methods = {c["method"] for c in bot["fake"].calls}
-    assert methods <= {"getUpdates", "sendMessage", "getFile", "file"}, methods
+    # Telegram's methods only; setMyCommands is the / menu for the paired chat (phase 4).
+    assert methods <= {"getUpdates", "sendMessage", "getFile", "file", "setMyCommands"}, methods
 
 
 def test_the_file_is_fetched_through_the_egress_check_and_counted_without_the_token(bot, monkeypatch):

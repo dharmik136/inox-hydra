@@ -31,6 +31,11 @@ What it does, as the Bot API does:
   /file/bot<token>/<path>
                the file's bytes, as api.telegram.org serves a file a bot
                may download; recorded as a call to "file"
+  setMyCommands, getMyCommands, deleteMyCommands
+               the "/" menu, kept per scope (the default one, or one chat's)
+               as Telegram keeps it, with Telegram's limits: at most 100
+               commands, each 1 to 32 lowercase letters, digits and
+               underscores, with a description of 1 to 256 characters
 
 A press of an inline button is a callback_query update, pushed with
 `press` (any data, from any chat) or `press_button` (a button the phone
@@ -49,6 +54,7 @@ Strict Invariants:
 """
 
 import json
+import re
 import socket
 import threading
 import time
@@ -79,6 +85,8 @@ class FakeTelegram:
         self._plans: Dict[str, List[tuple]] = {}
         # Files the phone sent, by file_id: their bytes and the path getFile names.
         self.files: Dict[str, Dict[str, Any]] = {}
+        # The "/" menu, by scope: "default", or "chat:<id>" for one chat's own list.
+        self.commands: Dict[str, List[Dict[str, str]]] = {}
         self._cond = threading.Condition()
         self._server: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
@@ -182,6 +190,12 @@ class FakeTelegram:
                     return self.press(chat_id, button["callback_data"], message_id=found)
         raise AssertionError(f"no message to chat {chat_id} shows a button labelled {label!r}")
 
+    def menu(self, chat_id: Any = None) -> List[Dict[str, str]]:
+        """The commands one chat's menu lists, its own list or else the default one, as Telegram picks."""
+        with self._cond:
+            own = self.commands.get(f"chat:{chat_id}") if chat_id is not None else None
+            return list(own if own is not None else self.commands.get("default") or [])
+
     def message(self, message_id: int) -> Dict[str, Any]:
         """A message as the phone shows it now."""
         with self._cond:
@@ -279,7 +293,55 @@ class FakeTelegram:
             return self._edit(handler, method, params)
         if method == "getFile":
             return self._get_file(handler, params)
+        if method in ("setMyCommands", "getMyCommands", "deleteMyCommands"):
+            return self._my_commands(handler, method, params)
         return self._answer(handler, 404, {"ok": False, "error_code": 404, "description": "Not Found"})
+
+    @staticmethod
+    def _scope(params: Dict[str, Any]) -> Optional[str]:
+        scope = params.get("scope")
+        if isinstance(scope, str):
+            scope = json.loads(scope)
+        scope = scope or {"type": "default"}
+        kind = scope.get("type")
+        if kind == "default":
+            return "default"
+        if kind == "chat" and str(scope.get("chat_id") or "").lstrip("-").isdigit():
+            return f"chat:{int(scope['chat_id'])}"
+        return None
+
+    def _my_commands(self, handler, method: str, params: Dict[str, Any]) -> None:
+        scope = self._scope(params)
+        if scope is None:
+            return self._answer(handler, 400, {"ok": False, "error_code": 400,
+                                               "description": "Bad Request: wrong scope"})
+        if method == "getMyCommands":
+            with self._cond:
+                return self._answer(handler, 200, {"ok": True, "result": list(self.commands.get(scope) or [])})
+        if method == "deleteMyCommands":
+            with self._cond:
+                self.commands.pop(scope, None)
+                self._cond.notify_all()
+            return self._answer(handler, 200, {"ok": True, "result": True})
+        commands = params.get("commands")
+        if isinstance(commands, str):
+            commands = json.loads(commands)
+        if not isinstance(commands, list) or len(commands) > 100:
+            return self._answer(handler, 400, {"ok": False, "error_code": 400,
+                                               "description": "Bad Request: too many commands"})
+        for command in commands:
+            name = str((command or {}).get("command") or "")
+            words = str((command or {}).get("description") or "")
+            if not re.fullmatch(r"[a-z0-9_]{1,32}", name):
+                return self._answer(handler, 400, {"ok": False, "error_code": 400,
+                                                   "description": "Bad Request: BOT_COMMAND_INVALID"})
+            if not 1 <= len(words) <= 256:
+                return self._answer(handler, 400, {"ok": False, "error_code": 400,
+                                                   "description": "Bad Request: BOT_COMMAND_DESCRIPTION_INVALID"})
+        with self._cond:
+            self.commands[scope] = [{"command": c["command"], "description": c["description"]} for c in commands]
+            self._cond.notify_all()
+        return self._answer(handler, 200, {"ok": True, "result": True})
 
     def _get_file(self, handler, params: Dict[str, Any]) -> None:
         file_id = str(params.get("file_id") or "")
