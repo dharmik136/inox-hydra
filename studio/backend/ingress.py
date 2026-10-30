@@ -1361,7 +1361,18 @@ class TelegramIngressDaemon:
             # token is in the URL and the URL is in the exception, for the log.
             self.last_error = (telegram_bot.EGRESS_OFF if isinstance(err, _egress.EgressRefused)
                                else telegram_bot.UNREACHABLE)
-            logger.error("Polling error: %s", self._redact(str(err)))
+            # One line per failed check (phase 4): a network fault, such as a
+            # long poll timing out while Wi-Fi reconnects, or this computer's
+            # own egress switch, is a warning; anything else an error. The
+            # loop around the check does not say it again.
+            expected = isinstance(err, (requests.exceptions.Timeout, requests.exceptions.ConnectionError,
+                                        _egress.EgressRefused))
+            logger.log(logging.WARNING if expected else logging.ERROR,
+                       "Polling error, the studio tries again: %s", self._redact(str(err)))
+            try:
+                err.inox_logged = True
+            except Exception:
+                pass
             raise
         return []
 
@@ -1389,7 +1400,9 @@ class TelegramIngressDaemon:
                     self.poll_once()
                 except Exception as e:
                     has_err = True
-                    logger.error("Worker loop error: %s", self._redact(str(e)))
+                    if not getattr(e, "inox_logged", False):
+                        # The check logs its own failure; only what it did not is said here.
+                        logger.error("Worker loop error: %s", self._redact(str(e)))
                 has_err = has_err or self.poll_failed
                 self.check_notifications()
                 if not has_err:
