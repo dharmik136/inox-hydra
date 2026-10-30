@@ -59,6 +59,17 @@ capability first and merged on a release branch. Ten tabs on one post went
 from 620 requests to 3. Records: `docs/quality/cycle4/t1-phase2.md`,
 `t4-phase-b.md`, `t7-phase2.md`.
 
+## In 2.13.0
+
+The Telegram bot, phase 4, on the owner's question of 2026-10-30 ("see what
+more can be done in it"): twelve items from a review of the released bot, with
+every new choice in the AI work the creator's preference. Two migrations (41
+and 42; 42 rebuilds `collection_items` to widen its kind check), rehearsed on a
+copy of the owner's live database before release: integrity ok, no foreign key
+problem, nothing left behind, every count, every collection row and the id
+sequence unchanged. Records: `docs/quality/cycle4/bot-phase4.md` (the PRD) and
+the phase 4 section of `docs/quality/cycle4/telegram-bot.md`.
+
 ## In 2.12.0
 
 The Telegram bot, phase 3, on the owner's direction of 2026-10-29: one bot for

@@ -5,6 +5,68 @@ asks for an entry per release (`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`
 section 5.5); this file starts with the work since v2.5.2, which was never
 released. Version numbers follow `studio/__version__.py`.
 
+## 2.13.0
+
+The Telegram bot does more from your phone: it lists its commands, sends you a
+whole post to copy into the LinkedIn app, rewrites a draft the way you set it,
+follows your replies and edits, keeps files and albums, and tells you when it
+could not check Telegram for a day.
+
+### Before you use 2.13.0
+
+- **Your database is upgraded** the first time you start it, from schema 40 to
+  42, after the usual automatic backup: each message from your phone is linked
+  to the item it made, and the collection can hold documents, videos and
+  albums. Everything already in your collection keeps its number.
+- **No hand reload.** An extension loaded from the studio's folder reloads
+  itself when the studio is updated.
+
+### Added
+
+- **The / menu.** Typing / in your chat with the bot lists its commands, each
+  with one line on what it does. They are registered for your paired chat
+  only.
+- **Send me the whole post.** Under "Draft ready" and under a due post's
+  reminder, while the bot may send you what it writes: the post alone, to
+  long-press, copy and paste into the LinkedIn app. A long post comes in parts.
+  You post it yourself; nothing is posted for you.
+- **Shape a draft from your phone.** Buttons under a draft the bot wrote
+  rewrite it through your own AI provider and your writing settings: Shorter,
+  New opening and Another angle to start with, each with an instruction you can
+  change, up to six or none, in Brand, Writing. The text a rewrite replaced is
+  kept on the draft, with Put it back in the editor in the Composer and Undo on
+  the bot.
+- **Build an idea up over the day.** Reply in Telegram to an earlier message,
+  or to the bot's answer about it, and your words are added to that item
+  instead of starting a new one, with Undo. You can switch this off in the
+  Telegram panel.
+- **Edits follow.** Editing a message on your phone updates its item in your
+  collection. Once an item became a draft, the draft is left as it is and the
+  bot says so.
+- **Remember this** under "Saved to your collection." keeps a note as a thing
+  to remember, with Undo.
+- **/write and a word or a #tag** writes one draft from the unused items that
+  match. How many items one draft may use (10 to start with, from 2 to 20) is a
+  setting, for Combine and /write alike.
+- **Everything in one box.** Photos sent together arrive as one item. PDFs,
+  other files and videos are kept as they are, up to Telegram's 20 MB limit for
+  bots, and never read; a file the studio cannot safely show is offered as a
+  download only.
+- **Text kept whole.** A link behind words is kept, a link to one of your posts
+  behind words is handled like a pasted one, #hashtags become the item's tags,
+  and /recall #tag finds them.
+- **Nothing lost quietly.** Telegram keeps a bot's messages for one day. If
+  your studio could not check Telegram for longer than that, it says so once,
+  on the bot and in the Telegram panel, so you can send again what is missing.
+  The panel shows when it last checked Telegram, and /status says it too.
+
+### Fixed
+
+- The Telegram panel said "Not yet seen working" on a studio that already held
+  messages from your chat.
+- One log line per failed check instead of two, and a check that times out
+  while your network reconnects is a warning, not an error.
+
 ## 2.12.0
 
 Everything you send the bot lands in one collection, the studio makes posts
