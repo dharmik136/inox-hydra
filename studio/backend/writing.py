@@ -17,6 +17,8 @@ in the studio and on the bot:
   ending        how a post ends                         Make a post, Combine, Write it up, Command
   avoid         words and phrases never to write        every writing request
   angles        how many opening lines Angles offers    Angles, and the bot's button
+  reshapes      the rewrite buttons under a draft the   the bot (phase 4)
+                bot wrote: each a label and what it asks
 
 The defaults keep what Command said until now (its tone, its paragraphs,
 its first-line rule, its ending, its four phrases), so a fresh profile
@@ -38,6 +40,7 @@ Strict Invariants:
 - Nothing about another person is sent: only the creator's own items.
 """
 
+import hashlib
 import json
 import re
 from typing import Any, Dict, Iterable, List, Optional, Set
@@ -86,6 +89,18 @@ ENDINGS = {"question_or_takeaway": "an authentic, thoughtful question or takeawa
            "question": "a question to the reader", "takeaway": "one clear takeaway",
            "none": "no set ending: stop when the point is made"}
 TONE_MAX, LANGUAGE_MAX, AVOID_MAX, AVOID_PHRASE_MAX = 160, 40, 12, 60
+# Phase 4, item 5: the rewrite buttons under a draft the bot wrote. Each is a
+# label, short enough for a button on a phone, and what it asks the writer
+# for, in the creator's own words; none at all is a choice too.
+RESHAPES_MAX, RESHAPE_LABEL_MAX, RESHAPE_ASKS_MAX = 6, 24, 200
+DEFAULT_RESHAPES = (
+    {"label": "Shorter", "asks": "Make it about a third shorter. Keep its point, its first line and its voice."},
+    {"label": "New opening",
+     "asks": "Write a new first line for it, as the opening line preference says. Keep the rest as it is."},
+    {"label": "Another angle", "asks": "Rewrite it from another angle on the same notes, at about the same length."},
+)
+# The texts a draft's rewrites replaced, kept on it, the newest last.
+EARLIER_KEPT = 10
 
 DEFAULTS: Dict[str, Any] = {
     "length_words": 150,
@@ -107,6 +122,8 @@ DEFAULTS: Dict[str, Any] = {
     # How many ideas the daily model stage asks your provider for (it was a
     # fixed three until phase 3).
     "ideas": 3,
+    # The rewrite buttons under a draft the bot wrote (phase 4).
+    "reshapes": [dict(b) for b in DEFAULT_RESHAPES],
 }
 SOURCES = ("collection", "posts", "asks")
 MEMORY = ("all", "chosen", "off")
@@ -164,6 +181,14 @@ def _valid(field: str, value: Any) -> bool:
         return value in MEMORY
     if field == "ideas":
         return value in IDEA_COUNTS and not isinstance(value, bool)
+    if field == "reshapes":
+        if not isinstance(value, list) or len(value) > RESHAPES_MAX:
+            return False
+        labels = [str(b.get("label") or "").strip().casefold() for b in value if isinstance(b, dict)]
+        return (len(labels) == len(value) and len(set(labels)) == len(labels)
+                and all(isinstance(b.get("label"), str) and 0 < len(b["label"].strip()) <= RESHAPE_LABEL_MAX
+                        and isinstance(b.get("asks"), str) and 0 < len(b["asks"].strip()) <= RESHAPE_ASKS_MAX
+                        and set(b) <= {"label", "asks"} for b in value))
     return False
 
 
@@ -202,6 +227,9 @@ def save(changes_asked: Dict[str, Any]) -> Dict[str, Any]:
             asked[field] = [p.strip() for p in value if isinstance(p, str) and p.strip()]
         if field == "sources" and isinstance(value, list):
             asked[field] = [s for s in SOURCES if s in value] if all(v in SOURCES for v in value) else value
+        if field == "reshapes" and isinstance(value, list):
+            asked[field] = [{k: " ".join(str(v).split()) if isinstance(v, str) else v for k, v in b.items()}
+                            if isinstance(b, dict) else b for b in value]
         if not _valid(field, asked[field]):
             raise Refused(_REFUSALS.get(field, "That preference was not saved."))
     conn = get_db()
@@ -233,6 +261,8 @@ _REFUSALS = {
     "memory": "Things to remember go with all writing, only the ones ticked, or none. Nothing was saved.",
     "ideas": (f"The daily idea asks for {', '.join(str(n) for n in IDEA_COUNTS[:-1])} or {IDEA_COUNTS[-1]} ideas. "
               "Nothing was saved."),
+    "reshapes": (f"Rewrite buttons are at most {RESHAPES_MAX}, each with its own label of up to {RESHAPE_LABEL_MAX} "
+                 f"characters and what it asks for in up to {RESHAPE_ASKS_MAX}. Nothing was saved."),
 }
 
 
@@ -282,7 +312,8 @@ def described() -> Dict[str, Any]:
             "language": "The language of what you wrote",
             "opening": "A first line that stops the scroll",
         },
-        "limits": {"tone": TONE_MAX, "language": LANGUAGE_MAX, "avoid": AVOID_MAX, "avoid_phrase": AVOID_PHRASE_MAX},
+        "limits": {"tone": TONE_MAX, "language": LANGUAGE_MAX, "avoid": AVOID_MAX, "avoid_phrase": AVOID_PHRASE_MAX,
+                   "reshapes": RESHAPES_MAX, "reshape_label": RESHAPE_LABEL_MAX, "reshape_asks": RESHAPE_ASKS_MAX},
         "provider": {"configured": bool(config.is_configured),
                      "provider": config.provider if config.is_configured else None,
                      "model": config.model if config.is_configured else None},
@@ -577,3 +608,134 @@ def angles(item_id: Any) -> Dict[str, Any]:
         conn.close()
     changes.publish("collection")
     return {"status": "success", "angles": offered, "asked": prefs["angles"], "item": item["id"]}
+
+
+# ---------------------------------------------------------------------------
+# A rewrite from the phone (phase 4, item 5)
+# ---------------------------------------------------------------------------
+
+def content_mark(text: str) -> str:
+    """A draft's words as one short value, to tell later whether they are still as a rewrite left them."""
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]
+
+
+def reshape_button(prefs: Dict[str, Any], label: str) -> Optional[Dict[str, Any]]:
+    """The rewrite the creator keeps under this label now, or None when it is no longer one of theirs."""
+    wanted = (label or "").strip().casefold()
+    return next((b for b in prefs["reshapes"] if b["label"].strip().casefold() == wanted), None)
+
+
+def _reshape_request(draft: str, items: List[Dict[str, Any]], asks: str, prefs: Dict[str, Any],
+                     facts: List[Dict[str, Any]]) -> str:
+    w = words_for(prefs)
+    lines = ["THEIR DRAFT:", draft.strip(), ""]
+    if items:
+        lines += [_notes(items), ""]
+    lines += [f"REWRITE IT: {asks.strip()}",
+              "Use only what their draft and notes say. Keep it their post, in their voice.",
+              f"If it ends anew, end with {w['ending']}."]
+    return "\n".join(lines) + remembered.block(facts) + _voice()
+
+
+def reshape(post_id: str, label: str) -> Dict[str, Any]:
+    """
+    One of the creator's rewrite buttons on a draft the studio wrote: the
+    draft as it is now, the notes it was written from (those still in the
+    collection), the things to remember as chosen and the writing
+    preferences, with the button's own instruction, to the creator's own
+    provider. Kept only if it passes the check every draft passes, and only
+    while the draft is still a draft and unchanged since it was read: one
+    conditional update. The text it replaced is kept on the draft (its
+    made_with's "earlier", the newest EARLIER_KEPT), since the Composer keeps
+    no versions. Returns {status: rewritten | no_provider | refused |
+    changed | not_draft | gone | old, ...}; a provider that fails raises
+    ProviderError.
+    """
+    conn = get_db()
+    try:
+        post = conn.execute("SELECT id, content, status, made_with, scheduled_for, published_at, activity_urn "
+                            "FROM posts WHERE id = ?", (str(post_id or ""),)).fetchone()
+        if post is None:
+            return {"status": "gone"}
+        if post["status"] != "draft" or post["scheduled_for"] or post["published_at"] or post["activity_urn"]:
+            return {"status": "not_draft"}
+        prefs = preferences(conn)
+        button = reshape_button(prefs, label)
+        if button is None:
+            return {"status": "old"}
+        config = model_gateway.get_current_ai_config()
+        if not config.is_configured:
+            return {"status": "no_provider", "said": NO_PROVIDER}
+        try:
+            made = json.loads(post["made_with"] or "{}")
+        except (TypeError, ValueError):
+            made = {}
+        made = made if isinstance(made, dict) else {}
+        items = [collection.get(conn, i) for i in made.get("items") or [] if isinstance(i, int)]
+        items = [i for i in items if i and (i.get("text") or "").strip()]
+        facts = memory_for(conn, prefs)
+        before = post["content"] or ""
+        schema = {"type": "object", "additionalProperties": False, "required": ["draft"],
+                  "properties": {"draft": {"type": "string"}}}
+        answer = _ask(config, _reshape_request(before, items, button["asks"], prefs, facts), _system(prefs), schema,
+                      "collection_reshape", max_tokens=max(400, len(before.split()) * 4))
+        if answer is None:
+            return {"status": "no_provider", "said": NO_PROVIDER}
+        data = answer.get("data") if isinstance(answer.get("data"), dict) else {}
+        draft = clean_text_formatting(str(data.get("draft") or "")).strip()
+        if not draft:
+            raise ProviderError(f"{config.provider} ({config.model}) answered, but not with a draft the studio "
+                                "could read. Nothing was changed.")
+        problem = check(draft, [before, button["asks"]] + [i["text"] for i in items] + [f["text"] for f in facts],
+                        conn)
+        if problem:
+            return {"status": "refused", "said": _refusal(problem)}
+        earlier = [e for e in made.get("earlier") or [] if isinstance(e, dict)]
+        earlier.append({"text": before, "at": collection._now(), "by": button["label"]})
+        made["earlier"] = earlier[-EARLIER_KEPT:]
+        with conn:
+            done = conn.execute(
+                "UPDATE posts SET content = ?, made_with = ? WHERE id = ? AND status = 'draft' AND content = ? "
+                "AND scheduled_for IS NULL AND published_at IS NULL AND activity_urn IS NULL",
+                (draft[:5000], json.dumps(made), post["id"], before)).rowcount
+            if done:
+                remembered.mark_used(conn, [f["id"] for f in facts])
+    finally:
+        conn.close()
+    if not done:
+        return {"status": "changed"}
+    changes.publish("collection")
+    return {"status": "rewritten", "id": post_id, "content": draft[:5000], "label": button["label"],
+            "mark": content_mark(draft[:5000])}
+
+
+def undo_reshape(post_id: str, mark: str) -> str:
+    """
+    The bot's Undo under a rewrite: the text it replaced put back, while the
+    draft is still as the rewrite left it, in one conditional update. A key
+    of telegram_bot.SENTENCES.
+    """
+    conn = get_db()
+    try:
+        post = conn.execute("SELECT content, made_with, status FROM posts WHERE id = ?", (str(post_id or ""),)).fetchone()
+        if post is None:
+            return "undo_gone"
+        if post["status"] != "draft" or content_mark(post["content"]) != mark:
+            return "undo_changed"
+        try:
+            made = json.loads(post["made_with"] or "{}")
+        except (TypeError, ValueError):
+            made = {}
+        earlier = [e for e in (made.get("earlier") or []) if isinstance(e, dict)] if isinstance(made, dict) else []
+        if not earlier:
+            return "undo_changed"
+        last = earlier.pop()
+        made["earlier"] = earlier
+        with conn:
+            done = conn.execute("UPDATE posts SET content = ?, made_with = ? WHERE id = ? AND status = 'draft' "
+                                "AND content = ?", (last["text"], json.dumps(made), post_id, post["content"])).rowcount
+    finally:
+        conn.close()
+    if done:
+        changes.publish("collection")
+    return "reshape_undone" if done else "undo_changed"

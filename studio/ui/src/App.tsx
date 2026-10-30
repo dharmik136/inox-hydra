@@ -703,6 +703,25 @@ export default function App() {
     setDetachedFrom(null);
   }, []);
 
+  /**
+   * A draft rewritten from the phone (phase 4): when the studio says the
+   * collection changed, the draft open here is read again and shown as it now
+   * is, only while the Composer holds no unsaved change. With unsaved
+   * changes, its next save is refused as changed elsewhere, as for a save
+   * from any other window, and Keep this version decides.
+   */
+  const followOpenDraft = useCallback(() => {
+    const held = base.current;
+    if (!held || composerUnsaved.current) return Promise.resolve();
+    return fetchDraftById(held.id)
+      .then((found) => {
+        if (!found || composerUnsaved.current || base.current?.id !== held.id) return;
+        if (found.content !== held.content) adopt({ ...found, status: "draft" });
+      })
+      .catch(() => undefined);
+  }, [adopt]);
+  useRefresh(followOpenDraft, undefined, ["collection"]);
+
   /** Whether unsaved text in the Composer may be discarded, asking when there is some. */
   const mayDiscard = useCallback(
     (doing: string) =>

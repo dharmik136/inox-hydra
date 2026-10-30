@@ -25,6 +25,12 @@ except (ImportError, ValueError):
 router = APIRouter()
 
 
+class ReshapeButton(BaseModel):
+    # The limits a button is held to are writing.py's, refused with its sentence; these only bound the request.
+    label: str = Field(..., max_length=200, description="The button's label, as the phone shows it")
+    asks: str = Field(..., max_length=1000, description="What the rewrite asks the writer for, in your words")
+
+
 class PreferencesPayload(BaseModel):
     length_words: Optional[int] = Field(None, description="About how many words a draft is")
     tone: Optional[str] = Field(None, max_length=writing.TONE_MAX, description="How it sounds, in a few words")
@@ -40,6 +46,8 @@ class PreferencesPayload(BaseModel):
     sources: Optional[List[str]] = Field(None, description="What ideas may draw on: collection, posts, asks")
     memory: Optional[str] = Field(None, max_length=10, description="Things to remember: all, chosen or off")
     ideas: Optional[int] = Field(None, description="How many ideas the daily model stage asks for, 1 to 5")
+    reshapes: Optional[List[ReshapeButton]] = Field(None, max_length=50,
+                                                    description="The rewrite buttons under a draft the bot wrote")
 
 
 @router.get("/api/v1/writing/preferences", tags=["Writing"])

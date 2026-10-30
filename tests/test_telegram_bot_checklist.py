@@ -130,3 +130,18 @@ def test_phase_4_the_menu_step_names_the_panels_row():
     """Phase 4, item 3: the / menu, and the panel's row that says Telegram took it."""
     article = _article()
     assert "The / menu in your chat" in article and "The / menu in your chat" in _panel()
+
+
+def test_phase_4_the_whole_post_and_the_rewrite_quote_the_bot_and_the_studio():
+    """Phase 4, items 4 and 5: the whole post's answer, a rewrite's answers, and the Composer's Put it back."""
+    article = _article()
+    for key in ("whole_sent", "rewriting"):
+        assert telegram_bot.SENTENCES[key] in article, key
+    assert telegram_bot.REWRITTEN_WORDS.format(label="Shorter") in article
+    composer = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "ComposerCollection.tsx"),
+                    encoding="utf-8").read()
+    for words in ("Rewritten from your phone", "Put it back in the editor"):
+        assert words in article and words in composer, words
+    writing_view = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "WritingPreferences.tsx"),
+                        encoding="utf-8").read()
+    assert "Rewrite buttons on your bot" in article and "Rewrite buttons on your bot" in writing_view

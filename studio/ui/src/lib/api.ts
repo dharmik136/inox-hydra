@@ -3859,6 +3859,14 @@ export interface WritingPreferences {
   memory: "all" | "chosen" | "off";
   /** How many ideas the daily model stage asks your provider for. */
   ideas: number;
+  /** The rewrite buttons under a draft the bot wrote (phase 4): each a label and what it asks for. */
+  reshapes: ReshapeButton[];
+}
+
+/** One rewrite button: its label on the phone, and what it asks the writer for, in the creator's words. */
+export interface ReshapeButton {
+  label: string;
+  asks: string;
 }
 
 export interface WritingDescribed {
@@ -3886,7 +3894,15 @@ export interface WritingDescribed {
     language: string;
     opening: string;
   };
-  limits: { tone: number; language: number; avoid: number; avoid_phrase: number };
+  limits: {
+    tone: number;
+    language: number;
+    avoid: number;
+    avoid_phrase: number;
+    reshapes: number;
+    reshape_label: number;
+    reshape_asks: number;
+  };
   /** The provider every writing request goes to, as connected on the Composer's Prompt tab. */
   provider: { configured: boolean; provider: string | null; model: string | null };
 }
@@ -3917,6 +3933,8 @@ export interface MadeWith {
   provider?: string;
   model?: string;
   at?: string;
+  /** The texts the bot's rewrites replaced, the newest last, each with the button that replaced it (phase 4). */
+  earlier?: { text: string; at: string; by: string }[];
 }
 
 /** A draft's own record of how it was made, or null for one written by hand. */

@@ -238,29 +238,46 @@ export function FromYourCollection({
  * remember that went with it (by their words), and the provider. Shown only
  * on a draft that records it; a draft written by hand has nothing to say.
  */
-export function MadeWithNote({ postId }: { postId?: string | null }) {
+export function MadeWithNote({
+  postId,
+  onPutBack,
+}: {
+  postId?: string | null;
+  /** Puts an earlier text of the draft back in the editor, where the creator saves it as usual. */
+  onPutBack?: (text: string) => void;
+}) {
   const [made, setMade] = useState<MadeWith | null>(null);
   const [facts, setFacts] = useState<RememberedFact[] | null>(null);
+  const [putBack, setPutBack] = useState<string | null>(null);
+  const shown = useRef<string | null | undefined>(undefined);
 
-  useEffect(() => {
-    let live = true;
-    setMade(null);
-    setFacts(null);
-    if (!postId) return;
-    fetchMadeWith(postId)
+  const load = useCallback(() => {
+    if (!postId) return Promise.resolve();
+    const asked = postId;
+    return fetchMadeWith(asked)
       .then((found) => {
-        if (!live || !found) return;
+        if (shown.current !== asked) return;
         setMade(found);
-        if (found.remembered.length === 0) return;
+        if (!found || found.remembered.length === 0) return;
         fetchRemembered()
-          .then((held) => live && setFacts(held.facts))
-          .catch(() => live && setFacts([]));
+          .then((held) => shown.current === asked && setFacts(held.facts))
+          .catch(() => shown.current === asked && setFacts([]));
       })
       .catch(() => undefined);
-    return () => {
-      live = false;
-    };
   }, [postId]);
+
+  useEffect(() => {
+    shown.current = postId;
+    setMade(null);
+    setFacts(null);
+    setPutBack(null);
+    void load();
+    return () => {
+      shown.current = undefined;
+    };
+  }, [postId, load]);
+  // A rewrite from the phone (phase 4) changes what the draft was before: read again.
+  useRefresh(load, undefined, ["collection"]);
 
   if (!made) return null;
   const count = made.items.length;
@@ -278,6 +295,41 @@ export function MadeWithNote({ postId }: { postId?: string | null }) {
         {made.at ? ` on ${formatLocal(made.at)}` : ""}, from {count === 1 ? "one item" : `${count} items`} in your
         collection{made.angle ? ", starting from the angle you picked" : ""}. It is your draft now: change anything.
       </p>
+      {made.earlier && made.earlier.length > 0 && (
+        <div className="mt-1.5">
+          <p className="text-[12px] leading-snug text-ink-secondary">
+            Rewritten from your phone. What each rewrite replaced, the newest first:
+          </p>
+          <ul className="mt-0.5 flex flex-col gap-1 pl-3">
+            {[...made.earlier].reverse().map((earlier) => (
+              <li key={`${earlier.at}-${earlier.by}`} className="flex flex-wrap items-baseline gap-x-2 text-[12px] leading-snug">
+                <span className="text-ink-primary">{firstWords(earlier.text, 64)}</span>
+                <span className="text-ink-muted">
+                  before {earlier.by}, {formatLocal(earlier.at)}
+                </span>
+                {onPutBack && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onPutBack(earlier.text);
+                      setPutBack("Put back in the editor. Save to keep it.");
+                    }}
+                    aria-label={`Put it back in the editor: ${firstWords(earlier.text)}`}
+                    className="underline underline-offset-2 text-ink-secondary hover:text-ink-primary"
+                  >
+                    Put it back in the editor
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          {putBack && (
+            <p role="status" className="mt-0.5 text-[11px] text-ink-secondary">
+              {putBack}
+            </p>
+          )}
+        </div>
+      )}
       {made.remembered.length === 0 ? (
         <p className="mt-1 text-[12px] leading-snug text-ink-muted">No things to remember went with it.</p>
       ) : facts === null ? (

@@ -109,6 +109,13 @@ KEEPS_THE_REST = ("p", "q")
 # Telegram's limit for one message, "1-4096 characters after entities
 # parsing", counted in UTF-16 code units as Telegram counts its text.
 TELEGRAM_TEXT_MAX = 4096
+# Phase 4, item 5: one letter for each of the creator's rewrite buttons, in
+# the order Brand's Writing view keeps them (writing.RESHAPES_MAX of them);
+# each button's label is the creator's own, kept with the message.
+RESHAPE_LETTERS = "efghij"
+# What a rewrite's message begins with, and the label of the button pressed:
+# the creator's own words, so it goes only with the words switch on.
+REWRITTEN_WORDS = "Rewritten in your studio ({label}). It begins:"
 BUTTON_ROWS = {"undo": (("u",),), "item": (("w", "a"), ("u",)), "item_bare": (("u",),),
                "due": (("r",), ("d",)), "morning": (("w", "n"),), "fact": (("u",),)}
 # The bot may send what it writes from the collection (its words): off unless "on".
@@ -189,6 +196,16 @@ SENTENCES = {
     "whole_off": ("Nothing was sent: your studio no longer sends your words here. Turn on The bot may send me what it "
                   "writes from my collection under Local security."),
     "whole_gone": "Nothing was sent: that post is no longer in your studio.",
+    # Phase 4, item 5: a draft rewritten from the phone.
+    "rewriting": "Rewriting it in your studio.",
+    "rewritten": "Rewritten in your studio.",
+    "reshape_changed": "Not rewritten: the draft has changed in your studio since, so it was kept as it is.",
+    "reshape_not_draft": "Not rewritten: that post is queued or published, so it was kept as it is.",
+    "reshape_gone": "Nothing was rewritten: that draft is no longer in your studio.",
+    "reshape_old": "That rewrite is no longer one of yours in Brand, under Writing, so nothing was done.",
+    "reshape_off": ("Nothing was rewritten: your studio no longer sends your words here. Turn on The bot may send "
+                    "me what it writes from my collection under Local security."),
+    "reshape_undone": "Undone: the draft is back as it was before the rewrite.",
     # Phase 3: everything sent lands in the collection.
     "collected": "Saved to your collection.",
     "bookmarked": "Saved to your collection as a bookmark. Your studio never opens other people's posts.",
@@ -1410,6 +1427,12 @@ def issue_buttons(chat_id: Any, kind: str, said: str, rows: Optional[List[List[s
     token = secrets.token_urlsafe(9)
     record = {"id": token, "kind": kind, "chat": str(chat_id), "at": _now(), "said": said, "used": None,
               "letters": [letter for row in rows for letter in row], "rows": rows}
+    shaped = [letter for row in rows for letter in row if letter in RESHAPE_LETTERS]
+    if shaped:
+        # The creator's rewrite buttons as they are now: their labels, kept with the message.
+        mine = writing.preferences()["reshapes"]
+        record["reshape_labels"] = {letter: mine[RESHAPE_LETTERS.index(letter)]["label"] for letter in shaped
+                                    if RESHAPE_LETTERS.index(letter) < len(mine)}
     record.update(target)
     with _BUTTONS_LOCK:
         conn = get_db()
@@ -1419,12 +1442,25 @@ def issue_buttons(chat_id: Any, kind: str, said: str, rows: Optional[List[List[s
             _write_json(conn, BUTTONS_KEY, records[-max(1, int(BUTTONS_KEPT)):])
         finally:
             conn.close()
-    return _keyboard(token, rows)
+    return _keyboard(token, rows, record.get("reshape_labels"))
 
 
-def _keyboard(token: str, rows: List[List[str]]) -> Dict[str, Any]:
-    return {"inline_keyboard": [[{"text": _label(letter), "callback_data": f"{token}.{letter}"}
-                                 for letter in row] for row in rows if row]}
+def _keyboard(token: str, rows: List[List[str]], labels: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    return {"inline_keyboard": [[{"text": (labels or {}).get(letter) or _label(letter),
+                                  "callback_data": f"{token}.{letter}"}
+                                 for letter in row if letter not in RESHAPE_LETTERS or letter in (labels or {})]
+                                for row in rows if row]}
+
+
+def draft_rows(undo: bool = False) -> List[List[str]]:
+    """
+    A draft the bot wrote: Send me the whole post, then the creator's own
+    rewrite buttons, two to a row, as Brand's Writing view keeps them, and
+    Undo under a rewrite. Shown only with the words switch on.
+    """
+    letters = RESHAPE_LETTERS[:len(writing.preferences()["reshapes"])]
+    rows = [["p"]] + [list(letters[i:i + 2]) for i in range(0, len(letters), 2)]
+    return rows + [["u"]] if undo else rows
 
 
 def due_rows(count: int) -> List[List[str]]:
@@ -1502,7 +1538,7 @@ def whole_post_messages(text: str) -> List[str]:
 
 def _whole_posts(conn, record: Dict[str, Any]) -> List[str]:
     """The posts a message's Send me the whole post is about, as the studio holds them now."""
-    if record.get("kind") == "draft":
+    if record.get("kind") in ("draft", "reshaped"):
         ids = [record.get("post")]
     else:
         ids = [str(key).split(":", 2)[1] for key in record.get("due") or [] if str(key).startswith("due:")
@@ -1552,9 +1588,22 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 rest = [[x for x in row if x not in record["spent"]] for row in
                         (record.get("rows") or [[x] for x in letters])]
                 return {"key": key, "answer": SENTENCES[key], "edit": None, "job": None, "send": send,
-                        "keep": _keyboard(token, rest) if any(rest) else None, "kept": True}
+                        "keep": _keyboard(token, rest, record.get("reshape_labels")) if any(rest) else None,
+                        "kept": True}
             job = None
-            if letter in ("w", "a") or letter.isdigit():
+            if letter in RESHAPE_LETTERS:
+                # A rewrite of a draft the bot wrote: shown only with the words
+                # switch on, written beside the bot's loop, with a provider.
+                label = (record.get("reshape_labels") or {}).get(letter)
+                if not collection_words_on():
+                    key = "reshape_off"
+                elif not writing.model_gateway.get_current_ai_config().is_configured:
+                    key = "no_provider"
+                elif not label:
+                    key = "reshape_old"
+                else:
+                    key, job = "rewriting", {"kind": "reshape", "post": record.get("post"), "label": label}
+            elif letter in ("w", "a") or letter.isdigit():
                 # Something to write: never in the bot's loop, and only with a provider.
                 if not writing.model_gateway.get_current_ai_config().is_configured:
                     key = "no_provider"
@@ -1571,6 +1620,8 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 key = collection.undo(record.get("item"))
             elif letter == "u" and record.get("kind") == "fact":
                 key = "forgot_it" if remembered.remove(record.get("fact")) else "button_old"
+            elif letter == "u" and record.get("kind") == "reshaped":
+                key = writing.undo_reshape(record.get("post"), record.get("mark"))
             elif letter == "u":
                 key = _undo(conn, record.get("draft"))
             elif letter == "r":
@@ -1602,6 +1653,8 @@ def run_job(job: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, 
     what it writes from my collection"; otherwise it says only that it is done.
     """
     try:
+        if job.get("kind") == "reshape":
+            return _reshaped(writing.reshape(job.get("post"), job.get("label")), chat_id)
         if job.get("kind") == "angles":
             result = writing.angles(job.get("item"))
         else:
@@ -1626,7 +1679,26 @@ def run_job(job: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, 
     if not words:
         return SENTENCES["draft_ready"], None
     text = SENTENCES["draft_ready_words"] + "\n\n" + _first_line(result.get("content") or "")
-    return text, issue_buttons(chat_id, "draft", text, rows=[["p"]], post=result.get("id"))
+    return text, issue_buttons(chat_id, "draft", text, rows=draft_rows(), post=result.get("id"))
+
+
+def _reshaped(result: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """
+    The bot's next message after a rewrite: its first line with the whole
+    post, the rewrite buttons and Undo, while the words switch is on; or why
+    nothing was rewritten.
+    """
+    status = result.get("status")
+    if status != "rewritten":
+        key = {"no_provider": "no_provider", "refused": "write_refused", "changed": "reshape_changed",
+               "not_draft": "reshape_not_draft", "gone": "reshape_gone", "old": "reshape_old"}.get(status,
+                                                                                                 "write_failed")
+        return SENTENCES[key], None
+    if not collection_words_on():
+        return SENTENCES["rewritten"], None
+    text = REWRITTEN_WORDS.format(label=result["label"]) + "\n\n" + _first_line(result.get("content") or "")
+    return text, issue_buttons(chat_id, "reshaped", text, rows=draft_rows(undo=True), post=result.get("id"),
+                               mark=result.get("mark"))
 
 
 def _undo(conn, draft_id: Any) -> str:

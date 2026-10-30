@@ -264,6 +264,17 @@ export function TelegramIngressPanel() {
                   )
                 }
               />
+              {writing && (
+                <p className="pl-5 text-[12px] text-ink-secondary">
+                  {writing.values.reshapes.length
+                    ? `Under a draft the bot wrote, the rewrite buttons say ${writing.values.reshapes.map((b) => b.label).join(", ")}`
+                    : "Under a draft the bot wrote, no rewrite buttons"}
+                  {JSON.stringify(writing.values.reshapes) === JSON.stringify(writing.defaults.reshapes)
+                    ? " (the default)"
+                    : ` (default: ${writing.defaults.reshapes.map((b) => b.label).join(", ")})`}
+                  , as set in Brand, under Writing. Each rewrites it through your own AI provider.
+                </p>
+              )}
               {state.options.angles !== undefined && (
                 <p className="pl-5 text-[12px] text-ink-secondary">
                   {`Under what you send, the angles button says ${state.options.angles} angles`}

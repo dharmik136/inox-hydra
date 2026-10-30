@@ -278,7 +278,7 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey, onSave, pos
 
   return (
     <div className="mx-auto w-full max-w-[68ch] px-10 py-12">
-      <MadeWithNote postId={postId} />
+      <MadeWithNote postId={postId} onPutBack={(text) => onChange(text)} />
       <WhatWorkedForYou value={value} onChange={onChange} />
       <FromYourCollection value={value} onChange={onChange} postId={postId} />
       {formatNote && (

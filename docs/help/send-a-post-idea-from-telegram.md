@@ -115,6 +115,25 @@ With that switch on, "Draft ready in your studio. It begins:" carries **Send me 
 | Your provider did not write it | Your AI provider did not write it, so nothing changed. Open your studio to see why. |
 | What it wrote named a figure or a person not in your note | Nothing was kept: what your AI provider wrote had a figure or a name that is not in your note. |
 
+### Rewrite a draft from your phone
+
+With **The bot may send me what it writes from my collection** on, a draft the bot wrote carries your rewrite buttons too: **Shorter**, **New opening** and **Another angle** unless you change them under **Brand**, then **Writing** (see [Rewrite buttons on your bot](set-up-brand-studio.md#brand-writing)). Press one and the bot answers "Rewriting it in your studio."; it keeps answering everything else while your provider writes. What is sent to your provider: the draft as it is now, the items it was written from, your things to remember as you chose, your writing preferences, and what that button asks for, nothing else. A rewrite that brings in a figure or a person not in what was sent is refused and said, never repaired.
+
+The draft in your studio then changes in place, if it is still a draft and nobody changed it while it was rewritten; a draft queued or published is left as it is. The Composer keeps no versions, so the text a rewrite replaced is kept on the draft: in the Composer, **What this draft was written from** lists each one under "Rewritten from your phone", newest first, the ten newest, with **Put it back in the editor**; save it to keep it. A Composer open on the draft with nothing unsaved shows the new text at once; with unsaved changes, saving says the draft changed elsewhere, and **Keep this version** keeps yours.
+
+| What happened | The bot says |
+| --- | --- |
+| You pressed a rewrite button | Rewriting it in your studio. |
+| It is rewritten | Rewritten in your studio (Shorter). It begins: (and its new first line), with **Send me the whole post**, your rewrite buttons and **Undo** |
+| **Undo** under it | Undone: the draft is back as it was before the rewrite. |
+| The draft changed in your studio while it was rewritten | Not rewritten: the draft has changed in your studio since, so it was kept as it is. |
+| It is queued or published | Not rewritten: that post is queued or published, so it was kept as it is. |
+| It was deleted in your studio | Nothing was rewritten: that draft is no longer in your studio. |
+| You removed that button in Brand since | That rewrite is no longer one of yours in Brand, under Writing, so nothing was done. |
+| You turned the words switch off since | Nothing was rewritten: your studio no longer sends your words here. Turn on The bot may send me what it writes from my collection under Local security. |
+
+No AI provider set up, a provider that fails, and a rewrite that is refused are said as for **Write it up**, and nothing changes.
+
 ## A morning idea
 
 Tick **Send me an idea from my collection each morning** in the panel, and pick the days (Monday to Friday unless you change them) and the hour (08:00). On those mornings the bot sends one unused item from your collection, the one it offered least recently, under "An idea from your collection:", with an angle from what worked in your own posts, for example "Angle: open with a question, as the posts of yours that did best did.", and **Write it up** and **Not today** under it. **Not today** leaves it in your collection ("Not today. It stays in your collection.").
@@ -212,6 +231,8 @@ These messages carry buttons, which you press in Telegram:
 | "Saved as a draft in your studio." | **Undo** | Removes that draft from your studio, and its line in your collection, while it is untouched there: still a draft, with the words, tags and media the bot saved, never queued or published. A draft you changed is kept |
 | "A post in your queue is due now." | **Remind me in an hour** | The bot tells you again in an hour, if the post is still due then, with the same two buttons |
 | The same | **Done** | Clears the reminder, and that is all: nothing is marked as posted, and nothing is done on LinkedIn. The post stays due in your studio until you post it |
+| "Draft ready in your studio. It begins:" and "Rewritten in your studio (...). It begins:" | Your rewrite buttons (**Shorter**, **New opening**, **Another angle** unless you change them) | Rewrites the draft through your own AI provider. See [Rewrite a draft from your phone](#rewrite-a-draft-from-your-phone) |
+| "Rewritten in your studio (...). It begins:" | **Undo** | Puts the draft back as it was before that rewrite, while it is still as the rewrite left it |
 | The same, and "Draft ready in your studio. It begins:", with **The bot may send me what it writes from my collection** on | **Send me the whole post**, or **Send me the posts** when several are due | Sends each post as a message of its own, to copy into the LinkedIn app. See [Post from your phone](#post-from-your-phone). The message keeps its other buttons |
 
 After a press your phone shows a short notice, the message says under its first words what became of it, and its buttons go:

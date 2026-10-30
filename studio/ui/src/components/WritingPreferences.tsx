@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   fetchWritingPreferences,
   saveWritingPreferences,
+  type ReshapeButton,
   type WritingDescribed,
   type WritingPreferences,
 } from "@/lib/api";
@@ -33,6 +34,7 @@ const LABELS: Record<PreferenceField, string> = {
   sources: "Ideas draw on",
   memory: "Things to remember",
   ideas: "Ideas asked for each day",
+  reshapes: "Rewrite buttons on your bot",
 };
 
 /** The preferences this view edits with its Save; the others are set beside their own feature. */
@@ -47,6 +49,7 @@ const EDITED_HERE: PreferenceField[] = [
   "ending",
   "avoid",
   "angles",
+  "reshapes",
 ];
 
 function only(values: Partial<WritingPreferences>): Partial<WritingPreferences> {
@@ -83,6 +86,8 @@ export function preferenceWords(field: PreferenceField, values: WritingPreferenc
       return (labels.memory[values.memory] ?? values.memory).toLowerCase();
     case "ideas":
       return values.ideas === 1 ? "one idea" : `${values.ideas} ideas`;
+    case "reshapes":
+      return values.reshapes.length ? values.reshapes.map((button) => button.label).join(", ") : "none";
   }
 }
 
@@ -278,6 +283,13 @@ export function WritingPreferencesPanel({ children }: { children?: ReactNode } =
           <input id="writing-avoid" className={INPUT} value={avoidText} disabled={busy}
             placeholder="Words and phrases, separated by commas" onChange={(event) => setAvoidText(event.target.value)} />,
         )}
+        <RewriteButtons
+          value={draft.reshapes}
+          defaults={defaults.reshapes}
+          limits={described.limits}
+          busy={busy}
+          onChange={(next) => set("reshapes", next)}
+        />
         {row(
           "angles",
           "writing-angles",
@@ -296,7 +308,13 @@ export function WritingPreferencesPanel({ children }: { children?: ReactNode } =
         <button
           type="button"
           disabled={busy}
-          onClick={() => void save(only({ ...draft, avoid }), "Saved. Every writing request reads these from now on.")}
+          onClick={() =>
+            void save(
+              // A rewrite button left wholly empty is dropped, not refused.
+              only({ ...draft, avoid, reshapes: draft.reshapes.filter((b) => b.label.trim() || b.asks.trim()) }),
+              "Saved. Every writing request reads these from now on.",
+            )
+          }
           className="rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
         >
           Save
@@ -318,5 +336,85 @@ export function WritingPreferencesPanel({ children }: { children?: ReactNode } =
       <ThingsToRemember />
       {children}
     </section>
+  );
+}
+
+/**
+ * The rewrite buttons under a draft the bot wrote (phase 4): which appear on
+ * the phone, in this order, and what each asks the writer for, in the
+ * creator's own words. Saved with the other preferences; none is a choice.
+ */
+function RewriteButtons({
+  value,
+  defaults,
+  limits,
+  busy,
+  onChange,
+}: {
+  value: ReshapeButton[];
+  defaults: ReshapeButton[];
+  limits: WritingDescribed["limits"];
+  busy: boolean;
+  onChange: (next: ReshapeButton[]) => void;
+}) {
+  const change = (index: number, field: keyof ReshapeButton, text: string) =>
+    onChange(value.map((button, at) => (at === index ? { ...button, [field]: text } : button)));
+  return (
+    <fieldset className="flex flex-col gap-1.5 border-b border-edge py-2.5">
+      <legend className="text-[12px] text-ink-primary">{LABELS.reshapes}</legend>
+      <p className="text-[11px] leading-relaxed text-ink-secondary">
+        Under a draft your bot wrote, with The bot may send me what it writes from my collection on, each button
+        rewrites it through your provider as it says. The label is what the phone shows; what it asks for is sent with
+        the draft.
+      </p>
+      {value.length === 0 ? (
+        <p className="text-[11px] text-ink-muted">No rewrite buttons: a draft from the bot carries none.</p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {value.map((button, index) => (
+            <li key={index} className="flex flex-wrap items-center gap-2">
+              <input
+                aria-label={`Rewrite button ${index + 1}: its label`}
+                className={cn(INPUT, "min-w-[8rem] flex-none")}
+                value={button.label}
+                maxLength={limits.reshape_label}
+                disabled={busy}
+                onChange={(event) => change(index, "label", event.target.value)}
+              />
+              <input
+                aria-label={`Rewrite button ${index + 1}: what it asks for`}
+                className={INPUT}
+                value={button.asks}
+                maxLength={limits.reshape_asks}
+                disabled={busy}
+                onChange={(event) => change(index, "asks", event.target.value)}
+              />
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onChange(value.filter((_button, at) => at !== index))}
+                aria-label={`Remove the rewrite button ${button.label || index + 1}`}
+                className="rounded-md px-1.5 py-0.5 text-[11px] text-ink-secondary underline underline-offset-2 hover:text-ink-primary disabled:opacity-40"
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {value.length < limits.reshapes && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onChange([...value, { label: "", asks: "" }])}
+          className="self-start rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary hover:text-ink-primary disabled:opacity-40"
+        >
+          Add a rewrite button
+        </button>
+      )}
+      <p className="text-[11px] text-ink-muted">
+        Default: {defaults.map((button) => `${button.label} (${button.asks})`).join("; ")}
+      </p>
+    </fieldset>
   );
 }
