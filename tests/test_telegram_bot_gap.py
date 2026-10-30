@@ -22,6 +22,7 @@ Strict Invariants:
 import os
 import re
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -183,6 +184,26 @@ def test_removing_the_bot_forgets_its_last_check_and_its_notice(notifying):
     _restart(bot, datetime.now(timezone.utc) - timedelta(hours=30))
     assert _until(lambda: _setting(GAP) is not None)
     bot["client"].post("/api/v1/ingress/settings", json={"bot_token": "", "chat_id": ""})
+    assert _setting(CHECKED) is None and _setting(GAP) is None
+
+
+def test_a_check_still_waiting_when_the_bot_is_removed_keeps_nothing(notifying):
+    """
+    A check waiting on Telegram when the creator removes the bot ends after
+    the rows are gone: its time is not kept for a bot that is no longer
+    there. Failed once on CI (macOS), where the stop's wait let that check
+    end and keep its time.
+    """
+    bot = notifying
+    _saved(bot)
+    _restart(bot, datetime.now(timezone.utc) - timedelta(hours=30))
+    assert _until(lambda: _setting(GAP) is not None)
+    # The next check waits on the fake as a long poll waits on Telegram, so
+    # one is in flight when the bot is removed.
+    bot["fake"].max_wait = 1.0
+    time.sleep(0.5)
+    bot["client"].post("/api/v1/ingress/settings", json={"bot_token": "", "chat_id": ""})
+    time.sleep(1.5)
     assert _setting(CHECKED) is None and _setting(GAP) is None
 
 

@@ -293,6 +293,9 @@ class TelegramIngressDaemon:
         self.profile_id: Optional[str] = None
         self.is_running = False
         self._stop_event = threading.Event()
+        # Held while a check's time is kept, and while the bot is removed, so
+        # a check that ends after the bot is gone keeps nothing (phase 4).
+        self._check_lock = threading.Lock()
         self.last_update_id = 0
         self._thread: Optional[threading.Thread] = None
         self.base_delay = 2.0
@@ -388,13 +391,21 @@ class TelegramIngressDaemon:
             except Exception:
                 self.last_ok_at = None
 
-    def _note_check(self, now: datetime) -> None:
+    def _note_check(self, now: datetime, token: Optional[str] = None) -> None:
         """
         A successful check: kept in memory at once, and in the bot's profile
         at most once a minute, or at once when it comes more than a day after
         the one before, which is then kept as the gap's notice (phase 4).
+        A check made with a token that is no longer the bot's (removed or
+        replaced while the check waited on Telegram) keeps nothing.
         Never raises: the check itself went well.
         """
+        with self._check_lock:
+            if token is not None and token != self.bot_token:
+                return
+            self._note_check_held(now)
+
+    def _note_check_held(self, now: datetime) -> None:
         before = self.last_ok_at
         self.previous_ok_at = before
         self.last_ok_at = now
@@ -413,6 +424,10 @@ class TelegramIngressDaemon:
 
     def _keep_last_check(self) -> None:
         """When the worker stops: the last check as it was, so a restart measures from it."""
+        with self._check_lock:
+            self._keep_last_check_held()
+
+    def _keep_last_check_held(self) -> None:
         if self.last_ok_at is None or not (self.configured_from == "settings" and self.profile_id):
             return
         if self._checked_written_at is not None and self._checked_written_at >= self.last_ok_at:
@@ -1245,7 +1260,7 @@ class TelegramIngressDaemon:
                 if data.get("ok"):
                     # Telegram answered: a successful check, kept before the
                     # batch is handled, so /status in it says the one before.
-                    self._note_check(datetime.now(timezone.utc))
+                    self._note_check(datetime.now(timezone.utc), token)
                     results = data.get("result", [])
                     processed = []
                     for update in results:
@@ -1611,6 +1626,14 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
     if not token and not chat:
         # The bot's menu in the chat goes with it, best effort (phase 4).
         telegram_bot.take_menu_away(read_settings()["token"])
+        if ingress_daemon.configured_from == "settings" and ingress_daemon.profile_id == paths.get_active_profile_id():
+            # Removed: the worker stops, and lets go of the bot, before its
+            # rows go. A check still waiting on Telegram then ends under no
+            # bot and keeps nothing, and what one kept before is deleted below.
+            ingress_daemon.stop_worker()
+            with ingress_daemon._check_lock:
+                ingress_daemon.configure("", "", origin=None)
+                ingress_daemon.last_ok_at = None
         conn = get_db()
         try:
             with conn:
@@ -1619,9 +1642,6 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
                 telegram_bot.forget_checks(conn)
         finally:
             conn.close()
-        if ingress_daemon.configured_from == "settings" and ingress_daemon.profile_id == paths.get_active_profile_id():
-            # Removed: the worker stopping now keeps no last check for a bot that is gone.
-            ingress_daemon.last_ok_at = None
         apply_settings()
         return describe_settings()
     held = read_settings()
