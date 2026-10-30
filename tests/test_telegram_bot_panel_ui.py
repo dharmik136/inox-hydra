@@ -156,4 +156,7 @@ def test_the_weekly_summary_shows_its_defaults_changes_and_saves(page, studio, f
     expect(page.get_by_text("A weekly summary on Friday at 18:00.")).to_be_visible()
     expect(page.get_by_text("NEXT SUMMARY: FRI", exact=False)).to_be_visible()
     assert (telegram_bot.weekly()["day"], telegram_bot.weekly()["hour"]) == (4, 18)
+    # Measured once the save is over: a control is dimmed while its choice is saved.
+    expect(day).to_be_enabled()
+    expect(hour).to_be_enabled()
     assert _axe(page, "section:has(input[aria-label='Telegram bot token'])") == []

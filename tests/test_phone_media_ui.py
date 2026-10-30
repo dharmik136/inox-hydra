@@ -62,6 +62,8 @@ def test_a_photo_and_a_voice_note_are_shown_kept_as_they_are(page, studio):
     level = page.locator(LEVEL)
     image = level.get_by_role("img", name="Your photo: the new studio wall")
     expect(image).to_be_visible()
+    # Visible is not loaded: an image whose size is given shows before its bytes arrive.
+    page.wait_for_function("(img) => img.complete", arg=image.element_handle(), timeout=10_000)
     assert page.evaluate("(img) => img.naturalWidth", image.element_handle()) == 64, "the photo did not load"
     expect(level.locator("audio[aria-label='Your voice note, 7 seconds']")).to_have_count(1)
     expect(level.get_by_text("KEPT AS IT IS: NEVER READ", exact=False)).to_be_visible()
