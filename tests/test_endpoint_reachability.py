@@ -461,8 +461,14 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Telegram panel presses. Total 240 -> 241, reached 192 -> 193, unreachable
 # stays 48.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 241
-REACHED_BY_INTERFACE = 193
+# ---------------------------------------------------------------------------
+# Phase 5 of the Telegram bot, item 4: Cancel beside a reminder asked for on
+# the phone (/api/v1/collection/reminders/{reminder_id}), which Your
+# collection presses. Total 241 -> 242, reached 193 -> 194, unreachable
+# stays 48.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 242
+REACHED_BY_INTERFACE = 194
 UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

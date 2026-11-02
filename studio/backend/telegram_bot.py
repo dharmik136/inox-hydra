@@ -55,6 +55,7 @@ try:
     from . import collection
     from . import egress as _egress
     from . import phone_plans
+    from . import phone_reminders
     from . import remembered
     from . import writing
     from .database import get_db
@@ -63,6 +64,7 @@ except ImportError:
     import collection
     import egress as _egress
     import phone_plans
+    import phone_reminders
     import remembered
     import writing
     from database import get_db
@@ -111,7 +113,9 @@ BUTTON_LABELS = {"u": "Undo", "r": "Remind me in an hour", "d": "Done", "w": "Wr
                  # Phase 5, item 2: Plan it, under "Draft ready".
                  "t": "Plan it",
                  # Phase 5, item 3: under what /recall finds.
-                 "c": "Write one post from these"}
+                 "c": "Write one post from these",
+                 # Phase 5, item 4: Remind me, and what comes back.
+                 "k": "Remind me", "s": "Not now", "x": "Cancel"}
 # Phase 5, item 2: one letter for each time Plan it offers (at most
 # phone_plans.TIMES_MAX or its slots); each button's label is the time as
 # the computer's clock says it, kept with the message.
@@ -305,6 +309,17 @@ SENTENCES = {
                    "Send /plan alone to see what is planned."),
     "plan_unread": "I did not read a day and a time there. Send, for example, /plan tomorrow 09:00 or /plan fri 18:30.",
     "plan_list_none": "Nothing is planned in your Queue. Press Plan it under a draft I wrote, or plan one in your studio.",
+    # Phase 5, item 4: Remind me.
+    "remind_ask": "When should I bring it back? It waits in your collection until then.",
+    "remind_pick": "Pick a moment in the message below.",
+    "remind_kept": "I will bring it back then. It waits in your collection.",
+    "remind_gone": "Nothing to bring back: it is no longer in your collection.",
+    "remind_none": "No moment to offer now: yours for today have passed. Change them under Local security.",
+    "remind_past": "That moment has passed, so nothing was kept. Pick a later one.",
+    "remind_cancelled": "Cancelled: I will not bring it back then.",
+    "remind_cancel_gone": "Nothing to cancel: that reminder was told or cancelled already.",
+    "set_aside": "Set aside: it is under Not now in your collection.",
+    "set_aside_used": "Left as it is: you have used it in your studio since.",
 }
 
 # Phase 5, item 2: what a plan's messages say, with times on the computer's
@@ -318,6 +333,13 @@ PLAN_LIST_HEAD = "Planned in your Queue, the next {count}, on your computer's cl
 PLAN_LIST_HEAD_ONE = "Planned in your Queue, on your computer's clock:"
 PLAN_DUE_ONE = "One post is due now in your Queue."
 PLAN_DUE_MANY = "{count} posts are due now in your Queue."
+# Phase 5, item 4: what Remind me's messages say, with the moment on the
+# computer's clock and the label the creator gave it; the item's first line
+# only with the words switch on.
+REMIND_SET_WORDS = ("I will bring it back {when} ({label}), on your computer's clock. Your collection lists it on the "
+                    "item, with Cancel.")
+REMINDER_WORDS = "A reminder you asked for, for {when}:"
+REMINDER_BARE = "A reminder you asked for, for {when}: an item in your collection, saved {saved}."
 # Phase 5, item 3: /recall lists the newest when more match than it shows.
 RECALL_NEWEST = "The newest {count}:"
 # The kinds of message whose buttons each act once, the others staying: a list.
@@ -1266,7 +1288,9 @@ def options() -> Dict[str, Any]:
             "angles": writing.preferences()["angles"],
             # Phase 5: what Plan it offers, and how many lines a list shows, with their defaults.
             "plan": phone_plans.plan_offers(), "list_at_most": phone_plans.list_at_most(),
-            "defaults": {"plan": phone_plans.PLAN_DEFAULT, "list_at_most": phone_plans.LIST_DEFAULT}}
+            "remind_moments": phone_reminders.moments(),
+            "defaults": {"plan": phone_plans.PLAN_DEFAULT, "list_at_most": phone_plans.LIST_DEFAULT,
+                         "remind_moments": phone_reminders.MOMENTS_DEFAULT}}
 
 
 def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
@@ -1277,7 +1301,8 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
                  collection_words: Optional[bool] = None, morning_on: Optional[bool] = None,
                  morning_days: Optional[List[int]] = None, morning_hour: Optional[int] = None,
                  replies_add: Optional[bool] = None, plan: Optional[Dict[str, Any]] = None,
-                 list_at_most: Optional[int] = None) -> Dict[str, Any]:
+                 list_at_most: Optional[int] = None,
+                 remind_moments: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """
     Saves the switches the panel sent; a switch not sent is left as it is.
     Quiet hours run from one whole hour to another that differs from it;
@@ -1332,6 +1357,8 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
         changes[phone_plans.PLAN_KEY] = json.dumps(phone_plans.check_plan_offers(plan))
     if list_at_most is not None:
         changes[phone_plans.LIST_KEY] = str(phone_plans.check_list_at_most(list_at_most))
+    if remind_moments is not None:
+        changes[phone_reminders.MOMENTS_KEY] = json.dumps(phone_reminders.check_moments(remind_moments))
     if changes:
         conn = get_db()
         try:
@@ -1789,6 +1816,9 @@ TOUR_STEPS = {
     "planned": {"say": ('Under "Draft ready", press Plan it and pick a time. The draft goes into your Queue, I bring it '
                         "back here then, and nothing is posted. Send /plan to see what is planned."),
                 "needs": ("provider",)},
+    "reminder": {"say": ('Under "Saved to your collection.", press Remind me and pick a moment. I bring the item back '
+                         "then, with Write it up and Not now, and Your collection lists the reminder with Cancel."),
+                 "needs": ()},
     "recall": {"say": ("Send /recall and a word, such as /recall pricing. I say how many items hold it, with Write one "
                        "post from these; with the words switch on their first lines come too, each with Write up."),
                "needs": ()},
@@ -1799,7 +1829,7 @@ TOUR_PARTS = (
     ("send things in", ("saved", "link", "file")),
     ("make something of it", ("written", "reshaped", "several")),
     ("build it up and keep it", ("added", "edited", "remembered")),
-    ("plan it and come back to it", ("planned", "recall")),
+    ("plan it and come back to it", ("planned", "reminder", "recall")),
 )
 # The steps that leave something in the studio, as the panel lists them;
 # each is seen working once the profile holds what it leaves.
@@ -1814,6 +1844,7 @@ TOUR_EVIDENCE = {
     "edited": "An edit on your phone followed",
     "remembered": "A thing to remember kept from your phone",
     "planned": "A draft planned from your phone",
+    "reminder": "A reminder asked for on an item",
 }
 TOUR_NEEDS_PROVIDER = ("This needs an AI provider, and none is connected yet: connect yours on the Composer's Prompt "
                        "tab in your studio.")
@@ -1870,6 +1901,7 @@ def tour_seen(conn) -> Dict[str, bool]:
         "remembered": held("SELECT 1 FROM remembered WHERE source = 'telegram' LIMIT 1"),
         # A plan from the phone is kept on its draft until Undo takes it off.
         "planned": any(isinstance(m.get("planned"), dict) for m in made),
+        "reminder": held("SELECT 1 FROM item_reminders LIMIT 1"),
     }
 
 
@@ -2066,10 +2098,76 @@ def plan_offer(records: List[Dict[str, Any]], record: Dict[str, Any], chat_id: A
 
 
 def item_rows(item: Dict[str, Any]) -> List[List[str]]:
-    """Under "Saved to your collection.": Write it up and the angles, then Remember this for a note that fits, and Undo."""
+    """
+    Under "Saved to your collection.": Write it up and the angles, then Remind
+    me (phase 5), Remember this for a note that fits, and Undo.
+    """
     if collection.fits_a_fact(item):
-        return [["w", "a"], ["m", "u"]]
-    return [list(row) for row in BUTTON_ROWS["item"]]
+        return [["w", "a"], ["k", "m"], ["u"]]
+    return [["w", "a"], ["k", "u"]]
+
+
+def remind_offer(records: List[Dict[str, Any]], record: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[tuple]]:
+    """
+    Remind me pressed (phase 5): (the notice's key, the message of moments to
+    send with its buttons, or None). The moments are the creator's
+    preference, read now; one already past today is not offered.
+    """
+    conn = get_db()
+    try:
+        item = collection.get(conn, int(record.get("item"))) if str(record.get("item") or "").isdigit() else None
+    finally:
+        conn.close()
+    if item is None:
+        return "remind_gone", None
+    offered = phone_reminders.offered(datetime.now().astimezone())
+    if not offered:
+        return "remind_none", None
+    letters = TIME_LETTERS[:len(offered)]
+    text = SENTENCES["remind_ask"]
+    keyboard = _new_record(records, chat_id, "remind", text, [list(letters)],
+                           labels={letter: label for letter, (label, _when) in zip(letters, offered)},
+                           item=item["id"],
+                           moments=[{"label": label, "at": when.astimezone(timezone.utc).isoformat()}
+                                    for label, when in offered])
+    return "remind_pick", (text, keyboard)
+
+
+def _said_day(stamp: Any) -> str:
+    when = _instant(stamp)
+    if when is None:
+        return "on a day not recorded"
+    local = when.astimezone()
+    return f"{local.strftime('%a')} {local.day} {local.strftime('%b')}"
+
+
+def reminders_to_tell() -> List[Dict[str, Any]]:
+    """
+    The reminders whose moment has come, in the open profile, each claimed as
+    it is handed over so it is told once (phase 5): the moment it was for,
+    the item's first line only with the words switch on, and Write it up and
+    Not now (while the item is new). The worker calls this under its check
+    lock, outside quiet hours, for a paired chat only.
+    """
+    conn = get_db()
+    try:
+        said = []
+        for reminder in phone_reminders.claim_due(conn):
+            item = collection.get(conn, reminder["item_id"])
+            if item is None:
+                continue
+            when = _instant(reminder["remind_at"])
+            moment = phone_plans.full_time(when) if when else "a moment not recorded"
+            words = (item.get("text") or "").strip()
+            if words and collection_words_on():
+                text = REMINDER_WORDS.format(when=moment) + "\n\n" + _first_line(words)
+            else:
+                text = REMINDER_BARE.format(when=moment, saved=_said_day(item.get("received_at")))
+            row = (["w"] if words else []) + (["s"] if item.get("status") == "new" else [])
+            said.append({"text": text, "due": None, "reminder": {"item": item["id"], "rows": [row] if row else []}})
+        return said
+    finally:
+        conn.close()
 
 
 def _new_record(records: List[Dict[str, Any]], chat_id: Any, kind: str, said: str, rows: List[List[str]],
@@ -2243,6 +2341,12 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 return {"key": "button_used", "answer": SENTENCES["button_used"], "edit": None}
             if record.get("kind") in LISTS and (letter.isdigit() or letter == "c"):
                 return _list_press(records, record, letter, token, letters, conn)
+            if letter == "k":
+                # Remind me (phase 5): the moments in a message of their own; it stays, to be pressed again.
+                key, message = remind_offer(records, record, chat_id)
+                _write_json(conn, BUTTONS_KEY, records)
+                return {"key": key, "answer": SENTENCES[key], "edit": None, "job": None, "send": [],
+                        "send_with": [message] if message else [], "keep": None, "kept": True, "same": True}
             if letter == "t":
                 # Plan it (phase 5): the times in a message of their own; Plan
                 # it stays on its message, to be pressed again.
@@ -2299,6 +2403,22 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                                          planned=result["for"])
             elif letter == "u" and record.get("kind") == "planned":
                 key = phone_plans.unplan(record.get("post"), record.get("planned"))
+            elif letter in TIME_LETTERS and record.get("kind") == "remind":
+                # A moment Remind me offered: the reminder kept, with Cancel.
+                moments = record.get("moments") or []
+                index = TIME_LETTERS.index(letter)
+                chosen = moments[index] if index < len(moments) and isinstance(moments[index], dict) else {}
+                result = phone_reminders.add(record.get("item"), chosen.get("at"), chosen.get("label") or "")
+                key = {"kept": "remind_kept", "gone": "remind_gone"}.get(result["status"], "remind_past")
+                if result["status"] == "kept":
+                    edit_text = REMIND_SET_WORDS.format(when=phone_plans.full_time(_instant(result["at"])),
+                                                        label=chosen.get("label") or "")
+                    markup = _new_record(records, chat_id, "reminded", edit_text, [["x"]], item=record.get("item"),
+                                         reminder=result["id"])
+            elif letter == "x":
+                key = "remind_cancelled" if phone_reminders.cancel(record.get("reminder")) else "remind_cancel_gone"
+            elif letter == "s":
+                key = _set_aside(record.get("item"))
             elif letter in RESHAPE_LETTERS:
                 # A rewrite of a draft the bot wrote: shown only with the words
                 # switch on, written beside the bot's loop, with a provider.
@@ -2460,6 +2580,22 @@ def _undo(conn, draft_id: Any) -> str:
     if removed:
         changes.publish("collection")
     return "undone" if removed else "undo_changed"
+
+
+def _set_aside(item_id: Any) -> str:
+    """Not now, under a reminder (phase 5): the item set aside, as the box's Not now does, while it is new."""
+    conn = get_db()
+    try:
+        item = collection.get(conn, int(item_id)) if str(item_id or "").isdigit() else None
+    finally:
+        conn.close()
+    if item is None:
+        return "remind_gone"
+    if item["status"] == "used":
+        return "set_aside_used"
+    if item["status"] == "new":
+        collection.set_status(item["id"], "not_now")
+    return "set_aside"
 
 
 def _remind(conn, due: List[str]) -> str:

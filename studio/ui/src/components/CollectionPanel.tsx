@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   anglesForItem,
+  cancelReminder,
   draftFromCollection,
   fetchCollection,
   fetchDraftById,
@@ -360,6 +361,28 @@ export function CollectionPanel({
                     </>
                   )}
                 </p>
+              )}
+              {item.reminders && item.reminders.length > 0 && (
+                <ul aria-label="Reminders asked for on your phone" className="mt-1 flex flex-col gap-0.5">
+                  {item.reminders.map((reminder) => (
+                    <li key={reminder.id} className="flex flex-wrap items-baseline gap-x-2 text-[12px] text-ink-secondary">
+                      <span>
+                        {`Reminder: ${formatLocal(reminder.remind_at)}${reminder.label ? ` (${reminder.label})` : ""}, on your phone`}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={busy === item.id}
+                        aria-label={`Cancel the reminder for ${formatLocal(reminder.remind_at)}`}
+                        onClick={() =>
+                          void act(item, () => cancelReminder(reminder.id), "Reminder cancelled: the bot will not bring it back then.")
+                        }
+                        className="underline underline-offset-2 hover:text-ink-primary disabled:opacity-40"
+                      >
+                        Cancel
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
               <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[12px] text-ink-secondary">
                 {item.text && (

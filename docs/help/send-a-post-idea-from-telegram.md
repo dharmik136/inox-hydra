@@ -98,7 +98,7 @@ A document or a video is kept the same way, with its own name, and never read: n
 
 Your unused items come back while you write. In the Composer, **From your collection**, folded above the editor beside **What worked, from your own posts**, lists up to three new items whose words your draft shares, matched on this computer as you type, and says how many on its folded line. **Add to the draft** puts an item's words at the end of your draft, and the item is then used, with your draft as what it became; on a post you have not saved yet, that happens when you save it, if its words are still there. **UNDO** beside it takes the words back out, and the item is new again. The **You asked** card in **From your record** may draw an unused idea too, and the weekly summary counts them.
 
-Your collection is counted in **Storage and privacy** as "Your collection: what you sent your bot", is in the data export and in backups like everything else, and is deleted when you delete everything the studio holds about you. A message is kept once, even if Telegram sends it again after a restart.
+Your collection is counted in **Storage and privacy** as "Your collection: what you sent your bot", with the reminders asked for on its items, is in the data export and in backups like everything else, and is deleted when you delete everything the studio holds about you. A message is kept once, even if Telegram sends it again after a restart.
 
 ### Build an idea up over the day
 
@@ -111,6 +111,30 @@ A command in a reply is still a command, a photo or a file in a reply is an item
 Edit a message you sent your bot (press and hold it, then **Edit**) and the item it made changes with it, in **Your collection** at once, read as the message was: an `Idea:` or `/idea` is still an idea, without the prefix, and a post link in it does not make a second request on Today. The bot answers "Updated in your collection." The item then says "edited on your phone". Edit a reply that added to an item, and only its words change.
 
 Once you have used the item, the draft made from it is kept as it is: the item takes your edit, says it was edited after it became a draft, and the bot answers "Updated in your collection. The draft made from it was not changed." An edit of a message that made nothing, such as a command, changes nothing, and the bot says so. An edit from any chat but yours is refused like a message from it. To follow an edit, the studio uses the same record of which message each item came from as for replies, so a message sent before this version does not follow its edits.
+
+### Remind me
+
+Under "Saved to your collection.", for anything you sent with words, **Remind me** asks when to bring it back. Press it and the bot answers "Pick a moment in the message below.", then sends "When should I bring it back? It waits in your collection until then." with a button for each of your moments: **This evening** (today at 18:00), **Tomorrow morning** (tomorrow at 09:00) and **Next week** (seven days from today at 09:00), unless you change them. A moment already past today, or less than 15 minutes away, is not offered. **Remind me** stays on its message, so you can ask again.
+
+Press a moment and the message says, for example, "I will bring it back Tue 3 Nov, 18:00 (This evening), on your computer's clock. Your collection lists it on the item, with Cancel.", with **Cancel**. In **Your collection** the item lists it ("Reminder: ..., on your phone"), with its own **Cancel**.
+
+At that moment the bot says "A reminder you asked for, for Tue 3 Nov, 18:00:" and the item's first line, only while **The bot may send me what it writes from my collection** is on; otherwise "an item in your collection, saved Mon 2 Nov." It carries **Write it up**, which writes it up as under "Saved to your collection.", and, while the item is still new, **Not now**, which sets it aside as **Not now** does in the box ("Set aside: it is under Not now in your collection."). A reply to that message adds to the item, as a reply to the bot's answer about it does.
+
+A reminder is told once. It waits through [quiet hours](#quiet-hours), and goes only to your paired chat. If the studio is not running at that moment, it comes when the studio next checks Telegram, saying the moment it was for. It goes with its item: **Remove** in the box, **Undo** on the phone, or deleting everything takes it away, and it is never told.
+
+**Remind me offers**, in the panel, is your moments: one to four, each with a label of your own (up to 24 characters, sent as the button's text), a day (today, tomorrow, or up to two weeks from today) and a time. Reminders are kept with your collection: counted in **Storage and privacy** with it, in the data export, in backups, and deleted with everything else.
+
+| What happened | The bot says |
+| --- | --- |
+| You pressed **Remind me** | Pick a moment in the message below. |
+| You pressed a moment | I will bring it back then. It waits in your collection. (And the message says when.) |
+| **Cancel** under it | Cancelled: I will not bring it back then. |
+| **Cancel**, after it was told | Nothing to cancel: that reminder was told or cancelled already. |
+| **Remind me**, for an item no longer in your collection | Nothing to bring back: it is no longer in your collection. |
+| **Remind me**, with every moment past for today | No moment to offer now: yours for today have passed. Change them under Local security. |
+| The moment passed before you pressed it | That moment has passed, so nothing was kept. Pick a later one. |
+| **Not now** under the reminder | Set aside: it is under Not now in your collection. |
+| **Not now**, on an item used since | Left as it is: you have used it in your studio since. |
 
 ## Make something out of it
 
@@ -289,6 +313,10 @@ These messages carry buttons, which you press in Telegram:
 | "Saved to your collection." | **Write it up** | Writes a draft from it through your own AI provider. See [Make something out of it](#make-something-out-of-it) |
 | The same | The **Angles** button | Finds your number of opening lines for a post from it |
 | The same | **Undo** | Takes it out of your collection, while it is still new there: never used as a draft and never set aside |
+| The same, for anything with words | **Remind me** | Asks when to bring it back, and brings it back then. See [Remind me](#remind-me). The message keeps its other buttons |
+| "When should I bring it back?" | One of your moments, such as **This evening** | Keeps the reminder, with **Cancel** |
+| "I will bring it back ..." | **Cancel** | The reminder will not come |
+| "A reminder you asked for, for ..." | **Write it up**, and **Not now** while the item is new | Writes it up, or sets it aside in your collection |
 | The same, for a note or an idea of at most 300 characters | **Remember this** | Keeps its words as a thing to remember, and the item is used. See [Things to remember](#things-to-remember) |
 | "Paired.", and the message after an update that adds commands | **Start the tour** | Sends the tour's first part, as `/tour` does. See [A tour on your phone](#a-tour-on-your-phone) |
 | A part of the tour | **Next**, **Stop the tour**, and on the last part **From the start** | Shows the next part in the same message, ends the tour, or goes back to its first part |

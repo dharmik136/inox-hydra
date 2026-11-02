@@ -220,3 +220,14 @@ def test_phase_5_recall_quotes_the_bot():
     assert telegram_bot.SENTENCES["recall"].format(count=2) in article
     assert telegram_bot.SENTENCES["write_from"].format(count=2) in article
     assert "**Write one post from these**" in article and "**Write up 1**" in article
+
+
+def test_phase_5_remind_me_quotes_the_bot_the_box_and_the_panel():
+    """Phase 5, item 4: Remind me's words, the box's line and Cancel, and the panel's moments."""
+    article = _article()
+    assert telegram_bot.REMIND_SET_WORDS.split(" {when}")[0] in article
+    assert telegram_bot.REMINDER_WORDS.split(" {when}")[0] in article
+    box = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "CollectionPanel.tsx"),
+               encoding="utf-8").read()
+    assert "Reminder: " in article and "Reminder: " in box
+    assert "Remind me offers" in article and "Remind me offers" in _panel()

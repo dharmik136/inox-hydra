@@ -12,6 +12,7 @@ import {
   type IngressSettings,
   type PlanOffers,
   type PlanTime,
+  type RemindMoment,
   type TourStep,
 } from "@/lib/api";
 import { formatLocal } from "@/lib/time";
@@ -516,6 +517,12 @@ export function TelegramIngressPanel() {
                 disabled={busy}
                 onSave={(plan, said) => void setOption({ plan }, said)}
               />
+              <RemindMomentsControl
+                value={state.options.remind_moments}
+                fallback={state.options.defaults.remind_moments}
+                disabled={busy}
+                onSave={(moments, said) => void setOption({ remind_moments: moments }, said)}
+              />
               <div className="flex flex-wrap items-center gap-2 text-[12px] text-ink-secondary">
                 <label htmlFor="bot-list-at-most" className="text-ink-primary">
                   The bot lists at most
@@ -838,6 +845,119 @@ function PlanOffersControl({
           className="rounded-md border border-edge px-2 py-0.5 hover:text-ink-primary disabled:opacity-40"
         >
           Save your times
+        </button>
+      </div>
+    </fieldset>
+  );
+}
+
+const MOMENTS_MAX = 4;
+const MOMENT_LABEL_MAX = 24;
+
+function momentsSaid(moments: RemindMoment[]): string {
+  return moments.map((moment) => `${moment.label} (${daysAhead(moment.days).toLowerCase()} at ${moment.at})`).join(", ");
+}
+
+/**
+ * The moments Remind me offers under a saved item (phase 5): each a label of
+ * the creator's own, the day and the time. At that moment the bot brings the
+ * item back with Write it up and Not now. Saved with their own button; the
+ * default is said beside them.
+ */
+function RemindMomentsControl({
+  value,
+  fallback,
+  disabled,
+  onSave,
+}: {
+  value: RemindMoment[];
+  fallback: RemindMoment[];
+  disabled: boolean;
+  onSave: (moments: RemindMoment[], said: string) => void;
+}) {
+  const [moments, setMoments] = useState<RemindMoment[]>(value);
+  useEffect(() => setMoments(value), [value]);
+  const changed = JSON.stringify(moments) !== JSON.stringify(value);
+  const isDefault = JSON.stringify(value) === JSON.stringify(fallback);
+  const ready = moments.every((moment) => moment.label.trim() && moment.at);
+
+  return (
+    <fieldset className="flex flex-col gap-1.5 text-[12px] leading-relaxed">
+      <legend className="text-ink-primary">Remind me offers</legend>
+      <p className="text-ink-secondary">
+        Under what you send, Remind me offers these moments. At the one you press, the bot brings the item back, with
+        Write it up and Not now; your collection lists it on the item with Cancel. A moment already past today is not
+        offered. {isDefault ? "(The default.)" : `(Default: ${momentsSaid(fallback)}.)`}
+      </p>
+      <ul className="flex flex-col gap-1.5 pl-5">
+        {moments.map((moment, index) => (
+          <li key={index} className="flex flex-wrap items-center gap-2 text-ink-secondary">
+            <input
+              type="text"
+              aria-label={`Moment ${index + 1}: its label`}
+              maxLength={MOMENT_LABEL_MAX}
+              className={SELECT}
+              value={moment.label}
+              disabled={disabled}
+              onChange={(event) =>
+                setMoments(moments.map((m, i) => (i === index ? { ...m, label: event.target.value } : m)))
+              }
+            />
+            <select
+              aria-label={`Moment ${index + 1}: which day`}
+              className={SELECT}
+              value={moment.days}
+              disabled={disabled}
+              onChange={(event) =>
+                setMoments(moments.map((m, i) => (i === index ? { ...m, days: Number(event.target.value) } : m)))
+              }
+            >
+              {DAY_CHOICES.map((days) => (
+                <option key={days} value={days}>
+                  {daysAhead(days)}
+                </option>
+              ))}
+            </select>
+            <span>at</span>
+            <input
+              type="time"
+              aria-label={`Moment ${index + 1}: at`}
+              className={SELECT}
+              value={moment.at}
+              disabled={disabled}
+              onChange={(event) => setMoments(moments.map((m, i) => (i === index ? { ...m, at: event.target.value } : m)))}
+            />
+            {moments.length > 1 && (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setMoments(moments.filter((_m, i) => i !== index))}
+                className="underline underline-offset-2 hover:text-ink-primary disabled:opacity-40"
+              >
+                Remove
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-3 pl-5 text-ink-secondary">
+        {moments.length < MOMENTS_MAX && (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => setMoments([...moments, { label: `Moment ${moments.length + 1}`, days: 1, at: "12:00" }])}
+            className="underline underline-offset-2 hover:text-ink-primary disabled:opacity-40"
+          >
+            Add a moment
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={disabled || !changed || !ready}
+          onClick={() => onSave(moments, `Remind me offers ${momentsSaid(moments)}.`)}
+          className="rounded-md border border-edge px-2 py-0.5 hover:text-ink-primary disabled:opacity-40"
+        >
+          Save your moments
         </button>
       </div>
     </fieldset>

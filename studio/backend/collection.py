@@ -37,12 +37,13 @@ from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import unquote
 
 try:
-    from . import changes, desk_requests, phone_media, post_identity, remembered
+    from . import changes, desk_requests, phone_media, phone_reminders, post_identity, remembered
     from .database import get_db
 except ImportError:
     import changes
     import desk_requests
     import phone_media
+    import phone_reminders
     import post_identity
     import remembered
     from database import get_db
@@ -387,9 +388,15 @@ def take_words_back(item_id: Any, chat_id: Any, message_id: Any) -> str:
 
 
 def _forget_links(conn, item_ids: Iterable[int]) -> None:
+    """
+    What an item removed leaves: the messages linked to it, and (phase 5)
+    the reminders asked for on it, in the removal's own transaction.
+    """
+    item_ids = [int(item_id) for item_id in item_ids]
+    phone_reminders.forget_items(conn, item_ids)
     for item_id in item_ids:
         try:
-            conn.execute("DELETE FROM collection_messages WHERE item_id = ?", (int(item_id),))
+            conn.execute("DELETE FROM collection_messages WHERE item_id = ?", (item_id,))
         except Exception:
             return
 
@@ -524,7 +531,12 @@ def listing(status: str = "new", kind: Optional[str] = None, q: Optional[str] = 
         for found_status, count in conn.execute("SELECT status, COUNT(*) FROM collection_items GROUP BY status"):
             counts[found_status] = count
         counts["all"] = sum(counts[s] for s in STATUSES)
-        return {"status": "success", "items": [_row(conn, r) for r in rows], "counts": counts}
+        items = [_row(conn, r) for r in rows]
+        # Phase 5: each item's reminders asked for on the phone and not yet told, which the box lists with Cancel.
+        waiting = phone_reminders.waiting_for(conn, [item["id"] for item in items])
+        for item in items:
+            item["reminders"] = waiting.get(item["id"], [])
+        return {"status": "success", "items": items, "counts": counts}
     finally:
         conn.close()
 
@@ -829,12 +841,16 @@ def drafts_made(conn, start: datetime, end: datetime) -> int:
 
 
 def forget(conn) -> None:
-    """Delete everything: every item the creator sent, the messages linked to them, and every file with them."""
+    """
+    Delete everything: every item the creator sent, the messages linked to
+    them, the reminders asked for on them (phase 5), and every file with them.
+    """
     conn.execute("DELETE FROM collection_items")
     try:
         conn.execute("DELETE FROM collection_messages")
     except Exception:
         pass
+    phone_reminders.forget(conn)
     phone_media.forget()
 
 

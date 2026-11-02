@@ -685,6 +685,9 @@ class TelegramIngressDaemon:
                 if tour:
                     said.append({"text": tour, "due": None, "tour": True})
                 said += telegram_bot.notifications()
+                # Remind me (phase 5): each claimed as it is handed over, under this lock, so a bot
+                # removed meanwhile marks nothing told.
+                said += telegram_bot.reminders_to_tell()
         except Exception as error:
             logger.warning("The bot's notifications could not be read: %s", type(error).__name__)
             return
@@ -695,13 +698,17 @@ class TelegramIngressDaemon:
                 keyboard = self._buttons(chat, item["text"], "due", due=item["due"])
             elif item.get("tour"):
                 keyboard = self._buttons(chat, item["text"], "tour_offer")
+            elif item.get("reminder"):
+                rows = item["reminder"]["rows"]
+                keyboard = self._buttons(chat, item["text"], "reminder", rows=rows,
+                                         item=item["reminder"]["item"]) if rows else None
             elif item.get("morning"):
                 keyboard = self._buttons(chat, item["text"], "morning", **item["morning"])
             else:
                 keyboard = None
-            # The morning idea is about one item: a reply to it adds to that item.
+            # The morning idea and a reminder are about one item: a reply to either adds to that item.
             self.outbox.put(chat, item["text"], keyboard,
-                            about=self._about(chat, (item.get("morning") or {}).get("item")))
+                            about=self._about(chat, (item.get("morning") or item.get("reminder") or {}).get("item")))
         if said:
             self.flush_replies()
 

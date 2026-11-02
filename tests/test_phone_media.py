@@ -80,7 +80,7 @@ def test_a_photo_is_kept_as_it_is_with_its_caption_as_your_words(bot):
                                                                                1280, 853)
     assert [c["params"]["file_id"] for c in bot["fake"].calls_of("getFile")] == ["ph-large"]
     # Words to write from: the caption, so Write it up and the angles come with Undo.
-    assert _labels(bot) == ["Write it up", "3 angles", "Undo"]
+    assert _labels(bot) == ["Write it up", "3 angles", "Remind me", "Undo"]
 
 
 def test_a_voice_note_is_kept_as_it_is_and_never_transcribed(bot):

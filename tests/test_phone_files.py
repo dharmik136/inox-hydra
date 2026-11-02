@@ -202,7 +202,7 @@ def test_a_strangers_document_is_never_fetched(bot):
 def test_a_document_with_a_caption_offers_writing_and_one_without_offers_undo(bot):
     _saved(bot)
     _document(bot, PDF, "deck.pdf", "application/pdf", caption="the pricing deck")
-    assert _labels(bot) == ["Write it up", "3 angles", "Undo"]
+    assert _labels(bot) == ["Write it up", "3 angles", "Remind me", "Undo"]
     _document(bot, PDF, "other.pdf", "application/pdf", file_id="doc-2")
     assert _labels(bot) == ["Undo"]
 

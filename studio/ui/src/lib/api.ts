@@ -3783,6 +3783,16 @@ export interface CollectionItem {
   edited_at: string | null;
   /** When something was made from it, or null. */
   used_at: string | null;
+  /** The reminders asked for on the phone (phase 5), not yet told, soonest first; Cancel removes one. */
+  reminders?: ItemReminder[];
+}
+
+export interface ItemReminder {
+  id: number;
+  /** When the bot brings the item back. */
+  remind_at: string;
+  /** The label of the moment pressed, the creator's own (Remind me offers, in the Telegram panel). */
+  label: string;
 }
 
 export interface CollectionListing {
@@ -3811,6 +3821,11 @@ export async function draftFromCollection(id: number): Promise<{ id: string; con
 
 export async function removeCollectionItem(id: number): Promise<void> {
   await call(`/api/v1/collection/${id}`, { method: "DELETE" });
+}
+
+/** Cancel, beside a reminder asked for on the phone (phase 5): it will not come back then. */
+export async function cancelReminder(id: number): Promise<void> {
+  await call(`/api/v1/collection/reminders/${id}`, { method: "DELETE" });
 }
 
 /** A photo or a voice note sent to the bot, as the studio keeps it. */
@@ -4171,8 +4186,17 @@ export interface IngressOptions {
   plan: PlanOffers;
   /** How many lines a list on the bot shows: /plan, and /recall (phase 5). */
   list_at_most: number;
+  /** The moments Remind me offers under a saved item (phase 5), each with the creator's own label. */
+  remind_moments: RemindMoment[];
   /** The defaults of the phase 5 preferences, shown beside them. */
-  defaults: { plan: PlanOffers; list_at_most: number };
+  defaults: { plan: PlanOffers; list_at_most: number; remind_moments: RemindMoment[] };
+}
+
+/** A moment Remind me offers: its label, so many days from today, at a time on the computer's clock. */
+export interface RemindMoment {
+  label: string;
+  days: number;
+  at: string;
 }
 
 /** A time of the creator's own: so many days from today, at a time on the computer's clock. */

@@ -2395,6 +2395,34 @@ def _migrate_files_and_albums(cursor: sqlite3.Cursor) -> None:
             cursor.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = 'collection_items'", (sequence[0],))
 
 
+def _migrate_item_reminders(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 43 (phase 5 of the Telegram bot, item 4):
+    A reminder asked for on the phone brings an item back at the moment
+    picked, and goes when its item is removed.
+
+    item_reminders: one row per reminder: the item it brings back, the
+    moment (UTC), the label of the moment pressed (the creator's own name for
+    it), when it was asked for, and when the bot told it. A row, not a
+    settings list, because reminders are listed on their items and cancelled
+    one by one in the box while the worker tells others, and they are the
+    creator's own data, which the export lists and Storage counts. Removed
+    with their item, and by Delete everything.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS item_reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER NOT NULL,
+            remind_at TEXT NOT NULL,
+            label TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            told_at TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_item_reminders_item ON item_reminders(item_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_item_reminders_due ON item_reminders(told_at, remind_at)")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -2456,6 +2484,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
      _migrate_message_links),
     (42, "An item from the phone can be a document or a video, and photos sent together make one item",
      _migrate_files_and_albums),
+    (43, "A reminder asked for on the phone brings an item back at the moment picked, and goes when its item is "
+         "removed", _migrate_item_reminders),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

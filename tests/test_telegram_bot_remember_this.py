@@ -40,7 +40,7 @@ def _answers(bot):
 def test_a_note_carries_remember_this(bot):
     _saved(bot)
     _mid, answer = _send(bot, "I write for founders of small design studios")
-    assert _labels(bot, answer) == ["Write it up", "3 angles", REMEMBER, "Undo"]
+    assert _labels(bot, answer) == ["Write it up", "3 angles", "Remind me", REMEMBER, "Undo"]
 
 
 def test_a_press_keeps_it_as_a_thing_to_remember_and_the_item_is_used(bot):

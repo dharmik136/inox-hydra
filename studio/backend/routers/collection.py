@@ -18,9 +18,10 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 try:
-    from .. import collection, writing
+    from .. import collection, phone_reminders, writing
 except (ImportError, ValueError):
     import collection
+    import phone_reminders
     import writing
 
 router = APIRouter()
@@ -104,6 +105,14 @@ def post_collection_write(payload: WritePayload):
 def post_collection_angles(item_id: int):
     """Angles: the creator's number of opening lines for a post from this item, kept on the item."""
     return _answer(lambda: writing.angles(item_id))
+
+
+@router.delete("/api/v1/collection/reminders/{reminder_id}", tags=["Collection"])
+def delete_collection_reminder(reminder_id: int):
+    """Cancel, beside a reminder asked for on the phone (phase 5): it will not come back. Told ones are kept."""
+    if not phone_reminders.cancel(reminder_id):
+        raise HTTPException(status_code=404, detail="That reminder was told or cancelled already.")
+    return {"status": "success", "cancelled": True}
 
 
 @router.delete("/api/v1/collection/{item_id}", tags=["Collection"])
