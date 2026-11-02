@@ -52,7 +52,7 @@ Send the bot a message. You can start it with a prefix, in any letter case. Noth
 | `Idea: your text`, or `/idea your text` | Your collection, as an idea, without the prefix |
 | A message you forward from another chat | Your collection, as a forwarded note: its text, and never who or what it was forwarded from |
 | `Draft: your text` | Straight to a draft in the Composer, as before, and listed in your collection as used |
-| `Schedule <when>: your text` | Straight to a draft, as `Draft:` is (see below), and listed as used |
+| `Schedule <when>: your text` | Straight to a draft, as `Draft:` is, and listed as used; planned for then too when `<when>` is a day and a time, such as `Schedule tue 09:00: your text` (see below) |
 | A link to one of your own posts, from the LinkedIn app's share menu or copied from the feed | A request on Today to read that post's analytics at this computer, listed in your collection; any words with it are kept there as your note |
 | `Read: <post link>` | The same |
 | A link to someone else's post, or to a post the studio does not hold | A bookmark in your collection: the post's address rebuilt from its number (never the name and words the address you shared carries), with your own words. The studio never opens it |
@@ -69,8 +69,8 @@ A link you hid behind words in Telegram (words you made into a link) is kept too
 
 Any `#hashtag` in the text is one of the item's tags, up to 30 (a link's `#fragment` is not one), and its topic is the first of your own topics from Setup ("What you write about") that its words name, or else its first hashtag. An em dash in your message is saved as ` -- `.
 
-> [!WARNING]
-> `Schedule <when>:` does not schedule anything. The time is read but not stored, and the post is saved as an ordinary draft. Voice notes are kept as they are, and never transcribed.
+> [!NOTE]
+> `Schedule <when>:` plans the draft when the bot reads `<when>` as `/plan` reads a time: `today`, `tomorrow` or a weekday, then a time such as `09:00` or `6pm`. The draft goes into your Queue then, the bot answers "Saved as a draft in your studio. Planned for ..., on your computer's clock. ...", with **Undo**, which makes it a draft again, and it comes back when it is due, as with [Plan it](#plan-it-from-your-phone). Nothing is posted. A `<when>` the bot cannot read, or one already past, keeps it an ordinary draft, and the bot says so: "The time after Schedule was not read, so it is not planned: write a day and a time, such as Schedule tue 09:00: and your post." Voice notes are kept as they are, and never transcribed.
 
 The `Schedule` prefix is recognised only in a one-line message whose `<when>` uses just letters, digits, spaces, colons and hyphens, followed by `:` or `|`. Otherwise the whole message, prefix included, is saved as plain text. If your text contains another colon, everything before the last colon is taken as `<when>` and dropped.
 

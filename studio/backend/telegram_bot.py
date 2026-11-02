@@ -327,6 +327,9 @@ SENTENCES = {
                     "for."),
     "ideas_ready": "{count} ideas are ready in your studio, under From your record.",
     "ideas_ready_one": "One idea is ready in your studio, under From your record.",
+    # Phase 5, item 6: Schedule <when>: with a time the bot could not read.
+    "schedule_unread": ("The time after Schedule was not read, so it is not planned: write a day and a time, such as "
+                        "Schedule tue 09:00: and your post."),
 }
 
 # Phase 5, item 2: what a plan's messages say, with times on the computer's
@@ -1010,6 +1013,22 @@ def plan_listing() -> str:
     if due:
         lines += ([""] if lines else []) + [PLAN_DUE_ONE if due == 1 else PLAN_DUE_MANY.format(count=due)]
     return "\n".join(lines) if lines else SENTENCES["plan_list_none"]
+
+
+def schedule_answer(record: Dict[str, Any], said: Optional[str]) -> Tuple[str, Optional[tuple]]:
+    """
+    What a "Schedule <when>:" message is answered with (phase 5, item 6):
+    what became of it, and the plan, with Undo, when its time was read and
+    ahead; or that it was not planned and why. Returns the answer and its
+    buttons, or None to keep the draft's own Undo.
+    """
+    planned = record.get("planned") or {}
+    base = said or SENTENCES["draft"]
+    if planned.get("status") == "planned":
+        return f"{base} {planned_text(planned)}", ("planned", [["u"]], {"post": f"post-draft-{record.get('id')}",
+                                                                       "planned": planned.get("for")})
+    key = {"unread": "schedule_unread", "past": "plan_past"}.get(planned.get("status"), "plan_changed")
+    return f"{base} {SENTENCES[key]}", None
 
 
 def plan_command(argument: str, chat_id: Any, replied_id: Any) -> Tuple[str, Optional[tuple]]:

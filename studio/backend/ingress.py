@@ -41,14 +41,15 @@ import time
 
 try:
     from .database import get_db, create_draft, get_draft
-    from . import (collection, desk_requests, paths, phone_media, post_identity, remembered, secret_settings,
-                   telegram_bot)
+    from . import (collection, desk_requests, paths, phone_media, phone_plans, post_identity, remembered,
+                   secret_settings, telegram_bot)
 except ImportError:
     from database import get_db, create_draft, get_draft
     import collection
     import desk_requests
     import paths
     import phone_media
+    import phone_plans
     import remembered
     import post_identity
     import secret_settings
@@ -915,11 +916,14 @@ class TelegramIngressDaemon:
                 self._reply(chat_id, answer, always=question)
                 self._start_job(stored["job"], chat_id)
             else:
+                buttons = stored.get("buttons") if isinstance(stored, dict) else None
+                if isinstance(stored, dict) and stored.get("planned") is not None:
+                    # Schedule <when>: (phase 5): the plan said, with its own Undo when it was made.
+                    answer, buttons = telegram_bot.schedule_answer(stored, answer)
                 self._reply(chat_id, answer, always=question, draft_id=telegram_bot.draft_of(stored),
                             item=telegram_bot.item_of(stored),
                             fact_id=stored.get("id") if isinstance(stored, dict) and stored.get("kind") == "fact"
-                            else None, about_item=telegram_bot.item_id_of(stored),
-                            buttons=stored.get("buttons") if isinstance(stored, dict) else None)
+                            else None, about_item=telegram_bot.item_id_of(stored), buttons=buttons)
         return stored
 
     def _edited(self, message: Dict[str, Any]) -> None:
@@ -1201,6 +1205,12 @@ class TelegramIngressDaemon:
             record["collection_item"] = collection.add(
                 "note", words, status="used", post_id=f"post-draft-{draft_id}",
                 desk_request_id=request["id"] if request else None, source=source, origin_ref=origin)
+            if from_telegram and parsed["archetype"] == "Scheduled Post":
+                # Phase 5, item 6: the time after Schedule, read as /plan reads one, plans the
+                # draft then, as Plan it does; a time not read, or past, keeps it a draft.
+                when = phone_plans.read_when(parsed.get("schedule_target") or "", datetime.now().astimezone())
+                record["planned"] = ({"status": "unread"} if when is None else
+                                     phone_plans.plan(f"post-draft-{draft_id}", when.astimezone(timezone.utc).isoformat()))
             return record
 
         if not words and not request:

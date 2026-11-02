@@ -243,3 +243,13 @@ def test_phase_5_ideas_quotes_the_bot_and_the_composer():
     composer = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "ComposerCollection.tsx"),
                     encoding="utf-8").read()
     assert "from one of the ideas in From your record" in article and "from one of the ideas in From your record" in composer
+
+
+def test_phase_5_schedule_quotes_the_bot():
+    """Phase 5, item 6: Schedule <when>: planned, and the answer when its time is not read."""
+    article = _article()
+    guide = " ".join(open(os.path.join(REPO_ROOT, "docs", "help", "send-a-post-idea-from-telegram.md"),
+                          encoding="utf-8").read().split())
+    assert telegram_bot.SENTENCES["schedule_unread"] in guide
+    assert "does not schedule anything" not in guide
+    assert "Schedule tomorrow 09:00:" in article
