@@ -151,3 +151,73 @@ The full suite run at the end, at 02:22 UTC, failed two tests outside the bot, a
 ### Suite
 
 As CI runs it, at the end: the interface built, then `pytest tests studio/tests -q -rs`. The first run, on 65e3554, ending at 02:22 UTC: 4,492 passed, 2 failed, 17 skipped; the two failures were the clock-dependent tests above, which fail the same way on 8962bce, fixed in 533e0da. The second run, on 533e0da with this record and two comment corrections: 4,493 passed, 0 failed, 18 skipped (each skip names a Windows or macOS primitive, a workstation's browser, or a missing yaml module, as before; the eighteenth is `tests/test_qc2_r1_launcher.py`, which skips when the kernel leaves no TIME_WAIT on the port). 4,511 tests collected: phase 3's 4,375 and the 136 this phase added (129 in sixteen new files, 7 in the checklist's test). Also: flake8 with CI's selection, 0; `tools/sync_version.py --check`, in sync at 2.12.0; `tools/ui_audit.py` on a fresh install, 68 screens, 0 with blocking findings.
+
+## Phase 5
+
+The record of the fifth phase, asked for on 2026-11-02 ("continue") and written down before its code in [the phase 5 PRD](bot-phase5.md). Branch `qc4/bot-phase5`, from `b2f1754` (2.13.0, schema 42). Five items in the brief's order and a sixth the PRD argued for, each with a failing test first, the code, one guard falsified, and one commit. No independent review. The version stays 2.13.0.
+
+### How it is tested
+
+The fake Bot API (`tests/telegram_fake.py`) gained one plan, `("hold", seconds)`: a method's answer, as it would be, given only after a wait, so a test can remove the bot while Telegram is still answering. Replies are pushed with `reply_to_message`, presses with `press_button`, and the message ids the fake answers with link the bot's messages to the drafts they are about. Writing runs against the fake provider (`tests/ai_fake.py`). Times that depend on the clock are computed from the real clock where the studio checks them against it (a plan or a reminder in the past is refused), and the bot's own clock (`telegram_bot.local_now`) is read as midday only for quiet hours. Nothing reaches the network.
+
+### Items
+
+Census in `tests/test_endpoint_reachability.py` as total paths / reached by the interface / unreachable.
+
+| Item | Commit | What the creator now sees | Test first | How the guard was falsified | Census |
+| --- | --- | --- | --- | --- | --- |
+| The PRD | e9acaf2 | Nothing yet: each item's build, place, storage, what may leave and under which switch, preferences and what was decided against; Telegram's rules quoted from the Bot API page; migration 43 and why | | | 241/193/48 |
+| 1. A guided first run | 93b6e0c | `/tour` sends what to try a few steps at a time, as the checklist groups them; **Next** replaces a part in the same message, **Stop the tour** ends it, the last part offers **From the start**. A writing step says when no provider is connected and points to the Prompt tab; a step needing the words switch says so; a step seen working says so. "Paired." now carries **Start the tour**; after an upgrade that adds commands a bot paired before it is told once which are new (2.13.0's menu record is recognised by its fingerprint). The Telegram panel lists the steps that leave something, SEEN WORKING or NOT YET, derived from what the profile holds, never from a press | `tests/test_telegram_bot_tour.py` (17), `tests/test_telegram_bot_tour_ui.py` (1, axe in both themes) | `register_menu` writing whatever the guard says: "a registration outliving the stop keeps nothing for a bot that is gone" failed | 241/193/48 |
+| 2. Plan it from the phone | 8517f26 | "Draft ready" carries **Plan it**, words switch on or off; a press sends a few times as buttons; the one pressed puts the draft in the Queue then, with **Undo**, saying when and whether another post is within 12 hours or the Queue is paused. At that time the Queue marks it due and the due reminder brings it back (with Send me the whole post under the words switch), even with the due notification off. A reply with `/plan <day> <time>` plans it; `/plan` alone lists what is planned. Nothing posts and nothing reaches LinkedIn | `tests/test_telegram_bot_plan.py` (17), `tests/test_telegram_bot_plan_ui.py` (2, axe in both themes) | The check that a post LinkedIn holds is never planned, taken out of the state read and the update: the desk-and-LinkedIn test failed | 241/193/48 |
+| 3. Act on what /recall finds | 418b003 | With the words switch on, `/recall` lists first lines, numbered, as many as **The bot lists at most**, each with **Write up**, and **Write one post from these** (`/write`'s rule, read at the press); off, the count and **Write one post from these**. Each button acts once, the others stay | `tests/test_telegram_bot_recall.py` (9) | Write one post from these taking every matching item, used ones too: "writes the unused items that hold the word" failed | 241/193/48 |
+| 4. Remind me | 12fb5ec | Under "Saved to your collection.", **Remind me** offers the creator's moments; the one pressed keeps a reminder with **Cancel**. At that moment the bot brings the item back with **Write it up** and **Not now**: once, after quiet hours, after a restart, never once the item is removed. Your collection lists each waiting reminder on its item with **Cancel** | `tests/test_telegram_bot_remind.py` (17, with the migration), `tests/test_telegram_bot_remind_ui.py` (2, axe in both themes) | An item's removal leaving its reminders: the removal test failed | 242/194/48 (`/api/v1/collection/reminders/{reminder_id}`) |
+| 5. Today's ideas on the phone | 2a8b62a | `/ideas` reads today's batch, never builds one: with the words switch on, each card with words to write from (the creator's own, their model's idea, or an Inox library form), with **Write up** (a card whose title can name someone, such as a follow, is only counted, and no figure goes); off, how many are ready; with no batch, that it is not made yet and how it is made. Write up writes a draft from the card, marks it used, and the Composer says where it came from | `tests/test_telegram_bot_ideas.py` (9) | `/ideas` building today's batch when none was there: "builds nothing" failed | 242/194/48 |
+| 6. `Schedule <when>:` plans for real | 8f6273c | `Schedule tue 09:00: text` saves the draft and plans it for then, with **Undo** that unplans it; a time not read, or past, keeps an ordinary draft and the answer says why. The help's warning that it "does not schedule anything" is gone | `tests/test_telegram_bot_schedule.py` (4) | A planned Schedule message carrying the draft's own Undo, which refuses a queued draft: the Undo test failed | 242/194/48 |
+
+Each item's help, privacy policy (with `release/privacy.html` rebuilt) and checklist lines were written in its own commit, in a "Phase 5 on your phone" section of `docs/help/test-your-telegram-bot.md`, and the checklist test quotes each new sentence from the code (six new checks, and a seventh with this record, holding the upgrade's notice word for word to what a bot paired under 2.13.0 is told).
+
+### Migration
+
+- **43** (item 4), `item_reminders`: one row per reminder: the item, the moment (UTC), the label of the moment pressed, when it was asked for, and when it was told. A row rather than a settings list because reminders are listed on their items and cancelled one by one in the box while the worker tells others, and they are the creator's own data. Counted in Storage with the collection, exported, removed with an item (Remove, Undo, a `Draft:` taken back) and by Delete everything, kept in backups. Forward only, re-runnable, behind the automatic backup, with a test that an older database gains it and a second run adds nothing, named with no word an earlier migration's test finds its own by.
+
+### Preferences added
+
+| Preference | Default | Set in | Read by |
+| --- | --- | --- | --- |
+| Plan it offers (`telegram_plan`) | your Queue's next 3 open slots (1 to 4), found as the Queue finds its next open slot; with none open in two weeks, your own times: tomorrow at 09:00 and at 18:00 (1 to 4, each 0 to 14 days ahead) | the Telegram panel | Plan it |
+| The bot lists at most (`telegram_list_at_most`) | 5, from 1 to 10 | the Telegram panel | /plan, /recall |
+| Remind me offers (`telegram_remind_moments`) | This evening (today, 18:00), Tomorrow morning (tomorrow, 09:00), Next week (in 7 days, 09:00); 1 to 4, labels up to 24 characters | the Telegram panel | Remind me |
+
+Each control shows its default beside it; each is tested: changing it changes what the bot offers, a wrong value is refused with a sentence and nothing is saved, and a fresh profile gets the default. The fixed five first lines of `/recall` are gone: the list follows the preference.
+
+### What else is kept
+
+- The worker's state, kept only for the bot it was made for (the phase 4 race, now one pattern): the menu's record (with the command names, since this phase), the upgrade's notice (`telegram_tour`), what notifications mark told, and a reminder's claim, each written under the worker's check lock after checking the token; removal stops the worker, then deletes the menu record again with the other rows. The notice is removed with the bot and by Delete everything.
+- On a draft's `made_with`: `via: telegram` for a draft asked for on the phone (the tour's evidence), `planned` for a plan from the phone, and `card`, `day` and `card_title` for a draft written from one of the day's ideas.
+- With a message's buttons: Telegram's id for a message about a draft (so a `/plan` reply finds it), the times or moments offered, the items `/recall` listed and the word asked, the cards `/ideas` listed.
+
+### Changed in earlier phases' tests, and why
+
+- "Paired." now offers the tour; the tests compare with `SENTENCES["paired"]`, so only the checklist's quoted sentence changed.
+- `tests/test_telegram_bot_phase4_panel_ui.py`: the menu's commands are read from the code (help, tour, idea, ...), no longer "help, idea".
+- `tests/test_telegram_bot_reshape.py`: the buttons under a draft now include **Plan it** (four lists).
+- `tests/test_collection_bot_writing.py`, `tests/test_phone_files.py`, `tests/test_phone_media.py`, `tests/test_telegram_bot_remember_this.py`: the buttons under a saved item now include **Remind me**.
+
+### Decided against, while building
+
+- A separate tour message after pairing: "Paired." carries the button, so pairing still sends one message.
+- An upgrade notice when the menu record cannot say what the chat had: nothing is offered rather than a guess.
+- Plan it and Remind me spending themselves: both stay on their message, to be pressed again for fresh choices.
+- A message of times when none is open: the notice says how to reply with `/plan`.
+- Planning a due post, a post queued at the desk, or one LinkedIn holds; a `/plan` reply to "Saved as a draft" (the PRD's decision kept).
+- Remind me for an item without words, and reminders for anything but an item.
+- Marking a tour step seen for steps that leave nothing (/help, /status, Send me the whole post, /recall's list).
+- A browser test for the Composer's one-sentence change: it adds no control.
+
+### What remains unverified
+
+The real service: everything here runs against the fake. In particular, on the real Bot API: that editMessageText replaces a tour part and its buttons in place on the phone; that the owner's own 2.13.0 menu record is recognised (tested against 2.13.0's list word for word); that a reply to the bot's own message carries `reply_to_message` for `/plan`; how a row of five number buttons reads on a phone; and that a plan's due reminder and a reminder arrive at their times on the owner's machine (the scheduler marks due every 30 seconds; quiet hours hold both). The owner's checklist covers each, in "Phase 5 on your phone".
+
+### Suite
+
+As CI runs it, at the end, on 8f6273c: the interface built, then `pytest tests studio/tests -q -rs`: 4,577 passed, 0 failed, 19 skipped, in 21 minutes 46 seconds. 4,596 tests collected: 2.13.0's 4,512 and the 84 this phase added (78 in nine new files, 6 in the checklist's test). Each skip names a Windows or macOS primitive, a workstation's browser, this machine's autostart, or a missing yaml module. Also: flake8 with CI's selection, 0; `tools/sync_version.py --check`, in sync at 2.13.0; `tools/ui_audit.py` on a fresh install, 68 screens, 0 with blocking findings. Before each commit, the new test files ran three times in a row, and the Telegram, collection, phone, ingress and memory suites ran whole after items 1 and 2 (425 and 682 tests; the failures they found were the earlier phases' button lists this phase changed, listed above). After the suite, this record's commit added the seventh checklist check; the checklist and docs suites then passed, 121 tests.

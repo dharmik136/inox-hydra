@@ -253,3 +253,10 @@ def test_phase_5_schedule_quotes_the_bot():
     assert telegram_bot.SENTENCES["schedule_unread"] in guide
     assert "does not schedule anything" not in guide
     assert "Schedule tomorrow 09:00:" in article
+
+
+def test_phase_5_the_upgrade_notice_it_quotes_is_the_one_a_2_13_bot_gets():
+    """Phase 5: the notice a bot paired under 2.13.0 is told once, word for word, with the commands it adds."""
+    before = {name for name, _words in telegram_bot.COMMANDS_2_13}
+    added = [name for name, _words in telegram_bot.BOT_COMMANDS if name not in before]
+    assert telegram_bot.tour_notice_text(added).split(" Press")[0] in _article()
