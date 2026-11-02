@@ -212,3 +212,11 @@ def test_phase_5_plan_it_quotes_the_bot_and_the_panel():
     assert telegram_bot.PLAN_LIST_HEAD.split(" {count}")[0] in article
     for words in ("Plan it offers", "The bot lists at most"):
         assert words in article and words in _panel(), words
+
+
+def test_phase_5_recall_quotes_the_bot():
+    """Phase 5, item 3: /recall's answer, Write one post from these and what it says."""
+    article = _article()
+    assert telegram_bot.SENTENCES["recall"].format(count=2) in article
+    assert telegram_bot.SENTENCES["write_from"].format(count=2) in article
+    assert "**Write one post from these**" in article and "**Write up 1**" in article

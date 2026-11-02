@@ -208,7 +208,7 @@ Or keep a note you sent as one: under "Saved to your collection.", a note or an 
 
 In the studio they are listed under **Brand**, then **Writing**, under **Things to remember**, where you can add, edit, tick, untick and remove them, and choose which go with writing: all of them (the default), only the ones ticked, or none. See [Set up your Brand and your Settings](set-up-brand-studio.md#things-to-remember).
 
-`/recall` and a word answers with how many items in your collection hold it, for example "2 items in your collection hold that word.", and only with **The bot may send me what it writes from my collection** on, their first lines, up to five.
+`/recall` and a word answers with how many items in your collection hold it, for example "2 items in your collection hold that word.", with **Write one post from these** under it while an unused item with words matches: it writes one draft from the unused items that hold the word, newest first, up to your **Most items in one draft**, exactly as `/write` does, and the bot says how many ("Writing one post from 2 items in your collection."). Only with **The bot may send me what it writes from my collection** on, it also lists their first lines, numbered, newest first, as many as **The bot lists at most** in the panel (five unless you change it), saying "The newest 5:" when more match, with **Write up 1**, **Write up 2** and so on, each writing that item up as **Write it up** does. Each button works once, and the others stay. Writing needs your AI provider: without one, the bot says so and every button stays.
 
 ## Commands
 
@@ -228,7 +228,7 @@ The commands are in Telegram's **/** menu of your chat too: type `/` in the chat
 | `/drafts` | How many drafts were made from what you sent in the last seven days: "Drafts made from what you sent, in the last seven days: 5." A `Draft:` message, or an item you used as a draft. A count, never their words |
 | `/remember something` | It is kept in your things to remember, with **Undo** under the answer. See [Things to remember](#things-to-remember) |
 | `/forget words` | The one thing to remember that holds those words is removed; with several, nothing is, and the bot says how many |
-| `/recall word` | How many items in your collection hold the word, as a word or a tag, and their first lines only with **The bot may send me what it writes from my collection** on. `/recall #tag` counts the items that carry the tag |
+| `/recall word` | How many items in your collection hold the word, as a word or a tag, with **Write one post from these**; and their first lines, each with **Write up**, only with **The bot may send me what it writes from my collection** on. `/recall #tag` counts the items that carry the tag. See [Things to remember](#things-to-remember) |
 | `/write word` or `/write #tag` | One draft from the unused items in your collection that hold the word, or carry the tag, newest first, up to your **Most items in one draft**, through your own AI provider as **Combine** writes: "Writing one post from 3 items in your collection.", then "Draft ready in your studio." Those items are then used. Nothing matching: "Nothing new in your collection holds that word, so nothing was written." |
 | Any other command | "I do not know that command. Send /help to see what I do." |
 
@@ -302,6 +302,7 @@ These messages carry buttons, which you press in Telegram:
 | "Draft ready in your studio. It begins:" and "Rewritten in your studio (...). It begins:" | Your rewrite buttons (**Shorter**, **New opening**, **Another angle** unless you change them) | Rewrites the draft through your own AI provider. See [Rewrite a draft from your phone](#rewrite-a-draft-from-your-phone) |
 | "Rewritten in your studio (...). It begins:" | **Undo** | Puts the draft back as it was before that rewrite, while it is still as the rewrite left it |
 | "Draft ready in your studio.", with the words switch on or off | **Plan it** | Offers a few times; the one you press puts the draft in your Queue then, and the bot brings it back at that time. See [Plan it from your phone](#plan-it-from-your-phone). The message keeps its other buttons |
+| `/recall`'s answer | **Write one post from these**, and with the words switch on **Write up 1**, **Write up 2** and so on | One draft from the unused items that hold the word, as `/write` writes it, or that item written up. Each works once; the others stay |
 | "When should your studio bring this post back to you?" | A time, such as "Tomorrow 08:30" | Puts the draft in your Queue at that time. Nothing is posted |
 | "Planned for ..." | **Undo** | Makes it a draft again, while it is still queued at that time |
 | The same, and "Draft ready in your studio. It begins:", with **The bot may send me what it writes from my collection** on | **Send me the whole post**, or **Send me the posts** when several are due | Sends each post as a message of its own, to copy into the LinkedIn app. See [Post from your phone](#post-from-your-phone). The message keeps its other buttons |

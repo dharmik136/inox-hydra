@@ -1071,7 +1071,9 @@ class TelegramIngressDaemon:
         if name == "recall":
             if not argument.strip():
                 return done, telegram_bot.SENTENCES["empty_recall"], True
-            return done, telegram_bot.recall_answer(argument), True
+            # What it finds can be written up from here (phase 5).
+            said, buttons = telegram_bot.recall_answer(argument)
+            return ({**done, "buttons": buttons} if buttons else done), said, True
         if name == "write":
             # One draft from the unused items that match (phase 4), written
             # beside the bot's loop once its answer is on its way.

@@ -109,7 +109,9 @@ BUTTON_LABELS = {"u": "Undo", "r": "Remind me in an hour", "d": "Done", "w": "Wr
                  # Phase 5, item 1: the tour.
                  "b": "Start the tour", "v": "Next", "z": "Stop the tour", "y": "From the start",
                  # Phase 5, item 2: Plan it, under "Draft ready".
-                 "t": "Plan it"}
+                 "t": "Plan it",
+                 # Phase 5, item 3: under what /recall finds.
+                 "c": "Write one post from these"}
 # Phase 5, item 2: one letter for each time Plan it offers (at most
 # phone_plans.TIMES_MAX or its slots); each button's label is the time as
 # the computer's clock says it, kept with the message.
@@ -134,8 +136,7 @@ BUTTON_ROWS = {"undo": (("u",),), "item": (("w", "a"), ("u",)), "item_bare": (("
 COLLECTION_WORDS_KEY = "telegram_collection_words"
 # Phase 4, item 6: a reply adds to what it replies to: on unless "off".
 REPLY_ADDS_KEY = "telegram_reply_adds"
-# /recall lists at most this many first lines, newest first.
-RECALL_LINES = 5
+# /recall lists at most "The bot lists at most" first lines, newest first (phone_plans, phase 5).
 # The morning idea, off by default: {on, days (0 is Monday), hour, since}.
 MORNING_KEY = "telegram_morning"
 MORNING_DAYS, MORNING_HOUR = (0, 1, 2, 3, 4), 8
@@ -317,6 +318,10 @@ PLAN_LIST_HEAD = "Planned in your Queue, the next {count}, on your computer's cl
 PLAN_LIST_HEAD_ONE = "Planned in your Queue, on your computer's clock:"
 PLAN_DUE_ONE = "One post is due now in your Queue."
 PLAN_DUE_MANY = "{count} posts are due now in your Queue."
+# Phase 5, item 3: /recall lists the newest when more match than it shows.
+RECALL_NEWEST = "The newest {count}:"
+# The kinds of message whose buttons each act once, the others staying: a list.
+LISTS = ("recall", "ideas")
 
 # Phase 4, item 2: two messages that carry times, the studio's own and on the
 # computer's clock, kept apart from SENTENCES as the weekly summary is. The
@@ -803,19 +808,75 @@ def next_scheduled(conn) -> str:
     return f"Next scheduled post: {when.astimezone().strftime('%a %d %b, %H:%M')} (your computer's time)."
 
 
-def recall_answer(word: str) -> str:
+def recall_answer(word: str) -> Tuple[str, Optional[tuple]]:
     """
     /recall: how many items of the collection hold a word; their first lines
     too, only with the switch that lets the bot send what is in the
-    collection. Never another person's words: the items are the creator's.
+    collection, numbered, up to "The bot lists at most", each with its Write
+    up button (phase 5). And Write one post from these while an unused item
+    with words matches: /write's rule, read at the press. Never another
+    person's words: the items are the creator's. Returns the answer and its
+    buttons as (kind, rows, what they act on), or None.
     """
     found = collection.matching(word)
     if not found:
-        return SENTENCES["recall_none"]
+        return SENTENCES["recall_none"], None
     said = SENTENCES["recall_one"] if len(found) == 1 else SENTENCES["recall"].format(count=len(found))
-    if not collection_words_on():
-        return said
-    return said + "\n\n" + "\n".join(f"- {_first_line(item['text'])}" for item in found[:RECALL_LINES])
+    rows: List[List[str]] = []
+    listed: List[int] = []
+    if collection_words_on():
+        shown = found[:phone_plans.list_at_most()]
+        if len(found) > len(shown):
+            said += "\n\n" + RECALL_NEWEST.format(count=len(shown))
+        said += "\n\n" + "\n".join(f"{n}. {_first_line(item['text'])}" for n, item in enumerate(shown, 1))
+        listed = [item["id"] for item in shown]
+        numbers = [str(n) for n, item in enumerate(shown, 1) if (item.get("text") or "").strip()]
+        rows = [numbers[i:i + 5] for i in range(0, len(numbers), 5)]
+    if collection.unused_matching(word, writing.preferences()["combine_at_most"]):
+        rows.append(["c"])
+    if not rows:
+        return said, None
+    return said, ("recall", rows, {"items": listed, "word": word})
+
+
+def _list_press(records: List[Dict[str, Any]], record: Dict[str, Any], letter: str, token: str,
+                letters: List[str], conn) -> Dict[str, Any]:
+    """
+    A button under a list (phase 5): Write up a numbered entry, or Write one
+    post from these. Each acts once, its button going and the others
+    staying; written beside the bot's loop, through the creator's provider.
+    With no provider nothing is written, and every button stays.
+    """
+    job = None
+    if not writing.model_gateway.get_current_ai_config().is_configured:
+        key, answer = "no_provider", SENTENCES["no_provider"]
+    elif letter == "c":
+        found = collection.unused_matching(record.get("word") or "", writing.preferences()["combine_at_most"])
+        if not found:
+            key, answer = "write_none", SENTENCES["write_none"]
+        else:
+            key = "write_from_one" if len(found) == 1 else "write_from"
+            answer = SENTENCES[key].format(count=len(found))
+            job = {"kind": "combine", "items": [item["id"] for item in found]}
+    else:
+        index = int(letter) - 1
+        if record.get("kind") == "ideas":
+            cards = record.get("cards") or []
+            card = cards[index] if 0 <= index < len(cards) and isinstance(cards[index], dict) else None
+            job = {"kind": "card", "day": card.get("day"), "card": card.get("card")} if card else None
+        else:
+            items = record.get("items") or []
+            job = {"kind": "write", "item": items[index]} if 0 <= index < len(items) else None
+        key = "writing" if job else "button_old"
+        answer = SENTENCES[key]
+    if job:
+        record["spent"] = list(record.get("spent") or []) + [letter]
+        _write_json(conn, BUTTONS_KEY, records)
+    rest = [[x for x in row if x not in (record.get("spent") or [])]
+            for row in (record.get("rows") or [[x] for x in letters])]
+    return {"key": key, "answer": answer, "edit": None, "job": job, "send": [], "send_with": [],
+            "keep": _keyboard(token, rest, record.get("labels")) if any(rest) else None, "kept": True,
+            "same": job is None}
 
 
 def write_command(argument: str) -> Tuple[str, Optional[Dict[str, Any]]]:
@@ -1728,6 +1789,9 @@ TOUR_STEPS = {
     "planned": {"say": ('Under "Draft ready", press Plan it and pick a time. The draft goes into your Queue, I bring it '
                         "back here then, and nothing is posted. Send /plan to see what is planned."),
                 "needs": ("provider",)},
+    "recall": {"say": ("Send /recall and a word, such as /recall pricing. I say how many items hold it, with Write one "
+                       "post from these; with the words switch on their first lines come too, each with Write up."),
+               "needs": ()},
 }
 # The parts, as the checklist (docs/help/test-your-telegram-bot.md) groups
 # them: a few steps at a time, numbered across the parts.
@@ -1735,7 +1799,7 @@ TOUR_PARTS = (
     ("send things in", ("saved", "link", "file")),
     ("make something of it", ("written", "reshaped", "several")),
     ("build it up and keep it", ("added", "edited", "remembered")),
-    ("plan it and come back to it", ("planned",)),
+    ("plan it and come back to it", ("planned", "recall")),
 )
 # The steps that leave something in the studio, as the panel lists them;
 # each is seen working once the profile holds what it leaves.
@@ -1745,7 +1809,7 @@ TOUR_EVIDENCE = {
     "file": "A photo, a voice note or a file, kept as it is",
     "written": "A draft written up from your phone",
     "reshaped": "A draft rewritten from your phone",
-    "several": "One draft from several items, asked for with /write",
+    "several": "One draft from several items, asked for with /write or /recall",
     "added": "An item built up by a reply",
     "edited": "An edit on your phone followed",
     "remembered": "A thing to remember kept from your phone",
@@ -2177,6 +2241,8 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 return {"key": "button_old", "answer": SENTENCES["button_old"], "edit": None}
             if record.get("used") or letter in (record.get("spent") or []):
                 return {"key": "button_used", "answer": SENTENCES["button_used"], "edit": None}
+            if record.get("kind") in LISTS and (letter.isdigit() or letter == "c"):
+                return _list_press(records, record, letter, token, letters, conn)
             if letter == "t":
                 # Plan it (phase 5): the times in a message of their own; Plan
                 # it stays on its message, to be pressed again.
