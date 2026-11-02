@@ -164,7 +164,7 @@ def test_write_up_writes_a_draft_from_that_card_and_marks_it_used(bot, provider)
     answer = _asked(bot)
     bot["fake"].press_button("Write up 1", OWNER, message_id=answer["message_id"])
     assert _until(lambda: any(t.startswith(SAID["draft_ready_words"]) for t in _texts(bot))), _texts(bot)
-    assert [a["text"] for a in bot["fake"].answered][-1] == SAID["writing"]
+    assert _until(lambda: [a["text"] for a in bot["fake"].answered][-1:] == [SAID["writing"]]), [a["text"] for a in bot["fake"].answered][-3:]
     assert "more on hiring loops" in provider.sent() and "loops beat funnels" not in provider.sent()
     conn = get_db()
     post = conn.execute("SELECT content, origin_card_id, origin_day, made_with FROM posts WHERE origin_card_id IS NOT NULL")

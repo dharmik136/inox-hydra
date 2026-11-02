@@ -142,7 +142,7 @@ def test_write_up_writes_that_item_and_the_other_buttons_stay(bot, provider):
     message = _recalled(bot)
     bot["fake"].press_button("Write up 2", OWNER, message_id=message)
     assert _until(lambda: any(t.startswith(SAID["draft_ready_words"]) for t in _texts(bot))), _texts(bot)
-    assert [a["text"] for a in bot["fake"].answered][-1] == SAID["writing"]
+    assert _until(lambda: [a["text"] for a in bot["fake"].answered][-1:] == [SAID["writing"]]), [a["text"] for a in bot["fake"].answered][-3:]
     assert "pricing is a design decision" in provider.sent() and "pricing pages lie" not in provider.sent()
     assert _status(ids) == ["used", "new"]
     assert _labels(bot, message) == ["Write up 1", COMBINE], "the pressed button stayed, or the others went"

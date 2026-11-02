@@ -147,7 +147,7 @@ def test_plan_it_offers_the_queues_next_open_slots_by_default(bot, provider):
     assert source == "slots" and len(times) == 3
     now = datetime.now().astimezone()
     assert _labels(bot, _times_message(bot)) == [phone_plans.said_time(t, now) for t in times]
-    assert [a["text"] for a in bot["fake"].answered][-1] == SAID["plan_pick"]
+    assert _until(lambda: [a["text"] for a in bot["fake"].answered][-1:] == [SAID["plan_pick"]]), [a["text"] for a in bot["fake"].answered][-3:]
     # Plan it stays on its message, to be pressed again.
     assert _labels(bot, message) == ["Plan it"]
     assert _post(post_id)["status"] == "draft", "offering times planned something"
@@ -169,15 +169,13 @@ def test_a_time_pressed_puts_the_draft_in_the_queue_at_that_time_with_undo(bot, 
     assert when > datetime.now(timezone.utc)
     assert _until(lambda: _shown(bot, times_message).startswith(
         telegram_bot.PLANNED_WORDS.format(when=phone_plans.full_time(when))))
-    assert [a["text"] for a in bot["fake"].answered][-1] == SAID["planned"]
+    assert _until(lambda: [a["text"] for a in bot["fake"].answered][-1:] == [SAID["planned"]]), [a["text"] for a in bot["fake"].answered][-3:]
     assert _labels(bot, times_message) == ["Undo"]
     bot["fake"].press_button("Undo", OWNER, message_id=times_message)
     assert _until(lambda: _post(post_id)["status"] == "draft"), _post(post_id)
     assert _post(post_id)["scheduled_for"] is None
     assert "planned" not in json.loads(_post(post_id)["made_with"])
-    assert [a["text"] for a in bot["fake"].answered][-1] == SAID["unplanned"]
-
-
+    assert _until(lambda: [a["text"] for a in bot["fake"].answered][-1:] == [SAID["unplanned"]]), [a["text"] for a in bot["fake"].answered][-3:]
 def test_undo_leaves_a_plan_moved_in_the_queue_as_it_is(bot, provider):
     _every_day_at(_ahead(3))
     message, post_id = _drafted(bot)

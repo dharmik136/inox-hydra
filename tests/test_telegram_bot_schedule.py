@@ -65,7 +65,7 @@ def test_a_time_read_as_plan_reads_it_plans_the_draft_with_undo(bot):
     assert labels == ["Undo"]
     bot["fake"].press_button("Undo", OWNER, message_id=message)
     assert _until(lambda: _drafts()[-1]["status"] == "draft"), _drafts()
-    assert [a["text"] for a in bot["fake"].answered][-1] == SAID["unplanned"]
+    assert _until(lambda: [a["text"] for a in bot["fake"].answered][-1:] == [SAID["unplanned"]]), [a["text"] for a in bot["fake"].answered][-3:]
     conn = get_db()
     assert conn.execute("SELECT COUNT(*) FROM settings WHERE key LIKE 'linkedin_holds:%'").fetchone()[0] == 0
     conn.close()

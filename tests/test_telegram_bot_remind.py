@@ -141,7 +141,7 @@ def test_remind_me_offers_the_creators_moments_in_a_message_of_its_own(bot):
     now = datetime.now().astimezone()
     assert _labels(bot, moments) == [label for label, _when in phone_reminders.offered(now)]
     assert "Tomorrow morning" in _labels(bot, moments) and "Next week" in _labels(bot, moments)
-    assert [a["text"] for a in bot["fake"].answered][-1] == SAID["remind_pick"]
+    assert _until(lambda: [a["text"] for a in bot["fake"].answered][-1:] == [SAID["remind_pick"]]), [a["text"] for a in bot["fake"].answered][-3:]
     # Remind me stays on its message.
     assert "Remind me" in _labels(bot, answer)
     assert _reminders() == []
@@ -163,9 +163,7 @@ def test_a_moment_pressed_keeps_a_reminder_listed_on_the_item_with_cancel(bot):
     assert listed == [{"id": kept["id"], "remind_at": kept["remind_at"], "label": "Tomorrow morning"}]
     bot["fake"].press_button("Cancel", OWNER, message_id=moments)
     assert _until(lambda: _reminders() == [])
-    assert [a["text"] for a in bot["fake"].answered][-1] == SAID["remind_cancelled"]
-
-
+    assert _until(lambda: [a["text"] for a in bot["fake"].answered][-1:] == [SAID["remind_cancelled"]]), [a["text"] for a in bot["fake"].answered][-3:]
 def test_at_its_moment_the_bot_brings_it_back_once_with_write_it_up_and_not_now(reminding, provider):
     bot = reminding
     _saved(bot)
