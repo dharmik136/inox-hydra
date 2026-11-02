@@ -521,11 +521,18 @@ class TelegramIngressDaemon:
         return nullcontext()
 
     def _linked_answer(self, about: Dict[str, Any], message_id: int) -> None:
-        """A message of the bot's about an item went: linked to the item, in the bot's profile."""
-        profile = about.get("profile")
+        """
+        A message of the bot's went: linked to the item it is about, in the
+        bot's profile; and, for a message with buttons, Telegram's id for it
+        kept with them (phase 5), so a reply about a draft finds it.
+        """
+        profile = about.get("profile") or self.profile_id
         pinned = profile if profile and profile in paths.profile_ids() else None
         with (paths.using_profile(pinned) if pinned else nullcontext()):
-            collection.link_message(about["item"], about["chat"], message_id, "bot")
+            if about.get("item") is not None:
+                collection.link_message(about["item"], about["chat"], message_id, "bot")
+            if about.get("buttons"):
+                telegram_bot.note_message(about["buttons"], message_id)
 
     def _about(self, chat_id: str, item_id: Optional[int]) -> Optional[Dict[str, Any]]:
         return {"item": item_id, "chat": str(chat_id), "profile": self.profile_id} if item_id is not None else None
@@ -984,11 +991,13 @@ class TelegramIngressDaemon:
             self.outbox.put_call("answerCallbackQuery", {"callback_query_id": query_id, "text": done["answer"]})
         message_id = held.get("message_id")
         if isinstance(message_id, int) and done.get("kept"):
-            # A button that sends something (phase 4): only it goes, the others stay.
-            params = {"chat_id": chat_id, "message_id": message_id}
-            if done.get("keep"):
-                params["reply_markup"] = done["keep"]
-            self.outbox.put_call("editMessageReplyMarkup", params)
+            # A button that sends something (phase 4): only it goes, the others
+            # stay; one that stays itself (Plan it, phase 5) changes nothing.
+            if not done.get("same"):
+                params = {"chat_id": chat_id, "message_id": message_id}
+                if done.get("keep"):
+                    params["reply_markup"] = done["keep"]
+                self.outbox.put_call("editMessageReplyMarkup", params)
         elif isinstance(message_id, int):
             if done["edit"]:
                 # No reply_markup: the edit takes the message's buttons away,
@@ -1014,6 +1023,14 @@ class TelegramIngressDaemon:
         done = {"kind": "command", "command": name}
         if name in ("start", "help"):
             return done, telegram_bot.HELP, True
+        if name == "plan":
+            # Phase 5: alone, what is planned; as a reply about a draft, a day and a time to plan it.
+            message = update.get("message") if isinstance(update.get("message"), dict) else {}
+            replied = message.get("reply_to_message")
+            said, buttons = telegram_bot.plan_command(
+                argument, str((message.get("chat") or {}).get("id", "")),
+                replied.get("message_id") if isinstance(replied, dict) else None)
+            return ({**done, "buttons": buttons} if buttons else done), said, True
         if name == "tour":
             # What to try (phase 5): the first part, with Next and Stop the tour.
             return ({**done, "buttons": ("tour", telegram_bot.tour_rows(0), {"part": 0})},

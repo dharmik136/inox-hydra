@@ -79,7 +79,8 @@ def _answers(bot):
 
 def test_a_draft_the_bot_wrote_carries_the_creators_rewrite_buttons(bot, provider):
     message = _drafted(bot)
-    assert _labels(bot, message) == ["Send me the whole post", "Shorter", "New opening", "Another angle"]
+    # Phase 5: Plan it beside Send me the whole post.
+    assert _labels(bot, message) == ["Send me the whole post", "Plan it", "Shorter", "New opening", "Another angle"]
 
 
 def test_a_press_rewrites_the_draft_through_the_provider_and_keeps_the_earlier_text(bot, provider):
@@ -98,7 +99,7 @@ def test_a_press_rewrites_the_draft_through_the_provider_and_keeps_the_earlier_t
     assert after["content"] == SHORTER and after["status"] == "draft"
     earlier = json.loads(after["made_with"])["earlier"]
     assert [e["text"] for e in earlier] == [before["content"]] and earlier[0]["by"] == "Shorter"
-    assert _labels(bot) == ["Send me the whole post", "Shorter", "New opening", "Another angle", "Undo"]
+    assert _labels(bot) == ["Send me the whole post", "Plan it", "Shorter", "New opening", "Another angle", "Undo"]
 
 
 def test_undo_puts_the_earlier_text_back_while_the_draft_is_as_the_rewrite_left_it(bot, provider):
@@ -175,7 +176,7 @@ def test_which_buttons_appear_and_what_each_asks_are_the_creators(bot, provider)
                             json={"reshapes": [{"label": "Plainer", "asks": "Say it in plainer words."}]})
     assert res.status_code == 200, res.text
     message = _drafted(bot)
-    assert _labels(bot, message) == ["Send me the whole post", "Plainer"]
+    assert _labels(bot, message) == ["Send me the whole post", "Plan it", "Plainer"]
     bot["fake"].press_button("Plainer", OWNER)
     assert _until(lambda: _texts(bot)[-1].startswith("Rewritten in your studio (Plainer)."))
     assert "Say it in plainer words." in provider.sent()
@@ -184,7 +185,7 @@ def test_which_buttons_appear_and_what_each_asks_are_the_creators(bot, provider)
 def test_no_rewrite_buttons_is_a_choice_too(bot, provider):
     assert bot["client"].put("/api/v1/writing/preferences", json={"reshapes": []}).status_code == 200
     message = _drafted(bot)
-    assert _labels(bot, message) == ["Send me the whole post"]
+    assert _labels(bot, message) == ["Send me the whole post", "Plan it"]
 
 
 @pytest.mark.parametrize("wrong", [
@@ -213,7 +214,8 @@ def test_with_the_words_switch_off_no_rewrite_button_is_offered(bot, provider):
     _collect(bot)
     bot["fake"].press_button("Write it up", OWNER)
     assert _until(lambda: _texts(bot)[-1] == SAID["draft_ready"])
-    assert _labels(bot) == []
+    # Phase 5: Plan it alone, since a time carries no words; no rewrite button.
+    assert _labels(bot) == ["Plan it"]
 
 
 def test_rewriting_never_holds_up_the_bot(bot, provider):

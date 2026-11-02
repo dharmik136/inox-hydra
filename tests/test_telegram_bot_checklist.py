@@ -199,3 +199,16 @@ def test_phase_5_the_tour_quotes_the_bot_and_the_panel():
     for words in ("WHAT YOU HAVE TRIED FROM YOUR PHONE", "SEEN WORKING", "NOT YET"):
         assert words in article and words in _panel(), words
     assert telegram_bot.TOUR_EVIDENCE["saved"] in article
+
+
+def test_phase_5_plan_it_quotes_the_bot_and_the_panel():
+    """Phase 5, item 2: Plan it's answers, the plan's words, /plan's list, and the panel's two preferences."""
+    article = _article()
+    for key in ("plan_pick", "due_one"):
+        assert telegram_bot.SENTENCES[key] in article, key
+    assert telegram_bot.SENTENCES["plan_ask"].split("?")[0] in article
+    assert telegram_bot.PLANNED_WORDS.split(" {when}")[0] in article
+    assert telegram_bot.PLANNED_WORDS.split("{when}")[1] in article
+    assert telegram_bot.PLAN_LIST_HEAD.split(" {count}")[0] in article
+    for words in ("Plan it offers", "The bot lists at most"):
+        assert words in article and words in _panel(), words

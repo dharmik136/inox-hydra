@@ -10,6 +10,8 @@ import {
   sendIngressTestMessage,
   type IngressOptions,
   type IngressSettings,
+  type PlanOffers,
+  type PlanTime,
   type TourStep,
 } from "@/lib/api";
 import { formatLocal } from "@/lib/time";
@@ -507,6 +509,41 @@ export function TelegramIngressPanel() {
                   {`QUIET NOW: NOTIFICATIONS WAIT UNTIL ${clock(state.options.quiet_to)}`}
                 </p>
               )}
+              <p className="studio-meta mt-1 text-ink-muted">PLANS, REMINDERS AND LISTS</p>
+              <PlanOffersControl
+                value={state.options.plan}
+                fallback={state.options.defaults.plan}
+                disabled={busy}
+                onSave={(plan, said) => void setOption({ plan }, said)}
+              />
+              <div className="flex flex-wrap items-center gap-2 text-[12px] text-ink-secondary">
+                <label htmlFor="bot-list-at-most" className="text-ink-primary">
+                  The bot lists at most
+                </label>
+                <select
+                  id="bot-list-at-most"
+                  className={SELECT}
+                  value={state.options.list_at_most}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const most = Number(event.target.value);
+                    void setOption({ list_at_most: most }, `The bot lists at most ${most} in /plan and /recall.`);
+                  }}
+                >
+                  {LIST_CHOICES.map((count) => (
+                    <option key={count} value={count}>
+                      {count}
+                    </option>
+                  ))}
+                </select>
+                <span>
+                  {`in /plan and /recall ${
+                    state.options.list_at_most === state.options.defaults.list_at_most
+                      ? "(the default)"
+                      : `(default: ${state.options.defaults.list_at_most})`
+                  }`}
+                </span>
+              </div>
             </div>
           )}
           {state.running && state.configured_from === "settings" && (
@@ -650,6 +687,160 @@ export function TelegramIngressPanel() {
         </p>
       </div>
     </section>
+  );
+}
+
+/** How many lines a list on the bot may show (phase 5). */
+const LIST_CHOICES = Array.from({ length: 10 }, (_unused, index) => index + 1);
+/** How many of the Queue's next open slots Plan it may offer. */
+const SLOT_CHOICES = [1, 2, 3, 4];
+/** A time of the creator's own is so many days from today: today, tomorrow, up to two weeks. */
+const DAY_CHOICES = Array.from({ length: 15 }, (_unused, index) => index);
+const PLAN_TIMES_MAX = 4;
+
+function daysAhead(days: number): string {
+  return days === 0 ? "Today" : days === 1 ? "Tomorrow" : `In ${days} days`;
+}
+
+function timesSaid(times: PlanTime[]): string {
+  return times.map((time) => `${daysAhead(time.days).toLowerCase()} at ${time.at}`).join(" and ");
+}
+
+function offersSaid(plan: PlanOffers): string {
+  return plan.from === "slots"
+    ? `your Queue's next ${plan.slots} open ${plan.slots === 1 ? "slot" : "slots"}; with none, ${timesSaid(plan.times)}`
+    : timesSaid(plan.times);
+}
+
+/**
+ * What Plan it offers under a draft the bot wrote (phase 5): the Queue's next
+ * open slots, how many, or the creator's own times, each so many days from
+ * today at a time. The creator's preference, with its default beside it; the
+ * times are saved with their own button, the rest as soon as they change.
+ */
+function PlanOffersControl({
+  value,
+  fallback,
+  disabled,
+  onSave,
+}: {
+  value: PlanOffers;
+  fallback: PlanOffers;
+  disabled: boolean;
+  onSave: (plan: PlanOffers, said: string) => void;
+}) {
+  const [times, setTimes] = useState<PlanTime[]>(value.times);
+  useEffect(() => setTimes(value.times), [value.times]);
+  const changed = JSON.stringify(times) !== JSON.stringify(value.times);
+  const isDefault = JSON.stringify(value) === JSON.stringify(fallback);
+
+  function save(next: PlanOffers) {
+    onSave(next, `Plan it offers ${offersSaid(next)}.`);
+  }
+
+  return (
+    <fieldset className="flex flex-col gap-1.5 text-[12px] leading-relaxed">
+      <legend className="text-ink-primary">Plan it offers</legend>
+      <p className="text-ink-secondary">
+        Under a draft the bot wrote, Plan it offers these times. The draft goes into your Queue at the time you pick,
+        and the bot brings it back then, with the due reminder; nothing is posted. Your own times are offered too when
+        the Queue has no open slot in the next two weeks.{" "}
+        {isDefault ? "(The default.)" : `(Default: ${offersSaid(fallback)}.)`}
+      </p>
+      <label className="flex flex-wrap items-center gap-2 text-ink-secondary">
+        <input
+          type="radio"
+          name="plan-offers-from"
+          checked={value.from === "slots"}
+          disabled={disabled}
+          onChange={() => save({ ...value, from: "slots" })}
+        />
+        <span>Your Queue&apos;s next open slots:</span>
+        <select
+          aria-label="How many of your Queue's open slots Plan it offers"
+          className={SELECT}
+          value={value.slots}
+          disabled={disabled || value.from !== "slots"}
+          onChange={(event) => save({ ...value, slots: Number(event.target.value) })}
+        >
+          {SLOT_CHOICES.map((count) => (
+            <option key={count} value={count}>
+              {count}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex items-center gap-2 text-ink-secondary">
+        <input
+          type="radio"
+          name="plan-offers-from"
+          checked={value.from === "times"}
+          disabled={disabled}
+          onChange={() => save({ ...value, from: "times" })}
+        />
+        <span>Your own times</span>
+      </label>
+      <ul className="flex flex-col gap-1.5 pl-5">
+        {times.map((time, index) => (
+          <li key={index} className="flex flex-wrap items-center gap-2 text-ink-secondary">
+            <select
+              aria-label={`Your own time ${index + 1}: which day`}
+              className={SELECT}
+              value={time.days}
+              disabled={disabled}
+              onChange={(event) =>
+                setTimes(times.map((t, i) => (i === index ? { ...t, days: Number(event.target.value) } : t)))
+              }
+            >
+              {DAY_CHOICES.map((days) => (
+                <option key={days} value={days}>
+                  {daysAhead(days)}
+                </option>
+              ))}
+            </select>
+            <span>at</span>
+            <input
+              type="time"
+              aria-label={`Your own time ${index + 1}: at`}
+              className={SELECT}
+              value={time.at}
+              disabled={disabled}
+              onChange={(event) => setTimes(times.map((t, i) => (i === index ? { ...t, at: event.target.value } : t)))}
+            />
+            {times.length > 1 && (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setTimes(times.filter((_t, i) => i !== index))}
+                className="underline underline-offset-2 hover:text-ink-primary disabled:opacity-40"
+              >
+                Remove
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-3 pl-5 text-ink-secondary">
+        {times.length < PLAN_TIMES_MAX && (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => setTimes([...times, { days: 1, at: "12:00" }])}
+            className="underline underline-offset-2 hover:text-ink-primary disabled:opacity-40"
+          >
+            Add a time
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={disabled || !changed || times.some((t) => !t.at)}
+          onClick={() => save({ ...value, times })}
+          className="rounded-md border border-edge px-2 py-0.5 hover:text-ink-primary disabled:opacity-40"
+        >
+          Save your times
+        </button>
+      </div>
+    </fieldset>
   );
 }
 

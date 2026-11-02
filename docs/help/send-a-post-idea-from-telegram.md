@@ -163,6 +163,35 @@ The draft in your studio then changes in place, if it is still a draft and nobod
 
 No AI provider set up, a provider that fails, and a rewrite that is refused are said as for **Write it up**, and nothing changes.
 
+### Plan it from your phone
+
+"Draft ready in your studio." carries **Plan it**, with **The bot may send me what it writes from my collection** on or off: a time carries none of your words. Press it and the bot answers "Pick a time in the message below. Nothing is posted.", then sends "When should your studio bring this post back to you? It goes into your Queue at that time, and I send it here then. Nothing is posted." with a button for each time it offers, such as "Today 17:30", "Tomorrow 08:30" or "Wed 4 Nov, 08:30", on this computer's clock. **Plan it** stays on its message, so you can press it again for fresh times.
+
+Press a time and the draft goes into your Queue at that time, as if you had queued it at your desk. The message then says "Planned for Tue 3 Nov, 08:30, on your computer's clock. It is in your Queue, and I bring it back here then. Nothing is posted.", with **Undo**, which makes it a draft again while it is still queued at that time. It also says when another post is in your Queue within 12 hours of it (your Queue's own spacing rule), and when your Queue is paused, so it will not come due until you resume it.
+
+At that time the studio marks the post due, as for any queued post, and the bot brings it back: "A post in your queue is due now. Open your studio to post it.", with **Send me the whole post** while the words switch is on, **Remind me in an hour** and **Done**. A post you planned from your phone is told even with **Tell me when a queued post is due** unticked, because planning it was asking to be told; it waits through quiet hours like every notification. Nothing is ever posted for you, and nothing reaches LinkedIn: Plan it only sets when you want the post back.
+
+**Plan it offers**, in the panel, is which times: your Queue's next open slots (three unless you change it, from one to four), each at least 15 minutes ahead and 12 hours from any other queued, due or published post, as your Queue finds its next open slot; or your own times, each so many days from today at a time, tomorrow at 09:00 and at 18:00 unless you change them. With your Queue's slots chosen and none open in the next two weeks, your own times are offered, and the message says so.
+
+A draft already in your Queue from your desk, one handed to LinkedIn with **Send to LinkedIn**, or one published, is never moved from the phone: the bot says so and nothing changes. A draft you planned from your phone can be planned again while it is still queued at its planned time.
+
+You can type a time too: press and hold the bot's message about the draft ("Draft ready", a rewrite, the times or the plan), choose **Reply**, and send `/plan` with a day and a time: `today`, `tomorrow` or a weekday (the next one, or today while the time is still ahead), then `9`, `09:00`, `9:30`, `6pm` or `18:30`, for example `/plan fri 18:30`. Sent without a reply, the bot says how. `/plan` alone lists your next queued posts: their times always, "(LinkedIn posts it)" beside one handed to LinkedIn, their first lines only with the words switch on, and how many are due now. **The bot lists at most** (five unless you change it, from one to ten) is how many it lists.
+
+| What happened | The bot says |
+| --- | --- |
+| You pressed **Plan it** | Pick a time in the message below. Nothing is posted. |
+| You pressed a time | Planned. It is in your Queue, and nothing is posted. (And the message says when.) |
+| **Undo** under it | Unplanned: it is a draft again in your studio. |
+| **Undo**, after it moved in your Queue | Not unplanned: it has moved in your Queue since, so it was left as it is. |
+| It is already in your Queue from your desk, or handed to LinkedIn | Nothing was planned: that post is already in your Queue. Move it there at your desk. |
+| It is published | Nothing was planned: that post is published. |
+| It was deleted in your studio | Nothing was planned: that draft is no longer in your studio. |
+| The time passed before you pressed it | That time has passed, so nothing was planned. Pick a later one. |
+| No time is open to offer | No time to offer now. Reply to this message with /plan, a day and a time, for example /plan tomorrow 09:00. |
+| `/plan` and a time, not as a reply | Reply to my message about the draft with /plan, a day and a time, for example /plan tue 09:00. Send /plan alone to see what is planned. |
+| `/plan` and words it cannot read | I did not read a day and a time there. Send, for example, /plan tomorrow 09:00 or /plan fri 18:30. |
+| `/plan` alone, with nothing queued | Nothing is planned in your Queue. Press Plan it under a draft I wrote, or plan one in your studio. |
+
 ## A morning idea
 
 Tick **Send me an idea from my collection each morning** in the panel, and pick the days (Monday to Friday unless you change them) and the hour (08:00). On those mornings the bot sends one unused item from your collection, the one it offered least recently, under "An idea from your collection:", with an angle from what worked in your own posts, for example "Angle: open with a question, as the posts of yours that did best did.", and **Write it up** and **Not today** under it. **Not today** leaves it in your collection ("Not today. It stays in your collection.").
@@ -190,6 +219,7 @@ The commands are in Telegram's **/** menu of your chat too: type `/` in the chat
 | You send | What happens |
 | --- | --- |
 | `/tour` | What to try on your phone, a few steps at a time. See [A tour on your phone](#a-tour-on-your-phone) |
+| `/plan` | Alone, your next queued posts, their times always and their first lines only with the words switch on. As a reply to the bot's message about a draft, with a day and a time, that draft planned then. See [Plan it from your phone](#plan-it-from-your-phone) |
 | `/start` or `/help` | The bot says what it does, its commands as the **/** menu lists them, what **Undo** does, how to pair a chat, and that it sends your words and figures only if you allow them, and nothing about anyone else |
 | `/idea your idea` | Your idea is kept in your collection as an idea, as `Idea: your idea` is. A link inside it stays part of the idea |
 | `/ask what to remember` | It is remembered as an ask in **From your record**, with the source Telegram, and listed under **What the studio knows** there, where you can change or remove it. It takes effect on tomorrow's cards. It is not kept in your collection |
@@ -202,7 +232,7 @@ The commands are in Telegram's **/** menu of your chat too: type `/` in the chat
 | `/write word` or `/write #tag` | One draft from the unused items in your collection that hold the word, or carry the tag, newest first, up to your **Most items in one draft**, through your own AI provider as **Combine** writes: "Writing one post from 3 items in your collection.", then "Draft ready in your studio." Those items are then used. Nothing matching: "Nothing new in your collection holds that word, so nothing was written." |
 | Any other command | "I do not know that command. Send /help to see what I do." |
 
-`/start`, `/help`, `/tour`, `/status`, `/today`, `/drafts`, `/forget`, `/recall` and `/write` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
+`/start`, `/help`, `/tour`, `/plan`, `/status`, `/today`, `/drafts`, `/forget`, `/recall` and `/write` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
 
 ## Your figures on Telegram, only if you allow it
 
@@ -271,6 +301,9 @@ These messages carry buttons, which you press in Telegram:
 | The same | **Done** | Clears the reminder, and that is all: nothing is marked as posted, and nothing is done on LinkedIn. The post stays due in your studio until you post it |
 | "Draft ready in your studio. It begins:" and "Rewritten in your studio (...). It begins:" | Your rewrite buttons (**Shorter**, **New opening**, **Another angle** unless you change them) | Rewrites the draft through your own AI provider. See [Rewrite a draft from your phone](#rewrite-a-draft-from-your-phone) |
 | "Rewritten in your studio (...). It begins:" | **Undo** | Puts the draft back as it was before that rewrite, while it is still as the rewrite left it |
+| "Draft ready in your studio.", with the words switch on or off | **Plan it** | Offers a few times; the one you press puts the draft in your Queue then, and the bot brings it back at that time. See [Plan it from your phone](#plan-it-from-your-phone). The message keeps its other buttons |
+| "When should your studio bring this post back to you?" | A time, such as "Tomorrow 08:30" | Puts the draft in your Queue at that time. Nothing is posted |
+| "Planned for ..." | **Undo** | Makes it a draft again, while it is still queued at that time |
 | The same, and "Draft ready in your studio. It begins:", with **The bot may send me what it writes from my collection** on | **Send me the whole post**, or **Send me the posts** when several are due | Sends each post as a message of its own, to copy into the LinkedIn app. See [Post from your phone](#post-from-your-phone). The message keeps its other buttons |
 
 After a press your phone shows a short notice, the message says under its first words what became of it, and its buttons go:

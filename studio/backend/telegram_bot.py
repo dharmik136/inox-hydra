@@ -54,6 +54,7 @@ try:
     from . import changes
     from . import collection
     from . import egress as _egress
+    from . import phone_plans
     from . import remembered
     from . import writing
     from .database import get_db
@@ -61,6 +62,7 @@ except ImportError:
     import changes
     import collection
     import egress as _egress
+    import phone_plans
     import remembered
     import writing
     from database import get_db
@@ -105,7 +107,13 @@ WEEKLY_POSTS_SHOWN = 7
 BUTTON_LABELS = {"u": "Undo", "r": "Remind me in an hour", "d": "Done", "w": "Write it up", "a": "Angles",
                  "n": "Not today", "p": "Send me the whole post", "q": "Send me the posts", "m": "Remember this",
                  # Phase 5, item 1: the tour.
-                 "b": "Start the tour", "v": "Next", "z": "Stop the tour", "y": "From the start"}
+                 "b": "Start the tour", "v": "Next", "z": "Stop the tour", "y": "From the start",
+                 # Phase 5, item 2: Plan it, under "Draft ready".
+                 "t": "Plan it"}
+# Phase 5, item 2: one letter for each time Plan it offers (at most
+# phone_plans.TIMES_MAX or its slots); each button's label is the time as
+# the computer's clock says it, kept with the message.
+TIME_LETTERS = "ABCD"
 # Phase 4, item 4: the buttons that send something and leave the message's
 # other buttons as they are (the post itself, for long-press, Copy).
 KEEPS_THE_REST = ("p", "q")
@@ -277,7 +285,38 @@ SENTENCES = {
     "tour_next": "The next part of the tour.",
     "tour_again": "The tour, from the start.",
     "tour_stopped": "Tour stopped. Send /tour to see it again.",
+    # Phase 5, item 2: Plan it.
+    "plan_ask": ("When should your studio bring this post back to you? It goes into your Queue at that time, and I "
+                 "send it here then. Nothing is posted."),
+    "plan_times_instead": "Your Queue has no open slot in the next two weeks, so these are your own times.",
+    "plan_none": ("No time to offer now. Reply to this message with /plan, a day and a time, for example /plan "
+                  "tomorrow 09:00."),
+    "plan_pick": "Pick a time in the message below. Nothing is posted.",
+    "planned": "Planned. It is in your Queue, and nothing is posted.",
+    "plan_gone": "Nothing was planned: that draft is no longer in your studio.",
+    "plan_posted": "Nothing was planned: that post is published.",
+    "plan_queued": "Nothing was planned: that post is already in your Queue. Move it there at your desk.",
+    "plan_past": "That time has passed, so nothing was planned. Pick a later one.",
+    "plan_changed": "Nothing was planned: that post changed in your studio since. Look at your Queue.",
+    "unplanned": "Unplanned: it is a draft again in your studio.",
+    "unplan_changed": "Not unplanned: it has moved in your Queue since, so it was left as it is.",
+    "plan_reply": ("Reply to my message about the draft with /plan, a day and a time, for example /plan tue 09:00. "
+                   "Send /plan alone to see what is planned."),
+    "plan_unread": "I did not read a day and a time there. Send, for example, /plan tomorrow 09:00 or /plan fri 18:30.",
+    "plan_list_none": "Nothing is planned in your Queue. Press Plan it under a draft I wrote, or plan one in your studio.",
 }
+
+# Phase 5, item 2: what a plan's messages say, with times on the computer's
+# clock, kept apart from SENTENCES as the gap notice is. Times only: a
+# post's first line goes in /plan's list only with the words switch on.
+PLANNED_WORDS = ("Planned for {when}, on your computer's clock. It is in your Queue, and I bring it back here then. "
+                 "Nothing is posted.")
+PLAN_NEAR = "Another post is in your Queue within {hours} hours of it; your Queue shows both."
+PLAN_PAUSED = "Your Queue is paused, so it will not come due until you resume it."
+PLAN_LIST_HEAD = "Planned in your Queue, the next {count}, on your computer's clock:"
+PLAN_LIST_HEAD_ONE = "Planned in your Queue, on your computer's clock:"
+PLAN_DUE_ONE = "One post is due now in your Queue."
+PLAN_DUE_MANY = "{count} posts are due now in your Queue."
 
 # Phase 4, item 2: two messages that carry times, the studio's own and on the
 # computer's clock, kept apart from SENTENCES as the weekly summary is. The
@@ -310,6 +349,9 @@ BOT_COMMANDS = (
     ("tour", "What to try on your phone, a few steps at a time, and what you will see"),
     ("idea", "Your idea after it, kept in your collection as an idea"),
     ("write", "A word or a #tag after it, and I write one draft from your unused items that hold it"),
+    # Phase 5, item 2.
+    ("plan", "Alone, what is planned in your Queue; as a reply to my message about a draft, a day and a time to "
+             "plan it"),
     ("remember", "A fact after it about you, your audience, an offer or a date, which your studio's writing reads"),
     ("forget", "Words after it from something you asked me to remember, which is then removed"),
     ("recall", "A word after it, and I say how many items in your collection hold it"),
@@ -387,7 +429,7 @@ _HELP_AFTER = (
 HELP = _help()
 
 # Commands answered whatever the confirmations switch says: they are questions.
-QUESTIONS = ("start", "help", "status", "today", "drafts", "forget", "recall", "write", "tour")
+QUESTIONS = ("start", "help", "status", "today", "drafts", "forget", "recall", "write", "tour", "plan")
 _COMMAND = re.compile(r"^/([A-Za-z][A-Za-z0-9_]{0,31})(?:@[A-Za-z0-9_]{1,64})?(?:\s+(.*))?$", re.DOTALL)
 
 
@@ -552,6 +594,16 @@ def send_message(token: str, chat_id: Any, text: str, timeout: float = SEND_TIME
     return call(token, "sendMessage", message_params(chat_id, text, keyboard), timeout=timeout)
 
 
+def token_of(keyboard: Optional[Dict[str, Any]]) -> Optional[str]:
+    """The opaque id a message's buttons share (each button's data is it and one letter), or None."""
+    for row in (keyboard or {}).get("inline_keyboard") or []:
+        for button in row:
+            data = str(button.get("callback_data") or "")
+            if "." in data:
+                return data.split(".", 1)[0]
+    return None
+
+
 def message_params(chat_id: Any, text: str, keyboard: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     params: Dict[str, Any] = {"chat_id": str(chat_id), "text": text, "disable_web_page_preview": True}
     if keyboard:
@@ -582,7 +634,15 @@ class Outbox:
 
     def put(self, chat_id: Any, text: str, keyboard: Optional[Dict[str, Any]] = None,
             about: Optional[Dict[str, Any]] = None) -> None:
-        """A message to a chat, with its buttons when it has any, and what it is about when it is about an item."""
+        """
+        A message to a chat, with its buttons when it has any, and what it is
+        about when it is about an item. A message with buttons names them too
+        (phase 5), so Telegram's id for it is kept with them once it goes, and
+        a reply to it can find the draft it is about.
+        """
+        token = token_of(keyboard)
+        if token:
+            about = dict(about or {}, buttons=token)
         self.put_call("sendMessage", message_params(chat_id, text, keyboard), about=about)
 
     def put_call(self, method: str, params: Dict[str, Any], about: Optional[Dict[str, Any]] = None) -> None:
@@ -774,6 +834,54 @@ def write_command(argument: str) -> Tuple[str, Optional[Dict[str, Any]]]:
         return SENTENCES["no_provider"], None
     said = SENTENCES["write_from_one"] if len(found) == 1 else SENTENCES["write_from"].format(count=len(found))
     return said, {"kind": "combine", "items": [item["id"] for item in found]}
+
+
+def plan_listing() -> str:
+    """
+    /plan alone (phase 5): the next queued posts, soonest first, up to "The
+    bot lists at most", their times always, a post LinkedIn holds said so,
+    and their first lines only with the words switch on; then how many are
+    due now. Never anyone else's words.
+    """
+    held = phone_plans.upcoming(phone_plans.list_at_most())
+    posts, due = held["posts"], held["due"]
+    words = collection_words_on()
+    lines: List[str] = []
+    if posts:
+        lines.append(PLAN_LIST_HEAD.format(count=len(posts)) if len(posts) > 1 else PLAN_LIST_HEAD_ONE)
+        for post in posts:
+            when = _instant(post["at"])
+            line = "- " + (phone_plans.full_time(when) if when else "at a time not recorded")
+            if post["linkedin"]:
+                line += " (LinkedIn posts it)"
+            first = _first_line(post["content"])
+            if words and first:
+                line += ": " + first
+            lines.append(line)
+    if due:
+        lines += ([""] if lines else []) + [PLAN_DUE_ONE if due == 1 else PLAN_DUE_MANY.format(count=due)]
+    return "\n".join(lines) if lines else SENTENCES["plan_list_none"]
+
+
+def plan_command(argument: str, chat_id: Any, replied_id: Any) -> Tuple[str, Optional[tuple]]:
+    """
+    /plan (phase 5): alone, what is planned; with a day and a time, as a
+    reply to one of the bot's messages about a draft, that draft planned
+    then, as Plan it plans it. Returns the answer and its buttons as
+    (kind, rows, what they act on), or None.
+    """
+    if not (argument or "").strip():
+        return plan_listing(), None
+    post_id = post_of_message(chat_id, replied_id)
+    if post_id is None:
+        return SENTENCES["plan_reply"], None
+    when = phone_plans.read_when(argument, datetime.now().astimezone())
+    if when is None:
+        return SENTENCES["plan_unread"], None
+    result = phone_plans.plan(post_id, when.astimezone(timezone.utc).isoformat())
+    if result["status"] != "planned":
+        return SENTENCES[PLAN_SAID.get(result["status"], "plan_changed")], None
+    return planned_text(result), ("planned", [["u"]], {"post": post_id, "planned": result["for"]})
 
 
 def drafts_answer() -> str:
@@ -1094,7 +1202,10 @@ def options() -> Dict[str, Any]:
             "collection_words": collection_words_on(), "morning": early["on"], "morning_days": early["days"],
             "morning_hour": early["hour"], "replies_add": replies_add_on(),
             # Shown beside the bot's button, set in Brand under Writing.
-            "angles": writing.preferences()["angles"]}
+            "angles": writing.preferences()["angles"],
+            # Phase 5: what Plan it offers, and how many lines a list shows, with their defaults.
+            "plan": phone_plans.plan_offers(), "list_at_most": phone_plans.list_at_most(),
+            "defaults": {"plan": phone_plans.PLAN_DEFAULT, "list_at_most": phone_plans.LIST_DEFAULT}}
 
 
 def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
@@ -1104,7 +1215,8 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
                  weekly_day: Optional[int] = None, weekly_hour: Optional[int] = None,
                  collection_words: Optional[bool] = None, morning_on: Optional[bool] = None,
                  morning_days: Optional[List[int]] = None, morning_hour: Optional[int] = None,
-                 replies_add: Optional[bool] = None) -> Dict[str, Any]:
+                 replies_add: Optional[bool] = None, plan: Optional[Dict[str, Any]] = None,
+                 list_at_most: Optional[int] = None) -> Dict[str, Any]:
     """
     Saves the switches the panel sent; a switch not sent is left as it is.
     Quiet hours run from one whole hour to another that differs from it;
@@ -1154,6 +1266,11 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
         changes[MORNING_KEY] = json.dumps({"on": held["on"] if morning_on is None else bool(morning_on),
                                            "days": sorted(set(days)), "hour": hour,
                                            "since": local_now().astimezone(timezone.utc).isoformat()})
+    if plan is not None:
+        # Phase 5: refused with the panel's sentence (phone_plans.Refused is a ValueError).
+        changes[phone_plans.PLAN_KEY] = json.dumps(phone_plans.check_plan_offers(plan))
+    if list_at_most is not None:
+        changes[phone_plans.LIST_KEY] = str(phone_plans.check_list_at_most(list_at_most))
     if changes:
         conn = get_db()
         try:
@@ -1276,11 +1393,13 @@ def notifications() -> List[Dict[str, Any]]:
     due_on, day_on, week_on, early_on = notify_due_on(), notify_24h_on(), weekly()["on"], morning()["on"]
     conn = get_db()
     try:
+        # Planned from the phone (phase 5): planning was asking to be told,
+        # so such a post is told when due whatever the due switch says.
+        planned = phone_plans.planned_due(conn)
         if not due_on:
-            # Unticked, no reminder comes either.
-            conn.execute("DELETE FROM settings WHERE key = ?", (REMIND_KEY,))
-            conn.commit()
-        if not (due_on or day_on or week_on or early_on):
+            # Unticked, no reminder comes either, but for posts planned from the phone.
+            _keep_reminders_of(conn, planned)
+        if not (due_on or planned or day_on or week_on or early_on):
             return []
         try:
             from . import post_identity
@@ -1289,9 +1408,10 @@ def notifications() -> List[Dict[str, Any]]:
         told = _told(conn)
         said: List[Dict[str, Any]] = []
         newly: List[str] = []
-        if due_on:
+        if due_on or planned:
             due_now = [f"due:{r['id']}:{r['scheduled_for']}" for r in conn.execute(
-                "SELECT id, scheduled_for FROM posts WHERE status = 'due' ORDER BY scheduled_for")]
+                "SELECT id, scheduled_for FROM posts WHERE status = 'due' ORDER BY scheduled_for")
+                if due_on or r["id"] in planned]
             fresh = [key for key in due_now if key not in told]
             if fresh:
                 said.append({"text": SENTENCES["due_one"] if len(fresh) == 1
@@ -1401,6 +1521,20 @@ def _morning_idea(conn, told: List[str]) -> Optional[Tuple[str, Optional[Dict[st
         text += "\n\n" + SENTENCES[f"angle_{form}"]
     collection.offered(conn, item["id"])
     return key, {"text": text, "due": None, "morning": {"item": item["id"], "form": form}}
+
+
+def _keep_reminders_of(conn, planned: set) -> None:
+    """With the due switch off: only the reminders about posts planned from the phone stay (phase 5)."""
+    reminders = _read_json(conn, REMIND_KEY, [])
+    kept = [r for r in reminders if isinstance(r, dict) and r.get("due")
+            and all(str(key).count(":") >= 2 and str(key).split(":", 2)[1] in planned for key in r["due"])]
+    if len(kept) == len(reminders):
+        return
+    if kept:
+        _write_json(conn, REMIND_KEY, kept)
+    else:
+        with conn:
+            conn.execute("DELETE FROM settings WHERE key = ?", (REMIND_KEY,))
 
 
 def _reminders_due(conn, due_now) -> List[Dict[str, Any]]:
@@ -1591,6 +1725,9 @@ TOUR_STEPS = {
                        + SENTENCES["edited"] + '"'), "needs": ()},
     "remembered": {"say": "Send /remember and something about you, such as /remember I write for founders. Your "
                           "studio's writing reads it, and /forget takes it away.", "needs": ()},
+    "planned": {"say": ('Under "Draft ready", press Plan it and pick a time. The draft goes into your Queue, I bring it '
+                        "back here then, and nothing is posted. Send /plan to see what is planned."),
+                "needs": ("provider",)},
 }
 # The parts, as the checklist (docs/help/test-your-telegram-bot.md) groups
 # them: a few steps at a time, numbered across the parts.
@@ -1598,6 +1735,7 @@ TOUR_PARTS = (
     ("send things in", ("saved", "link", "file")),
     ("make something of it", ("written", "reshaped", "several")),
     ("build it up and keep it", ("added", "edited", "remembered")),
+    ("plan it and come back to it", ("planned",)),
 )
 # The steps that leave something in the studio, as the panel lists them;
 # each is seen working once the profile holds what it leaves.
@@ -1611,6 +1749,7 @@ TOUR_EVIDENCE = {
     "added": "An item built up by a reply",
     "edited": "An edit on your phone followed",
     "remembered": "A thing to remember kept from your phone",
+    "planned": "A draft planned from your phone",
 }
 TOUR_NEEDS_PROVIDER = ("This needs an AI provider, and none is connected yet: connect yours on the Composer's Prompt "
                        "tab in your studio.")
@@ -1665,6 +1804,8 @@ def tour_seen(conn) -> Dict[str, bool]:
                       "GROUP BY m.item_id HAVING COUNT(*) >= 2 LIMIT 1"),
         "edited": held("SELECT 1 FROM collection_messages WHERE edited_at IS NOT NULL LIMIT 1"),
         "remembered": held("SELECT 1 FROM remembered WHERE source = 'telegram' LIMIT 1"),
+        # A plan from the phone is kept on its draft until Undo takes it off.
+        "planned": any(isinstance(m.get("planned"), dict) for m in made),
     }
 
 
@@ -1810,13 +1951,54 @@ def _keyboard(token: str, rows: List[List[str]], labels: Optional[Dict[str, str]
 
 def draft_rows(undo: bool = False) -> List[List[str]]:
     """
-    A draft the bot wrote: Send me the whole post, then the creator's own
-    rewrite buttons, two to a row, as Brand's Writing view keeps them, and
-    Undo under a rewrite. Shown only with the words switch on.
+    A draft the bot wrote: Send me the whole post and Plan it, then the
+    creator's own rewrite buttons, two to a row, as Brand's Writing view
+    keeps them, and Undo under a rewrite. Shown only with the words switch
+    on; off, the draft carries Plan it alone (PLAN_ONLY), since a time
+    carries no words.
     """
     letters = RESHAPE_LETTERS[:len(writing.preferences()["reshapes"])]
-    rows = [["p"]] + [list(letters[i:i + 2]) for i in range(0, len(letters), 2)]
+    rows = [["p", "t"]] + [list(letters[i:i + 2]) for i in range(0, len(letters), 2)]
     return rows + [["u"]] if undo else rows
+
+
+PLAN_ONLY = [["t"]]
+# What phone_plans.plan's outcome is said as.
+PLAN_SAID = {"planned": "planned", "past": "plan_past", "gone": "plan_gone", "posted": "plan_posted",
+             "queued": "plan_queued", "changed": "plan_changed"}
+
+
+def planned_text(result: Dict[str, Any]) -> str:
+    """A plan as its message says it: when, on the computer's clock, and what is true about that time."""
+    when = _instant(result.get("for"))
+    said = PLANNED_WORDS.format(when=phone_plans.full_time(when)) if when else PLANNED_WORDS
+    if result.get("near"):
+        said += " " + PLAN_NEAR.format(hours=int(phone_plans._cooldown_hours()))
+    if result.get("paused"):
+        said += " " + PLAN_PAUSED
+    return said
+
+
+def plan_offer(records: List[Dict[str, Any]], record: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[tuple]]:
+    """
+    Plan it pressed: (the notice's key, the message of times to send with its
+    buttons, or None). The times are the creator's preference, read now,
+    on the computer's clock (phone_plans.offered_times).
+    """
+    state = phone_plans.state_of(record.get("post"))
+    if state["status"] not in ("draft", "planned"):
+        return {"gone": "plan_gone", "posted": "plan_posted"}.get(state["status"], "plan_queued"), None
+    now = datetime.now().astimezone()
+    times, source = phone_plans.offered_times(record.get("post"), now)
+    if not times:
+        return "plan_none", None
+    letters = TIME_LETTERS[:len(times)]
+    text = SENTENCES["plan_ask"] + ("\n\n" + SENTENCES["plan_times_instead"] if source == "instead" else "")
+    keyboard = _new_record(records, chat_id, "plan", text, [list(letters)],
+                           labels={letter: phone_plans.said_time(when, now) for letter, when in zip(letters, times)},
+                           post=record.get("post"),
+                           times=[when.astimezone(timezone.utc).isoformat() for when in times])
+    return "plan_pick", (text, keyboard)
 
 
 def item_rows(item: Dict[str, Any]) -> List[List[str]]:
@@ -1827,14 +2009,58 @@ def item_rows(item: Dict[str, Any]) -> List[List[str]]:
 
 
 def _new_record(records: List[Dict[str, Any]], chat_id: Any, kind: str, said: str, rows: List[List[str]],
-                **target: Any) -> Dict[str, Any]:
-    """A message's buttons made while the buttons are held (a press), appended to them; returns the keyboard."""
+                labels: Optional[Dict[str, str]] = None, **target: Any) -> Dict[str, Any]:
+    """
+    A message's buttons made while the buttons are held (a press), appended
+    to them; returns the keyboard. `labels` names buttons whose label is the
+    message's own (the times Plan it offers), kept with it.
+    """
     token = secrets.token_urlsafe(9)
     record = {"id": token, "kind": kind, "chat": str(chat_id), "at": _now(), "said": said, "used": None,
               "letters": [letter for row in rows for letter in row], "rows": rows, **target}
+    if labels:
+        record["labels"] = dict(labels)
     records.append(record)
     del records[:-max(1, int(BUTTONS_KEPT))]
-    return _keyboard(token, rows)
+    return _keyboard(token, rows, labels)
+
+
+# The kinds of message about a draft whose Telegram id is kept, so a reply to
+# one with /plan finds its draft (phase 5).
+ABOUT_A_DRAFT = ("draft", "reshaped", "plan", "planned")
+
+
+def note_message(token: Any, message_id: Any) -> None:
+    """Telegram's id for a message about a draft, kept with its buttons once Telegram took it."""
+    if not token or not isinstance(message_id, int) or message_id <= 0:
+        return
+    with _BUTTONS_LOCK:
+        conn = get_db()
+        try:
+            records = [r for r in _read_json(conn, BUTTONS_KEY, []) if isinstance(r, dict)]
+            record = next((r for r in records if r.get("id") == token), None)
+            if record is None or record.get("kind") not in ABOUT_A_DRAFT:
+                return
+            record["message"] = message_id
+            _write_json(conn, BUTTONS_KEY, records)
+        finally:
+            conn.close()
+
+
+def post_of_message(chat_id: Any, message_id: Any) -> Optional[str]:
+    """The draft one of the bot's messages in this chat is about, by Telegram's id for it, or None."""
+    if not isinstance(message_id, int) or message_id <= 0:
+        return None
+    conn = get_db()
+    try:
+        records = [r for r in _read_json(conn, BUTTONS_KEY, []) if isinstance(r, dict)]
+    finally:
+        conn.close()
+    for record in reversed(records):
+        if (record.get("chat") == str(chat_id) and record.get("message") == message_id
+                and record.get("kind") in ABOUT_A_DRAFT and record.get("post")):
+            return str(record["post"])
+    return None
 
 
 def due_rows(count: int) -> List[List[str]]:
@@ -1951,6 +2177,13 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 return {"key": "button_old", "answer": SENTENCES["button_old"], "edit": None}
             if record.get("used") or letter in (record.get("spent") or []):
                 return {"key": "button_used", "answer": SENTENCES["button_used"], "edit": None}
+            if letter == "t":
+                # Plan it (phase 5): the times in a message of their own; Plan
+                # it stays on its message, to be pressed again.
+                key, message = plan_offer(records, record, chat_id)
+                _write_json(conn, BUTTONS_KEY, records)
+                return {"key": key, "answer": SENTENCES[key], "edit": None, "job": None, "send": [],
+                        "send_with": [message] if message else [], "keep": None, "kept": True, "same": True}
             if letter in KEEPS_THE_REST:
                 # The post itself, to copy: only while the creator lets the bot
                 # send their words, and the message keeps its other buttons.
@@ -1965,9 +2198,9 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 _write_json(conn, BUTTONS_KEY, records)
                 rest = [[x for x in row if x not in record["spent"]] for row in
                         (record.get("rows") or [[x] for x in letters])]
+                labels = {**(record.get("reshape_labels") or {}), **(record.get("labels") or {})}
                 return {"key": key, "answer": SENTENCES[key], "edit": None, "job": None, "send": send,
-                        "keep": _keyboard(token, rest, record.get("reshape_labels")) if any(rest) else None,
-                        "kept": True}
+                        "keep": _keyboard(token, rest, labels) if any(rest) else None, "kept": True}
             job = None
             markup = None
             # Phase 5: a press may replace the message's words outright (a
@@ -1988,6 +2221,18 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 key = "tour_next" if letter == "v" else "tour_again"
             elif letter == "z":
                 key, edit_text = "tour_stopped", TOUR_STOPPED
+            elif letter in TIME_LETTERS and record.get("kind") == "plan":
+                # A time Plan it offered: the draft in the Queue then, with Undo.
+                times = record.get("times") or []
+                index = TIME_LETTERS.index(letter)
+                result = phone_plans.plan(record.get("post"), times[index] if index < len(times) else None)
+                key = PLAN_SAID.get(result["status"], "plan_changed")
+                if result["status"] == "planned":
+                    edit_text = planned_text(result)
+                    markup = _new_record(records, chat_id, "planned", edit_text, [["u"]], post=record.get("post"),
+                                         planned=result["for"])
+            elif letter == "u" and record.get("kind") == "planned":
+                key = phone_plans.unplan(record.get("post"), record.get("planned"))
             elif letter in RESHAPE_LETTERS:
                 # A rewrite of a draft the bot wrote: shown only with the words
                 # switch on, written beside the bot's loop, with a provider.
@@ -2092,7 +2337,9 @@ def run_job(job: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, 
         rows = [[str(n)] for n in range(1, len(offered) + 1)]
         return text, issue_buttons(chat_id, "angles", text, rows=rows, item=job.get("item"), angles=offered)
     if not words:
-        return SENTENCES["draft_ready"], None
+        # A time carries no words: Plan it is offered all the same (phase 5).
+        return SENTENCES["draft_ready"], issue_buttons(chat_id, "draft", SENTENCES["draft_ready"], rows=PLAN_ONLY,
+                                                       post=result.get("id"))
     text = SENTENCES["draft_ready_words"] + "\n\n" + _first_line(result.get("content") or "")
     return text, issue_buttons(chat_id, "draft", text, rows=draft_rows(), post=result.get("id"))
 

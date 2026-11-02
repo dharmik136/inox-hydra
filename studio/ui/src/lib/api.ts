@@ -4167,6 +4167,26 @@ export interface IngressOptions {
   /** The weekly summary's day, 0 is Monday, and its whole hour on the computer's clock: Monday 09:00 unless changed. */
   weekly_day: number;
   weekly_hour: number;
+  /** What Plan it offers under "Draft ready" (phase 5): the Queue's next open slots, or the creator's own times. */
+  plan: PlanOffers;
+  /** How many lines a list on the bot shows: /plan, and /recall (phase 5). */
+  list_at_most: number;
+  /** The defaults of the phase 5 preferences, shown beside them. */
+  defaults: { plan: PlanOffers; list_at_most: number };
+}
+
+/** A time of the creator's own: so many days from today, at a time on the computer's clock. */
+export interface PlanTime {
+  days: number;
+  at: string;
+}
+
+export interface PlanOffers {
+  from: "slots" | "times";
+  /** How many of the Queue's next open slots, 1 to 4. */
+  slots: number;
+  /** The creator's own times, 1 to 4; offered too when the Queue has no open slot. */
+  times: PlanTime[];
 }
 
 export interface IngressSettings {

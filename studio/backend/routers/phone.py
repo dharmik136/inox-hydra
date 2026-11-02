@@ -12,7 +12,7 @@ Strict Invariants:
   afterwards is the one outbound path, already under the ingress category.
 """
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -50,6 +50,8 @@ class IngressOptionsPayload(BaseModel):
     weekly_day: Optional[int] = Field(None, ge=0, le=6, description="The weekly summary's day, 0 is Monday")
     weekly_hour: Optional[int] = Field(None, ge=0, le=23, description="The weekly summary's hour, a whole hour")
     replies_add: Optional[bool] = Field(None, description="A reply adds to the item it replies to")
+    plan: Optional[Dict[str, Any]] = Field(None, description="What Plan it offers: {from, slots, times}")
+    list_at_most: Optional[int] = Field(None, ge=1, le=10, description="How many lines /plan and /recall list")
 
 
 class IngressSettingsPayload(BaseModel):
@@ -107,7 +109,8 @@ def post_ingress_options(payload: IngressOptionsPayload):
                                   weekly_on=payload.weekly, weekly_day=payload.weekly_day,
                                   weekly_hour=payload.weekly_hour, collection_words=payload.collection_words,
                                   morning_on=payload.morning, morning_days=payload.morning_days,
-                                  morning_hour=payload.morning_hour, replies_add=payload.replies_add)
+                                  morning_hour=payload.morning_hour, replies_add=payload.replies_add,
+                                  plan=payload.plan, list_at_most=payload.list_at_most)
     except ValueError as refused:
         raise HTTPException(status_code=400, detail=str(refused))
     return ingress.describe_settings()
