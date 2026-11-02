@@ -59,6 +59,17 @@ capability first and merged on a release branch. Ten tabs on one post went
 from 620 requests to 3. Records: `docs/quality/cycle4/t1-phase2.md`,
 `t4-phase-b.md`, `t7-phase2.md`.
 
+## In 2.14.0
+
+The Telegram bot, phase 5, on the owner's "continue" of 2026-11-02: a guided
+first run (/tour) with the panel's seen-working list, Plan it and /plan,
+/recall with buttons, Remind me, /ideas, and the Schedule prefix planning for
+real, with every count, time slot and set of buttons the creator's preference.
+One migration (43, `item_reminders`), rehearsed on a copy of the owner's live
+database before release: integrity ok, no foreign key problem, every count and
+every collection row unchanged. Records: `docs/quality/cycle4/bot-phase5.md`
+(the PRD) and the phase 5 section of `docs/quality/cycle4/telegram-bot.md`.
+
 ## In 2.13.0
 
 The Telegram bot, phase 4, on the owner's question of 2026-10-30 ("see what

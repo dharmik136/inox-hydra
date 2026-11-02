@@ -5,6 +5,55 @@ asks for an entry per release (`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`
 section 5.5); this file starts with the work since v2.5.2, which was never
 released. Version numbers follow `studio/__version__.py`.
 
+## 2.14.0
+
+The bot shows you around, plans your posts, brings an idea back when you ask,
+and turns what you find into posts.
+
+### Before you use 2.14.0
+
+- **Your database is upgraded** the first time you start it, from schema 42 to
+  43, after the usual automatic backup: the reminders you ask for on your phone
+  get a table of their own. Nothing already held changes.
+- **No hand reload.** An extension loaded from the studio's folder reloads
+  itself when the studio is updated.
+
+### Added
+
+- **/tour.** The bot walks you through what to try, a few steps at a time,
+  with Next and Stop the tour. "Paired." carries a Start the tour button, and a
+  bot paired before this version is told once, outside quiet hours, that it now
+  also takes /tour, /plan and /ideas. The Telegram panel lists each step as
+  seen working or not yet, from what your studio holds, never from button
+  presses.
+- **Plan it.** Under "Draft ready", pick a time: the draft goes into your Queue
+  at that time, with Undo, and the due reminder, with Send me the whole post,
+  brings it back then. Reply to a draft's message with /plan and a day and
+  time to plan it at your own; /plan alone lists what is planned. Nothing is
+  posted for you: a planned post only becomes due.
+- **Schedule and a time** before your post, for example `Schedule tue 09:00:`,
+  now plans it as well as saving it as a draft.
+- **Act on what /recall finds.** With the words switch on, /recall lists the
+  first lines of what matches, each with Write it up, and Write one post from
+  these; with it off, the count and Write one post from these.
+- **Remind me.** Under a saved item, pick a moment, and the bot brings the item
+  back then with Write it up and Not now. A reminder waits through quiet hours,
+  survives a restart, goes when its item is removed, and is listed on its item
+  in Your collection with Cancel.
+- **/ideas** sends today's idea cards from From your record, each with Write it
+  up, their words only with the words switch on. It reads the day's cards and
+  never makes them; with none yet today, it says how they are made.
+- **Your settings**, in the Telegram panel: the times Plan it offers (your
+  Queue's next three open slots, or tomorrow at 09:00 and 18:00), the moments
+  Remind me offers (this evening at 18:00, tomorrow at 09:00, next week), and
+  how many lines the bot lists (5, from 1 to 10).
+
+### Fixed
+
+- The bot's record of its / menu could be written back after you removed the
+  bot. Everything the bot's background worker keeps is now kept only for the
+  bot it was made for.
+
 ## 2.13.0
 
 The Telegram bot does more from your phone: it lists its commands, sends you a
