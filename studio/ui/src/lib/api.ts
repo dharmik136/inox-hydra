@@ -4224,6 +4224,20 @@ export interface IngressSettings {
   gap: { from: string; to: string; since: string; said: string } | null;
   /** Telegram holds the bot's "/" menu for the paired chat, as the commands are now (phase 4). */
   menu: boolean;
+  /**
+   * The tour's steps that leave something in the studio (phase 5), each with
+   * its title and whether the studio has seen it working, read from what this
+   * profile holds and never from a press.
+   */
+  tour: TourStep[];
+  /** An AI provider is connected, so the tour's writing steps can run. */
+  tour_provider: boolean;
+}
+
+export interface TourStep {
+  key: string;
+  title: string;
+  seen: boolean;
 }
 
 export async function fetchIngressSettings(): Promise<IngressSettings> {

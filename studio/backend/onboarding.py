@@ -205,8 +205,9 @@ def forget_phone_and_export(conn) -> None:
     desk_requests.forget(conn)
     collection.forget(conn)
     remembered.forget(conn)
-    conn.execute("DELETE FROM settings WHERE key IN (?, ?, ?)",
-                 (telegram_bot.TOLD_KEY, telegram_bot.BUTTONS_KEY, telegram_bot.REMIND_KEY))
+    # And the notice that an update added commands (phase 5), which names the paired chat.
+    conn.execute("DELETE FROM settings WHERE key IN (?, ?, ?, ?)",
+                 (telegram_bot.TOLD_KEY, telegram_bot.BUTTONS_KEY, telegram_bot.REMIND_KEY, telegram_bot.TOUR_KEY))
     analytics_export.forget(conn)
 
 

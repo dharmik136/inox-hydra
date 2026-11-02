@@ -51,6 +51,8 @@ And the failures a real bot meets, planned per method with `plan`:
   ("429", n)            Too Many Requests, with parameters.retry_after n
   ("drop",)             the connection closed before any answer
   ("status", code, why) an error answer, such as 409 for a second poller
+  ("hold", seconds)     the answer, as it would be, given only after a wait,
+                        so a test can act while a request is in flight
   blocked chats         403 "Forbidden: bot was blocked by the user"
   another token         401 "Unauthorized"
 
@@ -297,6 +299,10 @@ class FakeTelegram:
             self._cond.notify_all()
         if token != self.token:
             return self._answer(handler, 401, {"ok": False, "error_code": 401, "description": "Unauthorized"})
+        if failure and failure[0] == "hold":
+            # Answered as it would be, only later: the request is in flight meanwhile.
+            time.sleep(float(failure[1]))
+            failure = None
         if failure:
             if failure[0] == "drop":
                 # The connection ends with no answer at all, as a network fault does.

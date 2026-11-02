@@ -184,3 +184,18 @@ def test_phase_4_albums_documents_and_videos_quote_the_box():
     for words in ("View", "Download", "Add to your media library"):
         assert f"**{words}**" in article and words in box, words
     assert telegram_bot.SENTENCES["no_text"] in article
+
+
+def test_phase_5_the_tour_quotes_the_bot_and_the_panel():
+    """Phase 5, item 1: the tour's words, its end, its notice after an update, and the panel's list."""
+    article = _article()
+    assert telegram_bot.SENTENCES["paired"] in article
+    assert telegram_bot.TOUR_END in article
+    assert telegram_bot.TOUR_NEEDS_PROVIDER.split(":")[0] in article
+    assert telegram_bot.TOUR_SEEN in article
+    assert telegram_bot.TOUR_NOTICE.split(" {commands}")[0] in article
+    bot = open(os.path.join(REPO_ROOT, "studio", "backend", "telegram_bot.py"), encoding="utf-8").read()
+    assert '"Tour, part {part + 1} of' in bot and "Tour, part 1 of" in article
+    for words in ("WHAT YOU HAVE TRIED FROM YOUR PHONE", "SEEN WORKING", "NOT YET"):
+        assert words in article and words in _panel(), words
+    assert telegram_bot.TOUR_EVIDENCE["saved"] in article

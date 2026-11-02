@@ -532,13 +532,15 @@ def _materials(conn, item_ids: Iterable[Any]) -> List[Dict[str, Any]]:
     return items
 
 
-def make_post(item_ids: Iterable[Any], angle: Optional[str] = None, form: Optional[str] = None) -> Dict[str, Any]:
+def make_post(item_ids: Iterable[Any], angle: Optional[str] = None, form: Optional[str] = None,
+              via: Optional[str] = None) -> Dict[str, Any]:
     """
     Make a post (one item) or Combine (several): a draft written from the
     items' words, as the creator's preferences say, into the Composer. The
-    items are used, and what they became is the draft. Returns
-    {status: drafted | no_provider | refused, ...}; a provider that fails
-    raises ProviderError, which says why in plain words.
+    items are used, and what they became is the draft. `via` names where it
+    was asked for when that was not the studio ("telegram", phase 5), kept
+    on the draft. Returns {status: drafted | no_provider | refused, ...}; a
+    provider that fails raises ProviderError, which says why in plain words.
     """
     conn = get_db()
     try:
@@ -570,6 +572,8 @@ def make_post(item_ids: Iterable[Any], angle: Optional[str] = None, form: Option
         made_with = {"items": [item["id"] for item in items], "remembered": [f["id"] for f in facts],
                      "angle": bool(angle), "provider": config.provider, "model": config.model,
                      "at": collection._now()}
+        if via:
+            made_with["via"] = via
         with conn:
             post_id = collection.new_draft(conn, draft, tags)
             conn.execute("UPDATE posts SET made_with = ? WHERE id = ?", (json.dumps(made_with), post_id))

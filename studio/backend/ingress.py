@@ -22,7 +22,7 @@ Strict Invariants:
 - Nothing from the phone is a figure.
 """
 
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import json
@@ -422,6 +422,17 @@ class TelegramIngressDaemon:
         except Exception as error:
             logger.warning("The time of the last check could not be kept: %s", type(error).__name__)
 
+    @contextmanager
+    def _held_for(self, token: Optional[str]):
+        """
+        Held while the worker keeps anything for a bot (phase 5: the menu's
+        record, the tour's notice, what notifications told): yields whether
+        the bot is still the one it was made with, under the lock the removal
+        holds, so a bot removed or replaced meanwhile keeps nothing.
+        """
+        with self._check_lock:
+            yield bool(token) and token == self.bot_token
+
     def _keep_last_check(self) -> None:
         """When the worker stops: the last check as it was, so a restart measures from it."""
         with self._check_lock:
@@ -522,7 +533,7 @@ class TelegramIngressDaemon:
     def _reply(self, chat_id: str, text: Optional[str], always: bool = False,
                draft_id: Optional[int] = None, item: Optional[Dict[str, Any]] = None,
                fact_id: Optional[int] = None, about_item: Optional[int] = None,
-               added: Optional[Dict[str, Any]] = None) -> None:
+               added: Optional[Dict[str, Any]] = None, buttons: Optional[tuple] = None) -> None:
         """
         Queues one of the bot's fixed sentences for a chat: a confirmation when
         the bot confirms messages, and an answer to a question (always) in any
@@ -542,6 +553,10 @@ class TelegramIngressDaemon:
             # A reply added to an item (phase 4): Undo takes those words back off.
             keyboard = self._buttons(chat_id, text, "added", item=added["item"]["id"], message=added["message"])
             about_item = added["item"]["id"]
+        elif buttons is not None:
+            # Any other message's own buttons (phase 5): (kind, rows, what they act on).
+            kind, rows, target = buttons
+            keyboard = self._buttons(chat_id, text, kind, rows=rows, **(target or {}))
         elif draft_id is not None:
             keyboard = self._buttons(chat_id, text, "undo", draft=draft_id)
         elif fact_id is not None:
@@ -643,9 +658,13 @@ class TelegramIngressDaemon:
         if time.monotonic() - self._last_notify_check < telegram_bot.NOTIFY_EVERY_SECONDS:
             return
         self._last_notify_check = time.monotonic()
-        chat = self.authorized_chat_id
+        token, chat = self.bot_token, self.authorized_chat_id
         try:
-            with self._bots_profile():
+            # What is marked told is kept only for the bot it is told by
+            # (phase 5): a bot removed meanwhile marks nothing.
+            with self._held_for(token) as ours, self._bots_profile():
+                if not ours:
+                    return
                 # Quiet hours: nothing is looked at, so nothing is marked as
                 # told, and everything waiting goes at the first check after.
                 if telegram_bot.in_quiet_hours():
@@ -653,7 +672,12 @@ class TelegramIngressDaemon:
                 # A day not checked (phase 4): told once, whatever the
                 # notification switches say, and before anything else.
                 gap = telegram_bot.gap_to_tell()
-                said = ([{"text": gap, "due": None}] if gap else []) + telegram_bot.notifications()
+                said = [{"text": gap, "due": None}] if gap else []
+                # An upgrade that added commands (phase 5): the tour, offered once.
+                tour = telegram_bot.tour_notice_to_tell(chat)
+                if tour:
+                    said.append({"text": tour, "due": None, "tour": True})
+                said += telegram_bot.notifications()
         except Exception as error:
             logger.warning("The bot's notifications could not be read: %s", type(error).__name__)
             return
@@ -662,6 +686,8 @@ class TelegramIngressDaemon:
             # morning idea, Write it up and Not today.
             if item.get("due"):
                 keyboard = self._buttons(chat, item["text"], "due", due=item["due"])
+            elif item.get("tour"):
+                keyboard = self._buttons(chat, item["text"], "tour_offer")
             elif item.get("morning"):
                 keyboard = self._buttons(chat, item["text"], "morning", **item["morning"])
             else:
@@ -689,10 +715,13 @@ class TelegramIngressDaemon:
             return
         if self._menu_refused_at and time.monotonic() - self._menu_refused_at < telegram_bot.MENU_RETRY_SECONDS:
             return
+        token = self.bot_token
         try:
             with self._bots_profile():
                 due = telegram_bot.menu_due(chat)
-                took = due is None or telegram_bot.register_menu(self.bot_token, chat, due)
+                # Kept only for this bot (phase 5): one removed while Telegram answers keeps nothing.
+                took = due is None or telegram_bot.register_menu(token, chat, due,
+                                                                 guard=lambda: self._held_for(token))
         except Exception as error:
             logger.warning("The bot's menu could not be registered: %s", type(error).__name__)
             took = False
@@ -875,7 +904,8 @@ class TelegramIngressDaemon:
                 self._reply(chat_id, answer, always=question, draft_id=telegram_bot.draft_of(stored),
                             item=telegram_bot.item_of(stored),
                             fact_id=stored.get("id") if isinstance(stored, dict) and stored.get("kind") == "fact"
-                            else None, about_item=telegram_bot.item_id_of(stored))
+                            else None, about_item=telegram_bot.item_id_of(stored),
+                            buttons=stored.get("buttons") if isinstance(stored, dict) else None)
         return stored
 
     def _edited(self, message: Dict[str, Any]) -> None:
@@ -972,6 +1002,9 @@ class TelegramIngressDaemon:
         for text in done.get("send") or []:
             # The post as it is, a message of its own, with nothing of the bot's around it.
             self.outbox.put(chat_id, text)
+        for text, keyboard in done.get("send_with") or []:
+            # A message of its own with its buttons (phase 5): a part of the tour.
+            self.outbox.put(chat_id, text, keyboard)
         if done.get("job"):
             self._start_job(done["job"], chat_id)
 
@@ -981,6 +1014,10 @@ class TelegramIngressDaemon:
         done = {"kind": "command", "command": name}
         if name in ("start", "help"):
             return done, telegram_bot.HELP, True
+        if name == "tour":
+            # What to try (phase 5): the first part, with Next and Stop the tour.
+            return ({**done, "buttons": ("tour", telegram_bot.tour_rows(0), {"part": 0})},
+                    telegram_bot.tour_part_text(0), True)
         if name == "status":
             return done, telegram_bot.status_sentence(self.previous_ok_at if from_telegram else self.last_ok_at), True
         if name == "drafts":
@@ -1637,8 +1674,10 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
         conn = get_db()
         try:
             with conn:
-                conn.execute("DELETE FROM settings WHERE key IN (?, ?, ?, ?)",
-                             (SETTINGS_TOKEN_KEY, SETTINGS_CHAT_KEY, SETTINGS_HEARD_KEY, SETTINGS_PAIRED_KEY))
+                # The menu's record again (phase 5): one a registration kept while the worker stopped.
+                conn.execute("DELETE FROM settings WHERE key IN (?, ?, ?, ?, ?)",
+                             (SETTINGS_TOKEN_KEY, SETTINGS_CHAT_KEY, SETTINGS_HEARD_KEY, SETTINGS_PAIRED_KEY,
+                              telegram_bot.MENU_KEY))
                 telegram_bot.forget_checks(conn)
         finally:
             conn.close()
@@ -1692,8 +1731,9 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
         conn.close()
     apply_settings()
     if chat and chat != held["chat_id"] and _asking_for_this_profile():
-        # The chat is told at once that it is paired (This is me, or a chat id typed in).
-        ingress_daemon._reply(chat, telegram_bot.SENTENCES["paired"])
+        # The chat is told at once that it is paired (This is me, or a chat id typed in),
+        # and offered the tour, once (phase 5).
+        ingress_daemon._reply(chat, telegram_bot.SENTENCES["paired"], buttons=("tour_offer", [["b"]], {}))
         ingress_daemon.flush_replies()
     return describe_settings()
 
@@ -1780,6 +1820,11 @@ def describe_settings() -> Dict[str, Any]:
         "gap": telegram_bot.gap_shown(),
         # Phase 4, item 3: Telegram holds the "/" menu for the paired chat as the commands are now.
         "menu": telegram_bot.menu_registered(held["chat_id"]) if held["chat_id"] else False,
+        # Phase 5, item 1: the tour's steps that leave something, each seen
+        # working or not, from what this profile holds; and whether writing
+        # can run (an AI provider is connected).
+        "tour": telegram_bot.tour_progress(),
+        "tour_provider": bool(telegram_bot.writing.model_gateway.get_current_ai_config().is_configured),
     }
 
 

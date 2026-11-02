@@ -43,6 +43,7 @@ import re
 import secrets
 import threading
 import time
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from datetime import time as day_time
 from typing import Any, Dict, List, Optional, Tuple
@@ -102,7 +103,9 @@ WEEKLY_POSTS_SHOWN = 7
 # message of each kind carries. "a" says the creator's own number of angles
 # (writing.py), and a digit writes up the angle it numbers.
 BUTTON_LABELS = {"u": "Undo", "r": "Remind me in an hour", "d": "Done", "w": "Write it up", "a": "Angles",
-                 "n": "Not today", "p": "Send me the whole post", "q": "Send me the posts", "m": "Remember this"}
+                 "n": "Not today", "p": "Send me the whole post", "q": "Send me the posts", "m": "Remember this",
+                 # Phase 5, item 1: the tour.
+                 "b": "Start the tour", "v": "Next", "z": "Stop the tour", "y": "From the start"}
 # Phase 4, item 4: the buttons that send something and leave the message's
 # other buttons as they are (the post itself, for long-press, Copy).
 KEEPS_THE_REST = ("p", "q")
@@ -118,7 +121,7 @@ RESHAPE_LETTERS = "efghij"
 REWRITTEN_WORDS = "Rewritten in your studio ({label}). It begins:"
 BUTTON_ROWS = {"undo": (("u",),), "item": (("w", "a"), ("u",)), "item_bare": (("u",),),
                "due": (("r",), ("d",)), "morning": (("w", "n"),), "fact": (("u",),), "added": (("u",),),
-               "kept": (("u",),)}
+               "kept": (("u",),), "tour_offer": (("b",),)}
 # The bot may send what it writes from the collection (its words): off unless "on".
 COLLECTION_WORDS_KEY = "telegram_collection_words"
 # Phase 4, item 6: a reply adds to what it replies to: on unless "off".
@@ -155,7 +158,8 @@ SENTENCES = {
     "post": "Today will ask you to open this post's analytics at your computer.",
     "short": "Today will ask you to open this link at your computer.",
     "not_yours": "That is not one of your posts, so your studio will not read it.",
-    "paired": "Paired. Messages from this chat now arrive in your studio. Send /help to see what I do.",
+    "paired": ("Paired. Messages from this chat now arrive in your studio. Press Start the tour to see what to try, "
+               "or send /help."),
     "not_paired": ("Not paired yet. In your studio, open Settings, then Local security, and press This is me "
                    "beside chat {chat_id}."),
     "other_chat": "This bot takes messages only from the chat its owner paired.",
@@ -268,6 +272,11 @@ SENTENCES = {
     "recall_one": "One item in your collection holds that word.",
     "recall_none": "Nothing in your collection holds that word.",
     "empty_recall": "Send /recall with a word, for example /recall pricing.",
+    # Phase 5, item 1: the tour.
+    "tour_started": "The tour is below, a few steps at a time.",
+    "tour_next": "The next part of the tour.",
+    "tour_again": "The tour, from the start.",
+    "tour_stopped": "Tour stopped. Send /tour to see it again.",
 }
 
 # Phase 4, item 2: two messages that carry times, the studio's own and on the
@@ -297,6 +306,8 @@ FIGURE_WORDS = (("impressions", "impressions"), ("reactions", "reactions"), ("co
 # 256 characters. /start is Telegram's own Start button, so it is not listed.
 BOT_COMMANDS = (
     ("help", "What I do, how to pair a chat, and what I send only if you allow it"),
+    # Phase 5, item 1.
+    ("tour", "What to try on your phone, a few steps at a time, and what you will see"),
     ("idea", "Your idea after it, kept in your collection as an idea"),
     ("write", "A word or a #tag after it, and I write one draft from your unused items that hold it"),
     ("remember", "A fact after it about you, your audience, an offer or a date, which your studio's writing reads"),
@@ -308,10 +319,34 @@ BOT_COMMANDS = (
               "figures in your studio"),
     ("drafts", "How many drafts were made from what you sent in the last seven days"),
 )
+# The list 2.13.0 registered, word for word (phase 5). Its menu record kept
+# only a fingerprint of the chat and the list, so a record of it is known by
+# that fingerprint, and the commands a later list adds can be named.
+COMMANDS_2_13 = (
+    ("help", "What I do, how to pair a chat, and what I send only if you allow it"),
+    ("idea", "Your idea after it, kept in your collection as an idea"),
+    ("write", "A word or a #tag after it, and I write one draft from your unused items that hold it"),
+    ("remember", "A fact after it about you, your audience, an offer or a date, which your studio's writing reads"),
+    ("forget", "Words after it from something you asked me to remember, which is then removed"),
+    ("recall", "A word after it, and I say how many items in your collection hold it"),
+    ("ask", "What your studio should keep in mind when it picks what to write about, after it"),
+    ("status", "Whether your studio and its bridge are running, and when it last checked for your messages"),
+    ("today", "Your latest post's figures, replies waiting and your next scheduled post, only if you allow "
+              "figures in your studio"),
+    ("drafts", "How many drafts were made from what you sent in the last seven days"),
+)
+EARLIER_COMMANDS = (COMMANDS_2_13,)
 # What Telegram took, so it is not sent again at every start: a fingerprint
-# of the chat and the list, the chat, and when. A refusal is tried again
-# after this long, never at every poll.
+# of the chat and the list, the chat, when, and (since phase 5) the
+# commands' names. A refusal is tried again after this long, never at every
+# poll.
 MENU_KEY = "telegram_menu"
+# Phase 5, item 1: the notice that an upgrade added commands, kept when the
+# menu is registered again for the same chat and told once outside quiet
+# hours: {chat, added, bot (waiting or told), at}. Removed with the bot.
+TOUR_KEY = "telegram_tour"
+TOUR_NOTICE = ("Your studio was updated: your bot now also takes {commands}. Press Start the tour to see what to try, "
+               "a few steps at a time, or send /help.")
 MENU_RETRY_SECONDS = 600.0
 # Taking a removed bot's menu away is best effort, and the panel waits for it.
 MENU_AWAY_TIMEOUT = 3.0
@@ -352,7 +387,7 @@ _HELP_AFTER = (
 HELP = _help()
 
 # Commands answered whatever the confirmations switch says: they are questions.
-QUESTIONS = ("start", "help", "status", "today", "drafts", "forget", "recall", "write")
+QUESTIONS = ("start", "help", "status", "today", "drafts", "forget", "recall", "write", "tour")
 _COMMAND = re.compile(r"^/([A-Za-z][A-Za-z0-9_]{0,31})(?:@[A-Za-z0-9_]{1,64})?(?:\s+(.*))?$", re.DOTALL)
 
 
@@ -900,8 +935,11 @@ def gap_to_tell() -> Optional[str]:
 
 
 def forget_checks(conn) -> None:
-    """A new bot, or none: another bot's last check, and its notice, say nothing about this one."""
-    conn.execute("DELETE FROM settings WHERE key IN (?, ?)", (CHECKED_KEY, GAP_KEY))
+    """
+    A new bot, or none: another bot's last check, its notice, and the notice
+    that an upgrade added commands (phase 5) say nothing about this one.
+    """
+    conn.execute("DELETE FROM settings WHERE key IN (?, ?, ?)", (CHECKED_KEY, GAP_KEY, TOUR_KEY))
 
 
 def replies_on() -> bool:
@@ -1394,10 +1432,31 @@ def _reminders_due(conn, due_now) -> List[Dict[str, Any]]:
 # The "/" menu (phase 4, item 3): the commands registered for the paired chat
 # ---------------------------------------------------------------------------
 
+def _fingerprint(chat_id: Any, commands) -> str:
+    held = json.dumps({"chat": str(chat_id), "commands": [list(c) for c in commands]}, sort_keys=True)
+    return hashlib.sha256(held.encode("utf-8")).hexdigest()[:24]
+
+
 def menu_fingerprint(chat_id: Any) -> str:
     """What the menu Telegram should hold is, as one short value: the chat, and the commands with their words."""
-    held = json.dumps({"chat": str(chat_id), "commands": [list(c) for c in BOT_COMMANDS]}, sort_keys=True)
-    return hashlib.sha256(held.encode("utf-8")).hexdigest()[:24]
+    return _fingerprint(chat_id, BOT_COMMANDS)
+
+
+def _names_held(record: Dict[str, Any], chat_id: Any) -> Optional[List[str]]:
+    """
+    The commands a menu record says Telegram held for this chat: its names
+    (kept since phase 5), or an earlier build's list known by its
+    fingerprint. None when it is another chat's, or nothing can say.
+    """
+    if not record or str(record.get("chat") or "") != str(chat_id):
+        return None
+    names = record.get("names")
+    if isinstance(names, list) and all(isinstance(name, str) for name in names):
+        return names
+    for earlier in EARLIER_COMMANDS:
+        if record.get("fingerprint") == _fingerprint(chat_id, earlier):
+            return [name for name, _words in earlier]
+    return None
 
 
 def _menu_record(conn) -> Dict[str, Any]:
@@ -1427,18 +1486,24 @@ def menu_due(chat_id: Any) -> Optional[Dict[str, Any]]:
     if record.get("fingerprint") == menu_fingerprint(chat_id):
         return None
     before = str(record.get("chat") or "")
-    return {"before": before if before and before != str(chat_id) else None}
+    return {"before": before if before and before != str(chat_id) else None,
+            # What this chat's menu held, when the record can say (phase 5).
+            "names": _names_held(record, chat_id)}
 
 
 def _chat_scope(chat_id: Any) -> Dict[str, Any]:
     return {"type": "chat", "chat_id": int(str(chat_id))}
 
 
-def register_menu(token: str, chat_id: Any, due: Dict[str, Any]) -> bool:
+def register_menu(token: str, chat_id: Any, due: Dict[str, Any], guard=None) -> bool:
     """
     setMyCommands for the paired chat only, through the egress check, and
-    the fingerprint kept when Telegram took it. An earlier chat's menu goes
-    first. Returns whether Telegram took it.
+    the fingerprint and the names kept when Telegram took it. An earlier
+    chat's menu goes first. When the same chat's menu held fewer commands,
+    the notice that an upgrade added some is kept, told once (phase 5).
+    Both are kept only while `guard` (the worker's check lock, entered as a
+    context) says the bot is still the one this was asked for: a bot removed
+    while Telegram answered keeps nothing. Returns whether Telegram took it.
     """
     if due.get("before"):
         call(token, "deleteMyCommands", {"scope": _chat_scope(due["before"])})
@@ -1447,12 +1512,208 @@ def register_menu(token: str, chat_id: Any, due: Dict[str, Any]) -> bool:
         "scope": _chat_scope(chat_id)})
     if not result["ok"]:
         return False
+    names = [name for name, _words in BOT_COMMANDS]
+    held = due.get("names")
+    added = [name for name in names if held is not None and name not in held]
+    with (guard() if guard is not None else nullcontext(True)) as ours:
+        if not ours:
+            return False
+        conn = get_db()
+        try:
+            _write_json(conn, MENU_KEY, {"fingerprint": menu_fingerprint(chat_id), "chat": str(chat_id), "at": _now(),
+                                         "names": names})
+            if added:
+                _write_json(conn, TOUR_KEY, {"chat": str(chat_id), "added": added, "bot": "waiting", "at": _now()})
+        finally:
+            conn.close()
+    return True
+
+
+def _listed(words: List[str]) -> str:
+    """Words as a sentence lists them: "a", "a and b", "a, b and c"."""
+    if len(words) <= 1:
+        return "".join(words)
+    return ", ".join(words[:-1]) + " and " + words[-1]
+
+
+def tour_notice_text(added: List[str]) -> str:
+    """The notice that an upgrade added commands, naming them: the product's own words, nothing of the creator's."""
+    return TOUR_NOTICE.format(commands=_listed([f"/{name}" for name in added]))
+
+
+def tour_notice_to_tell(chat_id: Any) -> Optional[str]:
+    """
+    The upgrade's notice for the paired chat, once: marked told as it is
+    handed over, only on the notice as it was read, so one removed meanwhile
+    is never written back. None when there is none to tell.
+    """
+    raw = _setting(TOUR_KEY)
+    try:
+        held = json.loads(raw or "null")
+    except (TypeError, ValueError):
+        return None
+    if (not isinstance(held, dict) or held.get("bot") != "waiting" or str(held.get("chat") or "") != str(chat_id)
+            or not isinstance(held.get("added"), list) or not held["added"]):
+        return None
     conn = get_db()
     try:
-        _write_json(conn, MENU_KEY, {"fingerprint": menu_fingerprint(chat_id), "chat": str(chat_id), "at": _now()})
+        with conn:
+            done = conn.execute("UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ? "
+                                "AND value = ?", (json.dumps(dict(held, bot="told")), TOUR_KEY, raw)).rowcount
     finally:
         conn.close()
-    return True
+    return tour_notice_text([str(name) for name in held["added"]]) if done else None
+
+
+# ---------------------------------------------------------------------------
+# The tour (phase 5, item 1): what to try on the phone, a few steps at a time
+# ---------------------------------------------------------------------------
+
+# Each step: what to send and what the creator will see, in the bot's own
+# fixed words (its sentences quoted as it says them), and what it needs.
+TOUR_STEPS = {
+    "saved": {"say": ('Send "Idea: testing the bot". I answer "' + SENTENCES["collected"] + '" and in your studio it '
+                      "is at once under From your record, Your collection. Press Undo under my answer to take it back."),
+              "needs": ()},
+    "link": {"say": ('In the LinkedIn app, copy the link of one of your posts and send it here. I answer "'
+                     + SENTENCES["short"] + '", and Today shows it.'), "needs": ()},
+    "file": {"say": "Send a photo, a voice note or a file. It is kept as it is in Your collection, never read or "
+                    "transcribed.", "needs": ()},
+    "written": {"say": ('Press Write it up under an idea. I answer "' + SENTENCES["writing"] + '", then "'
+                        + SENTENCES["draft_ready"] + '", and the draft is in the Composer.'), "needs": ("provider",)},
+    "reshaped": {"say": ('Under "Draft ready", press Send me the whole post to copy it into the LinkedIn app, or a '
+                         "rewrite button such as Shorter."), "needs": ("provider", "words")},
+    "several": {"say": "Send /write and a word, such as /write pricing: I write one draft from your unused items that "
+                       "hold it.", "needs": ("provider",)},
+    "added": {"say": ("Reply to something you sent (press and hold it, then Reply). Your new words go on the same item, "
+                      'and I answer "' + SENTENCES["added"] + '"'), "needs": ()},
+    "edited": {"say": ('Edit a message you sent (press and hold it, then Edit). The item changes with it, and I answer "'
+                       + SENTENCES["edited"] + '"'), "needs": ()},
+    "remembered": {"say": "Send /remember and something about you, such as /remember I write for founders. Your "
+                          "studio's writing reads it, and /forget takes it away.", "needs": ()},
+}
+# The parts, as the checklist (docs/help/test-your-telegram-bot.md) groups
+# them: a few steps at a time, numbered across the parts.
+TOUR_PARTS = (
+    ("send things in", ("saved", "link", "file")),
+    ("make something of it", ("written", "reshaped", "several")),
+    ("build it up and keep it", ("added", "edited", "remembered")),
+)
+# The steps that leave something in the studio, as the panel lists them;
+# each is seen working once the profile holds what it leaves.
+TOUR_EVIDENCE = {
+    "saved": "An idea or a note saved from your phone",
+    "link": "A link to one of your posts, asked for on Today",
+    "file": "A photo, a voice note or a file, kept as it is",
+    "written": "A draft written up from your phone",
+    "reshaped": "A draft rewritten from your phone",
+    "several": "One draft from several items, asked for with /write",
+    "added": "An item built up by a reply",
+    "edited": "An edit on your phone followed",
+    "remembered": "A thing to remember kept from your phone",
+}
+TOUR_NEEDS_PROVIDER = ("This needs an AI provider, and none is connected yet: connect yours on the Composer's Prompt "
+                       "tab in your studio.")
+TOUR_NEEDS_WORDS = ("This shows only with The bot may send me what it writes from my collection on, under Local "
+                    "security.")
+TOUR_SEEN = "(seen working in your studio)"
+TOUR_END = "That is the tour. Send /tour to see it again, and /help for every command."
+TOUR_STOPPED = SENTENCES["tour_stopped"]
+
+
+def _rows_of(conn, sql: str, params=()) -> List[Any]:
+    try:
+        return conn.execute(sql, params).fetchall()
+    except Exception:
+        # A profile from before a table keeps nothing in it.
+        return []
+
+
+def tour_seen(conn) -> Dict[str, bool]:
+    """
+    Which of the tour's steps the studio has seen working, from what this
+    profile holds and nothing else: never a press, which proves only that a
+    button was touched. Only the paired chat's messages are ever saved, so
+    whatever is kept from Telegram came from it.
+    """
+    def held(sql: str, params=()) -> bool:
+        return bool(_rows_of(conn, sql, params))
+
+    made = []
+    for (raw,) in _rows_of(conn, "SELECT made_with FROM posts WHERE made_with IS NOT NULL AND made_with != ''"):
+        try:
+            value = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(value, dict):
+            made.append(value)
+    phone = [m for m in made if m.get("via") == "telegram"]
+    return {
+        "saved": held("SELECT 1 FROM collection_items WHERE source = 'telegram' AND kind IN ('note', 'idea', 'forward') "
+                      "LIMIT 1"),
+        "link": held("SELECT 1 FROM collection_items WHERE source = 'telegram' AND kind IN ('post', 'link') LIMIT 1")
+        or held("SELECT 1 FROM desk_requests WHERE source = 'telegram' AND state != 'refused' LIMIT 1"),
+        "file": held("SELECT 1 FROM collection_items WHERE source = 'telegram' "
+                     "AND kind IN ('photo', 'voice', 'document', 'video') LIMIT 1"),
+        "written": bool(phone),
+        # The Composer keeps no versions: a draft's earlier texts come only from a rewrite on the phone.
+        "reshaped": any(m.get("earlier") for m in made),
+        "several": any(len(m.get("items") or []) >= 2 for m in phone),
+        # Two of the creator's messages on one item, an album's photos aside.
+        "added": held("SELECT 1 FROM collection_messages m JOIN collection_items c ON c.id = m.item_id "
+                      "WHERE m.whose = 'yours' AND m.message_id IS NOT NULL AND c.media_group IS NULL "
+                      "GROUP BY m.item_id HAVING COUNT(*) >= 2 LIMIT 1"),
+        "edited": held("SELECT 1 FROM collection_messages WHERE edited_at IS NOT NULL LIMIT 1"),
+        "remembered": held("SELECT 1 FROM remembered WHERE source = 'telegram' LIMIT 1"),
+    }
+
+
+def tour_progress() -> List[Dict[str, Any]]:
+    """The panel's list: each step that leaves something, its title, and whether the studio has seen it working."""
+    conn = get_db()
+    try:
+        seen = tour_seen(conn)
+    finally:
+        conn.close()
+    return [{"key": key, "title": title, "seen": bool(seen.get(key))} for key, title in TOUR_EVIDENCE.items()]
+
+
+def tour_rows(part: int) -> List[List[str]]:
+    """A part's buttons: Next and Stop the tour, and on the last, From the start."""
+    return [["v", "z"]] if part < len(TOUR_PARTS) - 1 else [["y"]]
+
+
+def tour_part_text(part: int) -> str:
+    """
+    One part of the tour, in the open profile: its steps, numbered across
+    the parts, each saying what it needs that is missing (an AI provider,
+    the words switch) and whether the studio has seen it working. The
+    product's own words, and nothing of the creator's.
+    """
+    part = max(0, min(int(part), len(TOUR_PARTS) - 1))
+    conn = get_db()
+    try:
+        seen = tour_seen(conn)
+    finally:
+        conn.close()
+    provider = bool(writing.model_gateway.get_current_ai_config().is_configured)
+    words = collection_words_on()
+    title, steps = TOUR_PARTS[part]
+    first = 1 + sum(len(s) for _t, s in TOUR_PARTS[:part])
+    lines = [f"Tour, part {part + 1} of {len(TOUR_PARTS)}: {title}"]
+    for number, key in enumerate(steps, first):
+        step = TOUR_STEPS[key]
+        said = [f"{number}. {step['say']}"]
+        if "provider" in step["needs"] and not provider:
+            said.append(TOUR_NEEDS_PROVIDER)
+        if "words" in step["needs"] and not words:
+            said.append(TOUR_NEEDS_WORDS)
+        if seen.get(key):
+            said.append(TOUR_SEEN)
+        lines += ["", " ".join(said)]
+    if part == len(TOUR_PARTS) - 1:
+        lines += ["", TOUR_END]
+    return "\n".join(lines)
 
 
 def take_menu_away(token: str) -> None:
@@ -1709,7 +1970,25 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                         "kept": True}
             job = None
             markup = None
-            if letter in RESHAPE_LETTERS:
+            # Phase 5: a press may replace the message's words outright (a
+            # tour part) or send messages of its own with buttons.
+            edit_text: Optional[str] = None
+            send_with: List[Tuple[str, Dict[str, Any]]] = []
+            if letter == "b":
+                # Start the tour: its first part, a message of its own; the offer keeps its words.
+                part = tour_part_text(0)
+                send_with.append((part, _new_record(records, chat_id, "tour", part, tour_rows(0), part=0)))
+                key = "tour_started"
+            elif letter in ("v", "y"):
+                # Next, or From the start: the part replaces the one before it, in the same message.
+                number = 0 if letter == "y" else int(record.get("part") or 0) + 1
+                number = max(0, min(number, len(TOUR_PARTS) - 1))
+                edit_text = tour_part_text(number)
+                markup = _new_record(records, chat_id, "tour", edit_text, tour_rows(number), part=number)
+                key = "tour_next" if letter == "v" else "tour_again"
+            elif letter == "z":
+                key, edit_text = "tour_stopped", TOUR_STOPPED
+            elif letter in RESHAPE_LETTERS:
                 # A rewrite of a draft the bot wrote: shown only with the words
                 # switch on, written beside the bot's loop, with a provider.
                 label = (record.get("reshape_labels") or {}).get(letter)
@@ -1766,8 +2045,8 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
         finally:
             conn.close()
     said = str(record.get("said") or "")
-    edit = f"{said}\n\n{SENTENCES[key]}" if said else SENTENCES[key]
-    return {"key": key, "answer": SENTENCES[key], "edit": edit, "job": job, "markup": markup}
+    edit = edit_text if edit_text is not None else (f"{said}\n\n{SENTENCES[key]}" if said else SENTENCES[key])
+    return {"key": key, "answer": SENTENCES[key], "edit": edit, "job": job, "markup": markup, "send_with": send_with}
 
 
 def _first_line(text: str) -> str:
@@ -1785,13 +2064,16 @@ def run_job(job: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, 
     try:
         if job.get("kind") == "reshape":
             return _reshaped(writing.reshape(job.get("post"), job.get("label")), chat_id)
+        # A draft asked for on the phone says so (phase 5), which the tour's
+        # "written up from your phone" reads.
         if job.get("kind") == "angles":
             result = writing.angles(job.get("item"))
         elif job.get("kind") == "combine":
             # /write (phase 4): the matching items, through Combine.
-            result = writing.make_post(job.get("items") or [])
+            result = writing.make_post(job.get("items") or [], via="telegram")
         else:
-            result = writing.make_post([job.get("item")], angle=job.get("angle"), form=job.get("form"))
+            result = writing.make_post([job.get("item")], angle=job.get("angle"), form=job.get("form"),
+                                       via="telegram")
     except (writing.Refused, LookupError):
         return SENTENCES["write_failed"], None
     except writing.ProviderError:

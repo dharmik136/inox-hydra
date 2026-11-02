@@ -14,7 +14,7 @@ Before you start: the studio is running on this computer, and you have your bot'
 1. In Telegram on your phone, open the chat with your bot and send `hello`.
 2. On the phone, the bot answers: "Not paired yet. In your studio, open Settings, then Local security, and press This is me beside chat ..." with your chat's number.
 3. In the panel, within a few seconds: "1 message refused from chat ..., first: 'hello'. Is that you?" Check the number is the one the bot just sent you, then press **This is me**.
-4. On the phone: "Paired. Messages from this chat now arrive in your studio. Send /help to see what I do."
+4. On the phone: "Paired. Messages from this chat now arrive in your studio. Press Start the tour to see what to try, or send /help.", with **Start the tour** under it. The tour can wait: see [Phase 5 on your phone](#phase-5-on-your-phone-optional).
 
 ## 3. The bot answers (two minutes)
 
@@ -65,6 +65,12 @@ These need a post to come due, or an hour to come round, so they take as long as
 10. `/write`: with two unused notes that mention pricing in your collection, send `/write pricing`. The bot answers "Writing one post from 2 items in your collection.", then "Draft ready in your studio." (with the draft's first line while the words switch is on); the Composer's draft is written from both, and **Your collection** lists them as used. `/write #pricing` takes the items tagged #pricing. **Most items in one draft**, under **Brand**, then **Writing**, is how many it takes at most.
 11. Albums, documents and videos: select three photos in Telegram and send them together with one caption. The bot answers once, and **Your collection** shows one item with the three photos and your caption. Send a PDF: it is listed as a document under its own name, with **View** and **Download**, and **Add to your media library** puts it in the Composer's **Media** tab as a document carousel. Send a Word file: it is a download only, with no **View**. Send a short video: it plays in **Your collection**. A sticker still gets "That message had no text, so nothing was saved."
 12. Text kept whole: in Telegram, write `read this before Thursday`, select `this`, choose **Link** (or Format, then Link) and give it an address, then send it. **Your collection** shows the address right after "this". Send `/recall #pricing`: the bot counts the items tagged #pricing.
+
+## Phase 5 on your phone (optional)
+
+1. The tour: send `/tour` (or press **Start the tour** under "Paired."). The bot sends "Tour, part 1 of ..." with what to send and what you will see, a few steps at a time, and **Next** and **Stop the tour** under it. Press **Next**: the same message changes to the next part. The last part ends "That is the tour. Send /tour to see it again, and /help for every command." with **From the start**. A step that writes says "This needs an AI provider, and none is connected yet" until you connect one on the Composer's **Prompt** tab, and a step you have already done says "(seen working in your studio)".
+2. What you have tried: in the panel, **WHAT YOU HAVE TRIED FROM YOUR PHONE** lists the steps that leave something in your studio, each **NOT YET** until your studio holds what that step leaves, then **SEEN WORKING**. Send `Idea: testing the bot` and reopen the panel: "An idea or a note saved from your phone" says SEEN WORKING. Steps such as `/help` leave nothing, so they are not listed.
+3. After this update: if your bot was paired before it, the bot says once "Your studio was updated: your bot now also takes /tour", and the other new commands, with **Start the tour**, outside quiet hours.
 
 ## When a step does not match
 

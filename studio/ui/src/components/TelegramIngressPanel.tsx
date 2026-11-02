@@ -10,6 +10,7 @@ import {
   sendIngressTestMessage,
   type IngressOptions,
   type IngressSettings,
+  type TourStep,
 } from "@/lib/api";
 import { formatLocal } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -235,6 +236,7 @@ export function TelegramIngressPanel() {
               </button>
             </div>
           )}
+          {state.chat_id && state.tour.length > 0 && <TriedFromYourPhone steps={state.tour} provider={state.tour_provider} />}
           {state.has_token && (
             <div className="mt-3 flex flex-col gap-2">
               <p className="studio-meta text-ink-muted">WHAT THE BOT SAYS BACK</p>
@@ -648,6 +650,40 @@ export function TelegramIngressPanel() {
         </p>
       </div>
     </section>
+  );
+}
+
+/**
+ * What the creator has tried from the phone (phase 5): the tour's steps that
+ * leave something in the studio, each SEEN WORKING once this profile holds
+ * what that step leaves. Read from the server, which derives it from what is
+ * kept, never from a button pressed.
+ */
+function TriedFromYourPhone({ steps, provider }: { steps: TourStep[]; provider: boolean }) {
+  const seen = steps.filter((step) => step.seen).length;
+  return (
+    <div className="mt-3">
+      <p className="studio-meta text-ink-muted">{`WHAT YOU HAVE TRIED FROM YOUR PHONE: ${seen} OF ${steps.length} SEEN WORKING`}</p>
+      <p className="mt-1 text-[12px] leading-relaxed text-ink-secondary">
+        Send /tour to your bot for what to try, a few steps at a time. A line says seen working once your studio holds
+        what that step leaves; a step such as /help or /status leaves nothing here, so it is not listed.
+      </p>
+      {!provider && (
+        <p className="mt-1 text-[12px] leading-relaxed text-ink-secondary">
+          Writing from your phone needs an AI provider: connect yours on the Composer&apos;s Prompt tab.
+        </p>
+      )}
+      <ul className="mt-1.5 flex flex-col gap-1">
+        {steps.map((step) => (
+          <li key={step.key} className="flex items-baseline justify-between gap-4">
+            <span className="text-[12px] text-ink-secondary">{step.title}</span>
+            <span className={cn("studio-meta shrink-0", step.seen ? "text-signal-green-text" : "text-ink-muted")}>
+              {step.seen ? "SEEN WORKING" : "NOT YET"}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

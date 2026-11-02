@@ -32,6 +32,16 @@ If you know your chat id already, you can type it into **Your numeric chat id** 
 
 For maintainers, the older way still works: `INOX_DEV_MODE=1`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the environment the studio starts from (`PRUDENT_TELEGRAM_BOT_TOKEN` and `PRUDENT_TELEGRAM_CHAT_ID` are also accepted), read once at startup. A token in the environment alone, without dev mode, starts nothing.
 
+## A tour on your phone
+
+Once your chat is paired, the bot's "Paired." message carries **Start the tour**, and `/tour` starts it any time. The tour says what to try, a few steps at a time, in the groups of [Test your Telegram bot](test-your-telegram-bot.md): sending things in, making something of them, building them up and keeping them. Each step says what to send and what you will see, quoting the bot's own answers. **Next** shows the next part in the same message, **Stop the tour** ends it ("Tour stopped. Send /tour to see it again."), and the last part offers **From the start**.
+
+A step that writes through your AI provider says "This needs an AI provider, and none is connected yet: connect yours on the Composer's Prompt tab in your studio." until you connect one, and a step that shows only with **The bot may send me what it writes from my collection** says so while it is off. A step your studio has already seen working says "(seen working in your studio)". The tour carries none of your words and nothing about anyone else.
+
+In the panel, **WHAT YOU HAVE TRIED FROM YOUR PHONE** lists the steps that leave something in your studio, each **NOT YET** or **SEEN WORKING**: an idea or a note saved from your phone, a link to one of your posts, a photo or a file, a draft written up or rewritten from your phone, one draft from several items asked for with `/write`, an item built up by a reply, an edit followed, and a thing to remember kept from your phone. Each is read from what your studio holds, never from a button you pressed, so removing what a step left takes its line back to NOT YET. A step such as `/help` or `/status` leaves nothing, so it is not listed. From this version, a draft written from a press on your bot says so in its record, which is how the panel tells it from one written at your desk.
+
+After an update that adds commands, a bot paired before it is offered the tour once: "Your studio was updated: your bot now also takes" and the new commands, with **Start the tour**, outside quiet hours. The studio knows which commands are new from the / menu it registered with Telegram before, so a menu it cannot recognise brings no such message. Removing the bot, or deleting everything, forgets it.
+
 ## Send an idea, or a post
 
 Send the bot a message. You can start it with a prefix, in any letter case. Nothing is written from what you send until you ask: it waits in your collection.
@@ -179,6 +189,7 @@ The commands are in Telegram's **/** menu of your chat too: type `/` in the chat
 
 | You send | What happens |
 | --- | --- |
+| `/tour` | What to try on your phone, a few steps at a time. See [A tour on your phone](#a-tour-on-your-phone) |
 | `/start` or `/help` | The bot says what it does, its commands as the **/** menu lists them, what **Undo** does, how to pair a chat, and that it sends your words and figures only if you allow them, and nothing about anyone else |
 | `/idea your idea` | Your idea is kept in your collection as an idea, as `Idea: your idea` is. A link inside it stays part of the idea |
 | `/ask what to remember` | It is remembered as an ask in **From your record**, with the source Telegram, and listed under **What the studio knows** there, where you can change or remove it. It takes effect on tomorrow's cards. It is not kept in your collection |
@@ -191,7 +202,7 @@ The commands are in Telegram's **/** menu of your chat too: type `/` in the chat
 | `/write word` or `/write #tag` | One draft from the unused items in your collection that hold the word, or carry the tag, newest first, up to your **Most items in one draft**, through your own AI provider as **Combine** writes: "Writing one post from 3 items in your collection.", then "Draft ready in your studio." Those items are then used. Nothing matching: "Nothing new in your collection holds that word, so nothing was written." |
 | Any other command | "I do not know that command. Send /help to see what I do." |
 
-`/start`, `/help`, `/status`, `/today`, `/drafts`, `/forget`, `/recall` and `/write` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
+`/start`, `/help`, `/tour`, `/status`, `/today`, `/drafts`, `/forget`, `/recall` and `/write` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
 
 ## Your figures on Telegram, only if you allow it
 
@@ -249,6 +260,8 @@ These messages carry buttons, which you press in Telegram:
 | The same | The **Angles** button | Finds your number of opening lines for a post from it |
 | The same | **Undo** | Takes it out of your collection, while it is still new there: never used as a draft and never set aside |
 | The same, for a note or an idea of at most 300 characters | **Remember this** | Keeps its words as a thing to remember, and the item is used. See [Things to remember](#things-to-remember) |
+| "Paired.", and the message after an update that adds commands | **Start the tour** | Sends the tour's first part, as `/tour` does. See [A tour on your phone](#a-tour-on-your-phone) |
+| A part of the tour | **Next**, **Stop the tour**, and on the last part **From the start** | Shows the next part in the same message, ends the tour, or goes back to its first part |
 | "Kept in your things to remember. In your collection it is set as used." | **Undo** | Removes that thing to remember, and the item is new again: "Undone: it is no longer kept, and it is new in your collection again." |
 | "An idea from your collection:" | **Write it up** and **Not today** | See [A morning idea](#a-morning-idea) |
 | "Kept in your things to remember." | **Undo** | Removes it from your things to remember: "Undone: it is no longer kept." |
@@ -300,7 +313,7 @@ Each message gets one short sentence back, the same words every time. None carri
 | A sticker, a location, a contact or anything else with no text | That message had no text, so nothing was saved. |
 | A message your studio could not save, after three tries | Your studio could not save that message. Open the studio to see why. |
 | The studio checked again more than a day after its last check | Your studio did not check Telegram for your messages from ... until ..., on your computer's clock. Telegram keeps a bot's messages for one day, so anything you sent before ... may not have arrived. Send again whatever is missing from Your collection. |
-| You pressed **This is me**, or saved a chat id | Paired. Messages from this chat now arrive in your studio. Send /help to see what I do. |
+| You pressed **This is me**, or saved a chat id | Paired. Messages from this chat now arrive in your studio. Press Start the tour to see what to try, or send /help. (With **Start the tour** under it.) |
 | A message before any chat is paired | Not paired yet. In your studio, open Settings, then Local security, and press This is me beside chat 487215963. (Your own chat's number.) |
 | A message from a chat that is not the paired one | This bot takes messages only from the chat its owner paired. |
 | `/ask` | Remembered. Your studio uses it when it picks what to write about, from tomorrow's cards. |
@@ -366,6 +379,7 @@ The panel under **Your phone, through Telegram** reads:
 - **Posts asked for from the phone, waiting**: open requests.
 - **Last checked Telegram**: when Telegram last answered the studio's check for messages, kept when the studio stops. NOT YET before the first.
 - **The / menu in your chat**: SET once Telegram took the bot's commands for your paired chat.
+- **WHAT YOU HAVE TRIED FROM YOUR PHONE**: the tour's steps your studio has seen working. See [A tour on your phone](#a-tour-on-your-phone).
 - **Last problem reaching Telegram**: the most recent problem, in plain words, such as Telegram not recognising the token, another program asking for the same bot's messages, or no connection. It is cleared after each successful check. After a problem the studio waits longer before asking again, and as long as Telegram asks when it says to slow down.
 - **Last message the bot could not send**: why the bot's last answer did not go, in plain words.
 

@@ -88,7 +88,7 @@ def test_the_menu_row_says_whether_telegram_holds_it(page, studio, fake):
     page.reload(wait_until="networkidle")
     page.get_by_role("tab", name="Local security").click()
     expect(row.locator("dd")).to_have_text("SET")
-    assert [c["command"] for c in fake.menu(held["chat_id"])][:2] == ["help", "idea"]
+    assert [c["command"] for c in fake.menu(held["chat_id"])] == [name for name, _words in telegram_bot.BOT_COMMANDS]
     assert _axe(page, PANEL) == []
 
 
