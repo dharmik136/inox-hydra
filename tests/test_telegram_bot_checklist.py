@@ -231,3 +231,15 @@ def test_phase_5_remind_me_quotes_the_bot_the_box_and_the_panel():
                encoding="utf-8").read()
     assert "Reminder: " in article and "Reminder: " in box
     assert "Remind me offers" in article and "Remind me offers" in _panel()
+
+
+def test_phase_5_ideas_quotes_the_bot_and_the_composer():
+    """Phase 5, item 5: /ideas' answers, and what the Composer says of a draft written from an idea."""
+    article = _article()
+    for key in ("ideas_not_yet",):
+        assert telegram_bot.SENTENCES[key].split(" Your studio")[0] in article, key
+    assert telegram_bot.SENTENCES["ideas_ready"].format(count=3) in article
+    assert telegram_bot.IDEAS_HEAD in article
+    composer = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "ComposerCollection.tsx"),
+                    encoding="utf-8").read()
+    assert "from one of the ideas in From your record" in article and "from one of the ideas in From your record" in composer

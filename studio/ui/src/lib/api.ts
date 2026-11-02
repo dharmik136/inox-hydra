@@ -3977,6 +3977,12 @@ export interface MadeWith {
   at?: string;
   /** The texts the bot's rewrites replaced, the newest last, each with the button that replaced it (phase 4). */
   earlier?: { text: string; at: string; by: string }[];
+  /** Written from one of a day's ideas in From your record (phase 5): the card, its day and its title. */
+  card?: string;
+  day?: string;
+  card_title?: string | null;
+  /** Where it was asked for, when not the studio: "telegram" (phase 5). */
+  via?: string;
 }
 
 /** A draft's own record of how it was made, or null for one written by hand. */

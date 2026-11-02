@@ -292,8 +292,11 @@ export function MadeWithNote({
       </h2>
       <p className="mt-1 text-[12px] leading-snug text-ink-secondary">
         Written by {by}
-        {made.at ? ` on ${formatLocal(made.at)}` : ""}, from {count === 1 ? "one item" : `${count} items`} in your
-        collection{made.angle ? ", starting from the angle you picked" : ""}. It is your draft now: change anything.
+        {made.at ? ` on ${formatLocal(made.at)}` : ""},{" "}
+        {made.card
+          ? `from one of the ideas in From your record${made.card_title ? ` (${made.card_title})` : ""}`
+          : `from ${count === 1 ? "one item" : `${count} items`} in your collection${made.angle ? ", starting from the angle you picked" : ""}`}
+        {made.via === "telegram" ? ", asked for on your phone" : ""}. It is your draft now: change anything.
       </p>
       {made.earlier && made.earlier.length > 0 && (
         <div className="mt-1.5">

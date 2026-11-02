@@ -216,6 +216,17 @@ You can type a time too: press and hold the bot's message about the draft ("Draf
 | `/plan` and words it cannot read | I did not read a day and a time there. Send, for example, /plan tomorrow 09:00 or /plan fri 18:30. |
 | `/plan` alone, with nothing queued | Nothing is planned in your Queue. Press Plan it under a draft I wrote, or plan one in your studio. |
 
+## Today's ideas on your phone
+
+Send `/ideas` and the bot answers with today's ideas from **From your record**, as your studio made them. It only reads them: it never makes the day's ideas itself and never asks your AI provider for one.
+
+- With **The bot may send me what it writes from my collection** on, it says "Today's ideas from your record:" and each idea that carries your own words, numbered, as its block and its words, for example "1. You asked: more on hiring loops", with **Write up 1**, **Write up 2** and so on. An idea whose words are not yours to send (a poll you voted in, an account you follow, a post you reacted to, saved or reposted, which can name someone else) is only counted: "And one more in your studio, which carries no words to send here." Never a figure.
+- With it off, how many: "3 ideas are ready in your studio, under From your record."
+- When the idea from your AI provider is waiting for you to open the section, it adds "The idea from your AI provider comes when you open From your record in your studio."
+- When today's ideas are not made yet: "Today's ideas are not made yet. Your studio makes them the first time it runs each day, a few minutes after it starts, from your own posts, asks and collection."
+
+**Write up** writes a draft from that idea's words through your own AI provider, as **Write it up** does, kept only if it brings in no figure or person that is not in those words; the bot answers "Writing it up in your studio.", then "Draft ready in your studio." with **Plan it** and, with the words switch on, the draft's first line and its buttons. The draft is in the Composer, which says above it under **What this draft was written from** that it came from one of the ideas in From your record, asked for on your phone, and the idea is marked used, as **Draft from this** marks it at your desk. An idea drawn from your collection is written from its item, which is then used. Each **Write up** works once, and the others stay.
+
 ## A morning idea
 
 Tick **Send me an idea from my collection each morning** in the panel, and pick the days (Monday to Friday unless you change them) and the hour (08:00). On those mornings the bot sends one unused item from your collection, the one it offered least recently, under "An idea from your collection:", with an angle from what worked in your own posts, for example "Angle: open with a question, as the posts of yours that did best did.", and **Write it up** and **Not today** under it. **Not today** leaves it in your collection ("Not today. It stays in your collection.").
@@ -243,6 +254,7 @@ The commands are in Telegram's **/** menu of your chat too: type `/` in the chat
 | You send | What happens |
 | --- | --- |
 | `/tour` | What to try on your phone, a few steps at a time. See [A tour on your phone](#a-tour-on-your-phone) |
+| `/ideas` | Today's ideas from **From your record**: their words, each with **Write up**, only with the words switch on; otherwise how many. See [Today's ideas on your phone](#todays-ideas-on-your-phone) |
 | `/plan` | Alone, your next queued posts, their times always and their first lines only with the words switch on. As a reply to the bot's message about a draft, with a day and a time, that draft planned then. See [Plan it from your phone](#plan-it-from-your-phone) |
 | `/start` or `/help` | The bot says what it does, its commands as the **/** menu lists them, what **Undo** does, how to pair a chat, and that it sends your words and figures only if you allow them, and nothing about anyone else |
 | `/idea your idea` | Your idea is kept in your collection as an idea, as `Idea: your idea` is. A link inside it stays part of the idea |
@@ -256,7 +268,7 @@ The commands are in Telegram's **/** menu of your chat too: type `/` in the chat
 | `/write word` or `/write #tag` | One draft from the unused items in your collection that hold the word, or carry the tag, newest first, up to your **Most items in one draft**, through your own AI provider as **Combine** writes: "Writing one post from 3 items in your collection.", then "Draft ready in your studio." Those items are then used. Nothing matching: "Nothing new in your collection holds that word, so nothing was written." |
 | Any other command | "I do not know that command. Send /help to see what I do." |
 
-`/start`, `/help`, `/tour`, `/plan`, `/status`, `/today`, `/drafts`, `/forget`, `/recall` and `/write` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
+`/start`, `/help`, `/tour`, `/plan`, `/ideas`, `/status`, `/today`, `/drafts`, `/forget`, `/recall` and `/write` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
 
 ## Your figures on Telegram, only if you allow it
 
@@ -330,6 +342,7 @@ These messages carry buttons, which you press in Telegram:
 | "Draft ready in your studio. It begins:" and "Rewritten in your studio (...). It begins:" | Your rewrite buttons (**Shorter**, **New opening**, **Another angle** unless you change them) | Rewrites the draft through your own AI provider. See [Rewrite a draft from your phone](#rewrite-a-draft-from-your-phone) |
 | "Rewritten in your studio (...). It begins:" | **Undo** | Puts the draft back as it was before that rewrite, while it is still as the rewrite left it |
 | "Draft ready in your studio.", with the words switch on or off | **Plan it** | Offers a few times; the one you press puts the draft in your Queue then, and the bot brings it back at that time. See [Plan it from your phone](#plan-it-from-your-phone). The message keeps its other buttons |
+| `/ideas`' answer, with the words switch on | **Write up 1**, **Write up 2** and so on | That idea written up into a draft. Each works once; the others stay |
 | `/recall`'s answer | **Write one post from these**, and with the words switch on **Write up 1**, **Write up 2** and so on | One draft from the unused items that hold the word, as `/write` writes it, or that item written up. Each works once; the others stay |
 | "When should your studio bring this post back to you?" | A time, such as "Tomorrow 08:30" | Puts the draft in your Queue at that time. Nothing is posted |
 | "Planned for ..." | **Undo** | Makes it a draft again, while it is still queued at that time |

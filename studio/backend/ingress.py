@@ -1038,6 +1038,10 @@ class TelegramIngressDaemon:
                 argument, str((message.get("chat") or {}).get("id", "")),
                 replied.get("message_id") if isinstance(replied, dict) else None)
             return ({**done, "buttons": buttons} if buttons else done), said, True
+        if name == "ideas":
+            # Today's ideas (phase 5): read, never built; their words only with the words switch.
+            said, buttons = telegram_bot.ideas_answer()
+            return ({**done, "buttons": buttons} if buttons else done), said, True
         if name == "tour":
             # What to try (phase 5): the first part, with Next and Stop the tour.
             return ({**done, "buttons": ("tour", telegram_bot.tour_rows(0), {"part": 0})},

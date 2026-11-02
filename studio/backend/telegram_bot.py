@@ -320,6 +320,13 @@ SENTENCES = {
     "remind_cancel_gone": "Nothing to cancel: that reminder was told or cancelled already.",
     "set_aside": "Set aside: it is under Not now in your collection.",
     "set_aside_used": "Left as it is: you have used it in your studio since.",
+    # Phase 5, item 5: today's ideas on the phone.
+    "ideas_not_yet": ("Today's ideas are not made yet. Your studio makes them the first time it runs each day, a few "
+                      "minutes after it starts, from your own posts, asks and collection."),
+    "ideas_empty": ("Today's ideas have nothing to show yet: each one says in From your record what it is waiting "
+                    "for."),
+    "ideas_ready": "{count} ideas are ready in your studio, under From your record.",
+    "ideas_ready_one": "One idea is ready in your studio, under From your record.",
 }
 
 # Phase 5, item 2: what a plan's messages say, with times on the computer's
@@ -340,6 +347,14 @@ REMIND_SET_WORDS = ("I will bring it back {when} ({label}), on your computer's c
                     "item, with Cancel.")
 REMINDER_WORDS = "A reminder you asked for, for {when}:"
 REMINDER_BARE = "A reminder you asked for, for {when}: an item in your collection, saved {saved}."
+# Phase 5, item 5: /ideas, with the words switch on. Each card that carries
+# the creator's own words, as "<its block>: <its excerpt>"; never a card's
+# figures, and never a card whose words are not the creator's (a vote, a
+# follow, a reaction, a save, a repost: their titles can name someone else).
+IDEAS_HEAD = "Today's ideas from your record:"
+IDEAS_MORE_ONE = "And one more in your studio, which carries no words to send here."
+IDEAS_MORE = "And {count} more in your studio, which carry no words to send here."
+IDEAS_MODEL_WAITING = "The idea from your AI provider comes when you open From your record in your studio."
 # Phase 5, item 3: /recall lists the newest when more match than it shows.
 RECALL_NEWEST = "The newest {count}:"
 # The kinds of message whose buttons each act once, the others staying: a list.
@@ -382,6 +397,8 @@ BOT_COMMANDS = (
     ("remember", "A fact after it about you, your audience, an offer or a date, which your studio's writing reads"),
     ("forget", "Words after it from something you asked me to remember, which is then removed"),
     ("recall", "A word after it, and I say how many items in your collection hold it"),
+    # Phase 5, item 5.
+    ("ideas", "Today's ideas from your record, each to write up; their words only if you allow them"),
     ("ask", "What your studio should keep in mind when it picks what to write about, after it"),
     ("status", "Whether your studio and its bridge are running, and when it last checked for your messages"),
     ("today", "Your latest post's figures, replies waiting and your next scheduled post, only if you allow "
@@ -456,7 +473,7 @@ _HELP_AFTER = (
 HELP = _help()
 
 # Commands answered whatever the confirmations switch says: they are questions.
-QUESTIONS = ("start", "help", "status", "today", "drafts", "forget", "recall", "write", "tour", "plan")
+QUESTIONS = ("start", "help", "status", "today", "drafts", "forget", "recall", "write", "tour", "plan", "ideas")
 _COMMAND = re.compile(r"^/([A-Za-z][A-Za-z0-9_]{0,31})(?:@[A-Za-z0-9_]{1,64})?(?:\s+(.*))?$", re.DOTALL)
 
 
@@ -917,6 +934,55 @@ def write_command(argument: str) -> Tuple[str, Optional[Dict[str, Any]]]:
         return SENTENCES["no_provider"], None
     said = SENTENCES["write_from_one"] if len(found) == 1 else SENTENCES["write_from"].format(count=len(found))
     return said, {"kind": "combine", "items": [item["id"] for item in found]}
+
+
+def ideas_answer() -> Tuple[str, Optional[tuple]]:
+    """
+    /ideas (phase 5): today's batch of From your record, read and never
+    built (a SELECT; no model is asked, here or in the poll loop). With the
+    words switch on, each shown card that carries the creator's own words,
+    numbered, with its Write up button, and how many more carry none to
+    send; off, how many ideas are ready. With no batch today, that it is not
+    made yet and how it is made. Returns the answer and its buttons.
+    """
+    try:
+        from . import record_cards, record_daily
+    except ImportError:
+        import record_cards
+        import record_daily
+    day = record_daily.local_today()
+    conn = get_db()
+    try:
+        run = conn.execute("SELECT local_ok FROM daily_run WHERE day = ?", (day.isoformat(),)).fetchone()
+        cards = record_cards.read_batch(conn, day) if run and run["local_ok"] else None
+    finally:
+        conn.close()
+    if cards is None:
+        return SENTENCES["ideas_not_yet"], None
+    shown = [c for c in cards if c["slot"] >= 1 and c["status"] == "shown"]
+    waiting = any(c["slot"] >= 1 and c["status"] == "abstained" and c["kind"] == "model_pending" for c in cards)
+    note = ("\n\n" + IDEAS_MODEL_WAITING) if waiting else ""
+    if not shown:
+        return SENTENCES["ideas_empty"] + note, None
+    if not collection_words_on():
+        said = SENTENCES["ideas_ready_one"] if len(shown) == 1 else SENTENCES["ideas_ready"].format(count=len(shown))
+        return said + note, None
+    writable = [c for c in shown if str((c["payload"] or {}).get("draft_text") or "").strip()
+                and c["kind"] not in ("vote", "follow", "reaction", "saved", "repost")]
+    lines = [IDEAS_HEAD, ""]
+    for number, card in enumerate(writable, 1):
+        payload = card["payload"] or {}
+        words = " ".join(str(payload.get("excerpt") or "").split()) or _first_line(payload.get("draft_text"))
+        lines.append(f"{number}. {payload.get('block_label') or 'From your record'}: {words}")
+    more = len(shown) - len(writable)
+    if more:
+        lines += ["", IDEAS_MORE_ONE if more == 1 else IDEAS_MORE.format(count=more)]
+    text = "\n".join(lines) + note
+    if not writable:
+        return text, None
+    numbers = [str(n) for n in range(1, len(writable) + 1)]
+    return text, ("ideas", [numbers[i:i + 5] for i in range(0, len(numbers), 5)],
+                  {"cards": [{"day": day.isoformat(), "card": card["card_id"]} for card in writable]})
 
 
 def plan_listing() -> str:
@@ -1819,6 +1885,8 @@ TOUR_STEPS = {
     "reminder": {"say": ('Under "Saved to your collection.", press Remind me and pick a moment. I bring the item back '
                          "then, with Write it up and Not now, and Your collection lists the reminder with Cancel."),
                  "needs": ()},
+    "card": {"say": ("Send /ideas for today's ideas from your record, each with Write up: press one and I write a "
+                     "draft from it in your studio."), "needs": ("provider", "words")},
     "recall": {"say": ("Send /recall and a word, such as /recall pricing. I say how many items hold it, with Write one "
                        "post from these; with the words switch on their first lines come too, each with Write up."),
                "needs": ()},
@@ -1829,7 +1897,7 @@ TOUR_PARTS = (
     ("send things in", ("saved", "link", "file")),
     ("make something of it", ("written", "reshaped", "several")),
     ("build it up and keep it", ("added", "edited", "remembered")),
-    ("plan it and come back to it", ("planned", "reminder", "recall")),
+    ("plan it and come back to it", ("planned", "reminder", "card", "recall")),
 )
 # The steps that leave something in the studio, as the panel lists them;
 # each is seen working once the profile holds what it leaves.
@@ -1845,6 +1913,7 @@ TOUR_EVIDENCE = {
     "remembered": "A thing to remember kept from your phone",
     "planned": "A draft planned from your phone",
     "reminder": "A reminder asked for on an item",
+    "card": "A draft written from one of today's ideas",
 }
 TOUR_NEEDS_PROVIDER = ("This needs an AI provider, and none is connected yet: connect yours on the Composer's Prompt "
                        "tab in your studio.")
@@ -1902,6 +1971,7 @@ def tour_seen(conn) -> Dict[str, bool]:
         # A plan from the phone is kept on its draft until Undo takes it off.
         "planned": any(isinstance(m.get("planned"), dict) for m in made),
         "reminder": held("SELECT 1 FROM item_reminders LIMIT 1"),
+        "card": any(m.get("card") for m in phone),
     }
 
 
@@ -2502,6 +2572,9 @@ def run_job(job: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, 
         elif job.get("kind") == "combine":
             # /write (phase 4): the matching items, through Combine.
             result = writing.make_post(job.get("items") or [], via="telegram")
+        elif job.get("kind") == "card":
+            # One of today's ideas (phase 5).
+            result = writing.write_from_card(job.get("day"), job.get("card"), via="telegram")
         else:
             result = writing.make_post([job.get("item")], angle=job.get("angle"), form=job.get("form"),
                                        via="telegram")

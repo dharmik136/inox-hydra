@@ -45,6 +45,7 @@ Strict Invariants:
 import hashlib
 import json
 import re
+import uuid
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 try:
@@ -625,6 +626,112 @@ def angles(item_id: Any) -> Dict[str, Any]:
         conn.close()
     changes.publish("collection")
     return {"status": "success", "angles": offered, "asked": prefs["angles"], "item": item["id"]}
+
+
+# ---------------------------------------------------------------------------
+# Write it up, under one of the day's ideas on the phone (phase 5, item 5)
+# ---------------------------------------------------------------------------
+
+def _card(conn, day: str, card_id: str) -> Dict[str, Any]:
+    row = conn.execute("SELECT status, payload_json FROM daily_view WHERE day = ? AND card_id = ?",
+                       (str(day or ""), str(card_id or ""))).fetchone()
+    if row is None:
+        raise LookupError("That idea is no longer in From your record.")
+    if row["status"] != "shown":
+        raise Refused("Only an idea that is shown can be written up.")
+    try:
+        payload = json.loads(row["payload_json"] or "{}")
+    except (TypeError, ValueError):
+        payload = {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _card_used(conn, day: str, card_id: str, post_id: str, payload: Dict[str, Any]) -> None:
+    """The card a draft was written from: marked used, as the studio's Draft from this marks it."""
+    now = collection._now()
+    conn.execute("INSERT OR IGNORE INTO card_marks (day, card_id, mark, at, post_id) VALUES (?, ?, 'used', ?, ?)",
+                 (day, card_id, now, post_id))
+    if payload.get("ask_id"):
+        conn.execute("UPDATE asks SET last_used_at = ? WHERE id = ?", (now, payload["ask_id"]))
+
+
+def write_from_card(day: str, card_id: str, via: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Write it up under one of the day's ideas (phase 5): a draft from that
+    card's words (the creator's own post, opener, ask or comment, or their
+    model's idea) through their own provider, as their preferences say, kept
+    only if it passes the check every draft passes. The draft carries the
+    card it came from (origin_card_id, origin_day, and its made_with), and
+    the card is marked used. A card drawn from the collection writes from
+    its item, which is then used, as Write it up does. Returns what
+    make_post returns.
+    """
+    conn = get_db()
+    try:
+        payload = _card(conn, day, card_id)
+        item_id = payload.get("item_id")
+        item = collection.get(conn, int(item_id)) if str(item_id or "").isdigit() else None
+    finally:
+        conn.close()
+    title = str(payload.get("title") or "") or None
+    if item is not None and (item.get("text") or "").strip():
+        result = make_post([item["id"]], via=via)
+        if result.get("status") == "drafted":
+            conn = get_db()
+            try:
+                made = json.loads(conn.execute("SELECT made_with FROM posts WHERE id = ?",
+                                               (result["id"],)).fetchone()[0] or "{}")
+                made.update({"card": card_id, "day": day, "card_title": title})
+                with conn:
+                    conn.execute("UPDATE posts SET origin_card_id = ?, origin_day = ?, made_with = ? WHERE id = ?",
+                                 (card_id, day, json.dumps(made), result["id"]))
+                    _card_used(conn, day, card_id, result["id"], payload)
+            finally:
+                conn.close()
+            changes.publish("ideas")
+        return result
+    note = str(payload.get("draft_text") or payload.get("excerpt") or "").strip()
+    if not note:
+        raise Refused("This idea has no words of yours to write from.")
+    conn = get_db()
+    try:
+        config = model_gateway.get_current_ai_config()
+        if not config.is_configured:
+            return {"status": "no_provider", "said": NO_PROVIDER}
+        prefs = preferences(conn)
+        facts = memory_for(conn, prefs)
+        schema = {"type": "object", "additionalProperties": False, "required": ["draft"],
+                  "properties": {"draft": {"type": "string"}}}
+        answer = _ask(config, _post_request([{"text": note}], None, prefs, None, facts), _system(prefs), schema,
+                      "record_card_post", max_tokens=max(400, prefs["length_words"] * 3))
+        if answer is None:
+            return {"status": "no_provider", "said": NO_PROVIDER}
+        data = answer.get("data") if isinstance(answer.get("data"), dict) else {}
+        draft = clean_text_formatting(str(data.get("draft") or "")).strip()
+        if not draft:
+            raise ProviderError(f"{config.provider} ({config.model}) answered, but not with a draft the studio "
+                                "could read. Nothing was changed.")
+        problem = check(draft, [note] + [f["text"] for f in facts], conn)
+        if problem:
+            return {"status": "refused", "said": _refusal(problem)}
+        made_with = {"items": [], "card": card_id, "day": day, "card_title": title,
+                     "remembered": [f["id"] for f in facts], "angle": False, "provider": config.provider,
+                     "model": config.model, "at": collection._now()}
+        if via:
+            made_with["via"] = via
+        post_id = f"post_{uuid.uuid4().hex[:10]}"
+        with conn:
+            conn.execute("INSERT INTO posts (id, content, media_urls, status, tags, origin_card_id, origin_day, "
+                         "made_with) VALUES (?, ?, '[]', 'draft', '[]', ?, ?, ?)",
+                         (post_id, draft[:5000], card_id, day, json.dumps(made_with)))
+            _card_used(conn, day, card_id, post_id, payload)
+            remembered.mark_used(conn, [f["id"] for f in facts])
+    finally:
+        conn.close()
+    changes.publish("collection")
+    changes.publish("ideas")
+    return {"status": "drafted", "id": post_id, "content": draft[:5000], "items": [], "provider": config.provider,
+            "model": config.model}
 
 
 # ---------------------------------------------------------------------------
