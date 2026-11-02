@@ -22,10 +22,11 @@ Strict Invariants:
 - Zero em-dashes.
 """
 
+import json
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -203,12 +204,21 @@ def _morning_on(bot, words=True, **change):
     payload.update(change)
     if words:
         _words_on(bot)
-    held, telegram_bot.local_now = telegram_bot.local_now, (lambda: now.replace(hour=6))
-    try:
-        res = bot["client"].post("/api/v1/ingress/options", json=payload)
-    finally:
-        telegram_bot.local_now = held
+    res = bot["client"].post("/api/v1/ingress/options", json=payload)
     assert res.status_code == 200, res.text
+    # Turned on at 06:00 today, before the morning's hour, written on the row
+    # itself. Moving the clock to 06:00 while the bot's worker was reading it
+    # once let the worker find quiet hours over at 06:00 and the idea due at
+    # 10:30 in one pass (macOS on CI).
+    conn = get_db()
+    try:
+        with conn:
+            held = json.loads(conn.execute("SELECT value FROM settings WHERE key = ?",
+                                           (telegram_bot.MORNING_KEY,)).fetchone()["value"])
+            held["since"] = now.replace(hour=6).astimezone(timezone.utc).isoformat()
+            conn.execute("UPDATE settings SET value = ? WHERE key = ?", (json.dumps(held), telegram_bot.MORNING_KEY))
+    finally:
+        conn.close()
 
 
 def _mornings(bot):
