@@ -206,8 +206,10 @@ def test_the_age_is_the_creators(bringing):
     _back_on(bot)
     _settle(bot)
     assert _backs(bot) == [], "an item younger than the age came back"
-    _forget_today()
+    # The new age first, the day forgotten after: a turn of the worker between the two would otherwise mark the
+    # day told again under the old age, and nothing would come.
     _back_on(bot, back_older=7)
+    _forget_today()
     assert _until(lambda: len(_backs(bot)) == 1), _texts(bot)
     assert _backs(bot)[0]["text"] == _said_for(ids[0])
 
