@@ -221,3 +221,88 @@ The real service: everything here runs against the fake. In particular, on the r
 ### Suite
 
 As CI runs it, at the end, on 8f6273c: the interface built, then `pytest tests studio/tests -q -rs`: 4,577 passed, 0 failed, 19 skipped, in 21 minutes 46 seconds. 4,596 tests collected: 2.13.0's 4,512 and the 84 this phase added (78 in nine new files, 6 in the checklist's test). Each skip names a Windows or macOS primitive, a workstation's browser, this machine's autostart, or a missing yaml module. Also: flake8 with CI's selection, 0; `tools/sync_version.py --check`, in sync at 2.13.0; `tools/ui_audit.py` on a fresh install, 68 screens, 0 with blocking findings. Before each commit, the new test files ran three times in a row, and the Telegram, collection, phone, ingress and memory suites ran whole after items 1 and 2 (425 and 682 tests; the failures they found were the earlier phases' button lists this phase changed, listed above). After the suite, this record's commit added the seventh checklist check; the checklist and docs suites then passed, 121 tests.
+
+## Phase 6
+
+The record of the sixth phase, asked for on 2026-11-03 ("continue", after phase 5 shipped) and written down before its code in [the phase 6 PRD](bot-phase6.md). Branch `qc4/bot-phase6`, from `6c1bba2` (2.14.0, schema 43). A chore and five items in the brief's order, and a Composer fix found while reading for the PRD, each with a failing test first, the code, one guard falsified, and one commit. No independent review. The version, the CHANGELOG and the privacy policy's "Last updated" line stay as they are: the release does those.
+
+### How it is tested
+
+As phase 5 left it: the fake Bot API (`tests/telegram_fake.py`) and the fake provider (`tests/ai_fake.py`), both on loopback, the studio's own worker driven end to end. Nothing new was needed in either. Three habits from CI's last rounds were kept throughout: the bot's clock (`telegram_bot.local_now`) is held before the worker starts and never moved while it runs (a setting's `since` is written on its row, and quiet hours are changed by their setting, not the clock); a button's answer is read only after waiting for it; and a reply to one of the bot's messages is pushed only once the bot has kept Telegram's id for that message, which it does a moment after the phone shows it. Browser tests wait for a settled page and run the shared axe helper, which stills transitions, in both themes. Nothing reaches the network.
+
+### Items
+
+Census in `tests/test_endpoint_reachability.py` as total paths / reached by the interface / unreachable: 242/194/48 throughout, since the one route this phase needed is a parameter on an existing path.
+
+| Item | Commit | What the creator now sees | Test first | How the guard was falsified | Suite at the commit |
+| --- | --- | --- | --- | --- | --- |
+| The PRD | 840f8b8 | Nothing yet: each item's build, place, storage, what may leave and under which switch, preferences and what was decided against; the evidence read in the code first; Telegram's rules quoted again from the Bot API page; no migration | | | The docs suite, 56 passed |
+| 0. Any set of test files runs together | 7ae1889 | Nothing: a hand-picked run of test files no longer errors on `library_bundle` | `tests/test_any_test_files_run_together.py` (2: the privacy page's renderer test, and `tests/test_licensing.py`, each run before a bot test in a process of its own) | The conftest's binding taken out: the licensing pair failed again | The files that touch `library_bundle`, 107 passed |
+| Found while reading: the Composer opens a draft planned with `Schedule` | 6f3a199 | A draft saved and planned with `Schedule tomorrow 09:00:` from the phone, or unplanned with Undo, opens from the Queue's **Edit text** and from Your collection's **Open it**; until now the page went blank | `tests/test_composer_reads_any_draft_record_ui.py` (2, axe in both themes) | The note reading `made.items` as it was: both failed with the page error | Every test that reads the Composer's note, 32 passed |
+| 1. It connects to, in real time | 37eb3ca | When something with words is saved, "Saved to your collection." also says how many other unused items share at least two of its meaningful words or tags ("It shares words with 3 other unused items in your collection."), with **Write one post from these**: the item and the ones it connects to, read again at the press, through Combine. Their first lines only with the words switch on. Your collection says on each new item what it connects to and the words they share, with **Open the group** and **Combine these 4 into one post**. Matched on the computer | `tests/test_telegram_bot_connected.py` (13), `tests/test_telegram_bot_connected_ui.py` (3, axe in both themes) | The pool of connections taking used and set-aside items: three failed | 575 passed |
+| 2. Bring back an unused idea | 9b4c60f | Off by default: on the creator's days and hour, the oldest unused item with words older than their age comes back, never one set aside, used or with a reminder waiting, never the one brought back last nor the one the morning idea offered last, with **Write it up**, **Remind me** and **Not now**; its kind and age, and its first line only with the words switch on. Once a day, after quiet hours; the panel says "NEXT ONE BROUGHT BACK:" | `tests/test_telegram_bot_bring_back.py` (15), `tests/test_telegram_bot_bring_back_ui.py` (1, axe in both themes) | "The one brought back last" taken out of what is passed over: the never-twice test failed (on the first try it passed, since marking the item offered covered it alone; the test now has the morning idea offer another item in between) | 840 passed and 1 failed, below; fixed in the commit, the panel's browser tests then 21 passed |
+| 3. See what you have from the phone | df76da6 | `/recall` alone lists the newest unused items (first lines and **Write up** only with the words switch on; off, how many and where). A new `/remembered` lists the things the studio remembers, each with **Forget**, their words only with the words switch on. The menu gains `/remembered`; a bot whose menu 2.14.0 registered is told once of it alone | `tests/test_telegram_bot_lists.py` (13: 12 failed before the code) | `COMMANDS_2_14` left out of `EARLIER_COMMANDS`: the frozen-list test and the fingerprint-only notice failed | 619 passed |
+| 4. Reply to a draft with what to change | b331361 | A plain reply to the bot's message about a draft offers **Rewrite it with what you said** and **Keep it as a note** instead of filing a note. The rewrite uses the creator's words as the instruction through their provider, keeps the replaced text for **Undo** ("before your reply" in the Composer), and sends its first line only with the words switch on; with no provider the offer says so. A draft planned from the phone may be rewritten and keeps its plan | `tests/test_telegram_bot_draft_reply.py` (12; the first 11, written before the code, all failed), `tests/test_telegram_bot_draft_reply_ui.py` (2, axe in both themes) | Any queued post taken as rewritable: "a post queued at the desk or published is not rewritten" failed | 636 passed (the series file deselected) |
+| 5. A series from a group | 8cc11cd | **Write it as a series** under `/recall`'s answer for a word two or more unused items hold, and **Write a series of 3 from these** in Your collection's group: the creator's number of drafts in one request, each checked, all kept or none, each its own draft recording its part. **Plan the series** puts the parts into the Queue's next open slots, in order, the Queue's cooldown apart, through Plan it's path, with **Undo**; too few slots plans nothing. Nothing is posted | `tests/test_telegram_bot_series.py` (9: 8 failed before the code), `tests/test_telegram_bot_series_ui.py` (2, axe in both themes) | A series keeping the parts that pass the check when one does not: "one part with a figure not sent keeps none" failed | 674 passed, with the Queue's own suites and the census |
+
+"Suite at the commit" is the Telegram bot's, the collection's, the phone's, the ingress's and memory's suites, with phase 4's pairing and phone-settings files, and the record or Queue suites where an item touched them, run before that commit.
+
+Each item's help, privacy policy (with `release/privacy.html` rebuilt by `tools/build_privacy_page.py`) and checklist lines were written in its own commit, in a "Phase 6 on your phone" section of `docs/help/test-your-telegram-bot.md`; the checklist test quotes each new sentence from the code (six new checks).
+
+### Migration
+
+None: the schema stays 43. Every new preference is a settings row or a field of the writing preferences' row; which item was brought back last is a settings row; a group is worked out when asked; a reply's words wait with their message's buttons; a series is a key on each part's `made_with`.
+
+### Preferences added
+
+| Preference | Default | Set in | Read by |
+| --- | --- | --- | --- |
+| Words two items share to be connected (`connect_shared`) | 2, from 1 to 5 | Brand, Writing | the bot's saved answer and its press, Your collection |
+| Connected items offered with one (`connect_offer`) | 3, from 1 to 9, never more than Most items in one draft with the item | Brand, Writing | the same |
+| Say what something new connects to (`telegram_connect`) | on: a line and one button on an answer already sent | the Telegram panel | the bot's saved answer |
+| Bring back an unused idea (`telegram_bring_back`) | off; Fridays at 16:00; older than 14 days (3, 7, 14, 21, 30, 60 or 90) | the Telegram panel | the bot, between polls |
+| What a reply to a draft does (`telegram_draft_reply`) | offer to rewrite the draft with it | the Telegram panel | a reply to the bot's message about a draft |
+| Drafts in a series (`series_parts`) | 3, from 2 to 5 | Brand, Writing | Write it as a series, on the bot and in Your collection |
+
+"The bot lists at most" (phase 5) is now read by `/recall` alone and `/remembered` too. Each control shows its default beside it; each is tested: changing it changes what the bot or the box does, a wrong value is refused with a sentence and nothing is saved, and a fresh profile gets the default.
+
+### What else is kept
+
+- `telegram_brought_back`: which item an unused idea brought back was last, and when, written under the worker's check lock for the bot that told it, removed with the bot and by Delete everything. The item it brought back is marked offered (`offered_at`), as the morning idea marks one.
+- With a message's buttons: the ids `/recall` alone and `/remembered` listed; under the offer a reply to a draft is answered with, that reply's words, dropped from the record once one of its buttons is pressed; under a series, its parts and, once planned, their times.
+- On a draft's `made_with`: `connected` for a draft written from what an idea connects to, `series` (its id, its part, how many) for each part of a series, and a rewrite's earlier text said `by` "your reply" when a reply asked for it.
+
+### Changed in earlier phases' tests, and why
+
+- `tests/test_privacy_page_is_the_policy.py` (cycle 2) loads the renderer by its file and no longer puts `tools/` on the path (item 0).
+- `tests/test_collection_writing_ui.py` (phase 3) names the morning idea's Saturday exactly: Bring back an unused idea has its own days, and "Sat" also matched its "on Saturday" box (item 2).
+- `tests/test_resurfacing.py` (phase 3): `/recall` alone now lists the newest unused items, where it said how to send a word (item 3).
+- `tests/test_telegram_bot_checklist.py` (phase 5): the upgrade notice a 2.13.0 bot was told is read from 2.14.0's own list, `COMMANDS_2_14`, since a 2.13.0 bot updated now is told of `/remembered` too (item 3).
+- `tests/test_telegram_bot_plan_ui.py` (phase 5): "The bot lists at most" now says it reads `/remembered` too (item 3).
+- `tests/test_telegram_bot_recall.py` (phase 5): `/recall`'s answer carries **Write it as a series** while two or more unused items hold the word (item 5).
+
+### Found while building, and fixed
+
+- The Composer's crash on a draft planned with `Schedule` (2.14.0, phase 5 item 6), above: a fix of its own, with a browser test, before item 1.
+- Item 1's switch description named the words switch, "The bot may send me what it writes from my collection", word for word, and so did item 2's first draft; a phase 3 browser test finds that switch by its name, and found three. Both now say "the switch that lets the bot send what it writes", as the morning idea's always did. Fixed in item 2's commit, which is where the run that found it ran.
+- The PRD counted 2.14.0's commands as eleven; there are thirteen. Corrected in item 3's commit.
+- Item 2's age test forgot today's told mark before it saved the new age, so a turn of the worker between the two could mark the day told again under the old age; it never failed here, and the order was found by reading. The new age is saved first now (20381be).
+
+### Decided against, while building
+
+- A connection line under the answer to a reply that added to an item, or to an edit: those answers are about the words just added; Your collection shows the item's connections.
+- Ticking a group's items for Combine when it is opened: a creator's own ticks would be overwritten, so the group has a button of its own.
+- Changing the Composer's From your collection to read the new preferences: it ranks by shared words and shows three, as phase 3 chose; named here as a candidate for later.
+- Listing the morning idea in the panel's seen-working list: a day it is marked told does not prove an idea went.
+- Write one post from these under `/recall` alone: the newest items share nothing but their age. An Undo under Forget: the list showed its words, and `/remember` keeps it again.
+- Checking a draft's state when the rewrite is offered: the press reads it and says what became of it, so the offer stays one message and the reply's words wait with it. Following an edit of the reply into the offer. Offering the rewrite under "Saved as a draft" (the creator's own words, planned at the desk: phase 5's decision kept).
+- Rewriting a due post: once due it is the moment to post, at the desk.
+- A series from the saved answer itself (its buttons are already many), with the creator's own times (two on one day break the Queue's spacing rule), or keeping the parts that pass the check when one does not.
+
+### What remains unverified
+
+The real service: everything here runs against the fake. In particular, on the real Bot API: that a reply to the bot's own message carries `reply_to_message` as Telegram documents (phase 5 relied on it for `/plan`; the rewrite offer relies on it for every reply); how a saved answer with a connection line and five rows of buttons reads on a phone; that an idea brought back arrives at the creator's hour on the owner's machine (the worker looks once a minute; quiet hours hold it); and that the owner's own 2.14.0 menu record is recognised (tested against 2.14.0's list word for word, by its names and by its fingerprint). The owner's checklist covers each, in "Phase 6 on your phone".
+
+### Suite
+
+As CI runs it, at the end, on 8cc11cd with this record: the interface built, then `pytest tests studio/tests -q -rs`: 4,661 passed, 0 failed, 16 skipped, in 23 minutes 24 seconds. 4,677 tests collected: 2.14.0's 4,597 (counted again from its tag) and the 80 this phase added (74 in eleven new files, 6 in the checklist's test). Each skip names a Windows or macOS primitive, a workstation's browser, this machine's autostart, or the lead enrichment the interface does not surface; with pyyaml installed from the requirements, no yaml skip. Also: flake8 with CI's selection, 0; `tools/sync_version.py --check`, in sync at 2.14.0; `tools/ui_audit.py` on a fresh install, run against a sandbox studio in the scratchpad whose browser launcher starts nothing and whose browser contexts block service workers, 68 screens, 0 with blocking findings. Before each commit, the new test files ran three times in a row, and the Telegram, collection, phone, ingress and memory suites ran whole, with the pairing and phone-settings files and the record or Queue suites where an item touched them: 575, 840, 619, 636 and 674 tests at items 1 to 5 (the one failure, at item 2, is above). After the suite, this record's commit added a few words to the checklist's first phase 6 step (a collection that holds other notes about pricing says how many); the checklist and docs suites then passed.
