@@ -9,6 +9,7 @@ import {
   removeCollectionItem,
   setCollectionStatus,
   writeFromCollection,
+  writeSeriesFromCollection,
   type CollectionItem,
   type CollectionKind,
   type CollectionMedia,
@@ -132,6 +133,29 @@ export function CollectionPanel({
     setWritingNow(ids.length > 1 ? `Writing one post from ${ids.length} items with your provider.` : "Writing it up with your provider.");
     try {
       const made = await writeFromCollection(ids, angle);
+      if (made.status === "drafted") {
+        setChosen([]);
+        setGroup(null);
+        await load();
+        onOpenDraft?.({ id: made.id, content: made.content });
+      } else {
+        setNote({ text: made.said, error: made.status === "refused" });
+      }
+    } catch (error) {
+      setNote({ text: error instanceof Error ? error.message : "Nothing was written.", error: true });
+    } finally {
+      setBusy(null);
+      setWritingNow(null);
+    }
+  }
+
+  /** Write it as a series (phase 6): one draft a part, written from the group; the Composer opens the first. */
+  async function writeSeries(ids: number[]) {
+    setBusy(-1);
+    setNote(null);
+    setWritingNow(`Writing a series from ${ids.length} items with your provider.`);
+    try {
+      const made = await writeSeriesFromCollection(ids);
       if (made.status === "drafted") {
         setChosen([]);
         setGroup(null);
@@ -282,6 +306,16 @@ export function CollectionPanel({
                 className="rounded-md border border-edge px-2 py-0.5 hover:text-ink-primary disabled:opacity-40"
               >
                 Combine these {Math.min(grouped.length, combineAtMost)} into one post
+              </button>
+            )}
+            {grouped.length > 1 && described && (
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => void writeSeries(grouped.slice(0, combineAtMost).map((item) => item.id))}
+                className="rounded-md border border-edge px-2 py-0.5 hover:text-ink-primary disabled:opacity-40"
+              >
+                Write a series of {described.values.series_parts} from these
               </button>
             )}
             <button type="button" onClick={() => setGroup(null)} className="underline underline-offset-2 hover:text-ink-primary">

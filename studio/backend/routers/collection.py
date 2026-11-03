@@ -42,6 +42,7 @@ class UsedPayload(BaseModel):
 class WritePayload(BaseModel):
     items: List[int] = Field(..., description="One item for Make a post, two or more to Combine")
     angle: Optional[str] = Field(None, max_length=400, description="An opening line Angles offered, to start from")
+    series: bool = Field(False, description="Write the items as a series of drafts, as Brand's Writing view sets it")
 
 
 def _answer(work):
@@ -105,6 +106,9 @@ def post_collection_write(payload: WritePayload):
     the creator's own provider, as their writing preferences say. With no
     provider it says so and writes nothing; a provider that fails says why.
     """
+    if payload.series:
+        # A series from a group (phase 6): one draft a part, the first opened.
+        return _answer(lambda: writing.make_series(payload.items))
     return _answer(lambda: writing.make_post(payload.items, payload.angle))
 
 

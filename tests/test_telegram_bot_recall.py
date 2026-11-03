@@ -37,6 +37,8 @@ from test_telegram_bot_replies import _saved, _texts  # noqa: E402
 
 SAID = telegram_bot.SENTENCES
 COMBINE = "Write one post from these"
+# Phase 6, item 5: a series from them, offered while two or more unused items hold the word.
+SERIES = "Write it as a series"
 DRAFT = "Pricing is a design decision.\n\nWrite the price page first."
 
 
@@ -118,7 +120,7 @@ def test_with_the_words_on_it_lists_first_lines_each_with_write_up_and_one_post_
     assert text.startswith(SAID["recall"].format(count=3))
     assert "1. pricing pages lie" in text and "2. pricing an old idea" in text and "3. pricing is a design decision" in text
     assert "second line" not in text and "hiring" not in text
-    assert _labels(bot, message) == ["Write up 1", "Write up 2", "Write up 3", COMBINE]
+    assert _labels(bot, message) == ["Write up 1", "Write up 2", "Write up 3", COMBINE, SERIES]
 
 
 def test_more_than_the_list_shows_says_the_newest_and_the_list_is_a_preference(bot, provider):
@@ -132,7 +134,7 @@ def test_more_than_the_list_shows_says_the_newest_and_the_list_is_a_preference(b
     message = _recalled(bot)
     text = bot["fake"].message(message)["text"]
     assert "The newest 2:" in text and "2. pricing note 5" in text and "pricing note 4" not in text
-    assert _labels(bot, message) == ["Write up 1", "Write up 2", COMBINE]
+    assert _labels(bot, message) == ["Write up 1", "Write up 2", COMBINE, SERIES]
 
 
 def test_write_up_writes_that_item_and_the_other_buttons_stay(bot, provider):
@@ -145,7 +147,7 @@ def test_write_up_writes_that_item_and_the_other_buttons_stay(bot, provider):
     assert _until(lambda: [a["text"] for a in bot["fake"].answered][-1:] == [SAID["writing"]]), [a["text"] for a in bot["fake"].answered][-3:]
     assert "pricing is a design decision" in provider.sent() and "pricing pages lie" not in provider.sent()
     assert _status(ids) == ["used", "new"]
-    assert _labels(bot, message) == ["Write up 1", COMBINE], "the pressed button stayed, or the others went"
+    assert _labels(bot, message) == ["Write up 1", COMBINE, SERIES], "the pressed button stayed, or the others went"
     assert _drafts()[-1]["via"] == "telegram"
 
 
@@ -170,7 +172,7 @@ def test_with_the_words_off_the_count_and_one_post_from_these_whose_draft_lands_
     _seed("pricing is a design decision", "pricing pages lie")
     message = _recalled(bot)
     assert bot["fake"].message(message)["text"] == SAID["recall"].format(count=2)
-    assert _labels(bot, message) == [COMBINE]
+    assert _labels(bot, message) == [COMBINE, SERIES]
     bot["fake"].press_button(COMBINE, OWNER, message_id=message)
     assert _until(lambda: SAID["draft_ready"] in _texts(bot)), _texts(bot)
     conn = get_db()

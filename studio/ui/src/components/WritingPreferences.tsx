@@ -38,6 +38,7 @@ const LABELS: Record<PreferenceField, string> = {
   combine_at_most: "Most items in one draft",
   connect_shared: "Words two items share to be connected",
   connect_offer: "Connected items offered with one",
+  series_parts: "Drafts in a series",
 };
 
 /** The preferences this view edits with its Save; the others are set beside their own feature. */
@@ -55,6 +56,7 @@ const EDITED_HERE: PreferenceField[] = [
   "combine_at_most",
   "connect_shared",
   "connect_offer",
+  "series_parts",
   "reshapes",
 ];
 
@@ -100,6 +102,8 @@ export function preferenceWords(field: PreferenceField, values: WritingPreferenc
       return values.connect_shared === 1 ? "1 word" : `${values.connect_shared} words`;
     case "connect_offer":
       return values.connect_offer === 1 ? "1 item" : `${values.connect_offer} items`;
+    case "series_parts":
+      return `${values.series_parts} drafts`;
   }
 }
 
@@ -338,6 +342,23 @@ export function WritingPreferencesPanel({ children }: { children?: ReactNode } =
             </select>
             <span className="text-[11px] text-ink-secondary">
               listed with it, and written with it by Write one post from these; never more than Most items in one draft
+            </span>
+          </>,
+        )}
+        {row(
+          "series_parts",
+          "writing-series",
+          <>
+            <select id="writing-series" className={SELECT} value={draft.series_parts} disabled={busy}
+              onChange={(event) => set("series_parts", Number(event.target.value))}>
+              {choices.series_parts.map((n) => (
+                <option key={n} value={n}>
+                  {n} drafts
+                </option>
+              ))}
+            </select>
+            <span className="text-[11px] text-ink-secondary">
+              written by Write it as a series, each its own draft, from a group in your collection or /recall on your bot
             </span>
           </>,
         )}

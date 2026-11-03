@@ -25,6 +25,7 @@ in the studio and on the bot:
                 share to be connected                   (phase 6)
   connect_offer  how many connected items are offered   the same, and Write one post from these
                 with one
+  series_parts  how many drafts a series is              Write it as a series (phase 6)
 
 The defaults keep what Command said until now (its tone, its paragraphs,
 its first-line rule, its ending, its four phrases), so a fresh profile
@@ -123,6 +124,10 @@ CONNECT_SHARED = 2
 CONNECT_SHARED_CHOICES = tuple(range(1, 6))
 CONNECT_OFFER = 3
 CONNECT_OFFER_CHOICES = tuple(range(1, 10))
+# Phase 6, item 5: how many drafts Write it as a series writes. Three is the
+# shortest series with a beginning, a middle and an end.
+SERIES_PARTS = 3
+SERIES_CHOICES = (2, 3, 4, 5)
 
 DEFAULTS: Dict[str, Any] = {
     "length_words": 150,
@@ -152,6 +157,8 @@ DEFAULTS: Dict[str, Any] = {
     # one: the bot's saved answer and Your collection (phase 6).
     "connect_shared": CONNECT_SHARED,
     "connect_offer": CONNECT_OFFER,
+    # How many drafts a series from a group is (phase 6).
+    "series_parts": SERIES_PARTS,
 }
 SOURCES = ("collection", "posts", "asks")
 MEMORY = ("all", "chosen", "off")
@@ -213,6 +220,8 @@ def _valid(field: str, value: Any) -> bool:
         return value in CONNECT_SHARED_CHOICES and not isinstance(value, bool)
     if field == "connect_offer":
         return value in CONNECT_OFFER_CHOICES and not isinstance(value, bool)
+    if field == "series_parts":
+        return value in SERIES_CHOICES and not isinstance(value, bool)
     if field == "reshapes":
         if not isinstance(value, list) or len(value) > RESHAPES_MAX:
             return False
@@ -301,6 +310,8 @@ _REFUSALS = {
                        f"{CONNECT_SHARED_CHOICES[-1]} words. Nothing was saved."),
     "connect_offer": (f"With one item, {CONNECT_OFFER_CHOICES[0]} to {CONNECT_OFFER_CHOICES[-1]} of the items it "
                       "connects to are offered. Nothing was saved."),
+    "series_parts": (f"A series is {', '.join(str(n) for n in SERIES_CHOICES[:-1])} or {SERIES_CHOICES[-1]} drafts. "
+                     "Nothing was saved."),
 }
 
 
@@ -347,6 +358,7 @@ def described() -> Dict[str, Any]:
             "combine_at_most": list(COMBINE_CHOICES),
             "connect_shared": list(CONNECT_SHARED_CHOICES),
             "connect_offer": list(CONNECT_OFFER_CHOICES),
+            "series_parts": list(SERIES_CHOICES),
         },
         # Each choice as the creator reads it, beside the feature it shapes.
         "labels": {
@@ -627,6 +639,78 @@ def make_post(item_ids: Iterable[Any], angle: Optional[str] = None, form: Option
     changes.publish("collection")
     return {"status": "drafted", "id": post_id, "content": draft, "items": [item["id"] for item in items],
             "provider": config.provider, "model": config.model}
+
+
+def _series_request(items: List[Dict[str, Any]], parts: int, prefs: Dict[str, Any],
+                    facts: Optional[List[Dict[str, Any]]] = None) -> str:
+    w = words_for(prefs)
+    lines = [_notes(items), "",
+             f"WRITE: a series of {parts} posts from these notes, in order. Each is a post of its own that stands alone, "
+             f"{w['length_words'].lower()}, and leads to the next; together they build one idea. End each with "
+             f"{w['ending']}."]
+    return "\n".join(lines) + remembered.block(facts or []) + _voice()
+
+
+def make_series(item_ids: Iterable[Any], via: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Write it as a series (phase 6, item 5): the creator's number of posts as a
+    series from two or more items, in one request to their own provider, as
+    their preferences say. Each part is checked as every draft is, and all are
+    kept or none: a series with a hole is not the series asked for. Each part
+    is a draft of its own, recording the series, its part and how many
+    (made_with's "series"); the items are used, and what they became is the
+    first part. Returns {status: drafted | no_provider | refused, ids, id,
+    content}; a provider that fails raises ProviderError.
+    """
+    conn = get_db()
+    try:
+        items = _materials(conn, item_ids)
+        if len(items) < 2:
+            raise Refused("A series is written from two items or more.")
+        config = model_gateway.get_current_ai_config()
+        if not config.is_configured:
+            return {"status": "no_provider", "said": NO_PROVIDER}
+        prefs = preferences(conn)
+        parts = prefs["series_parts"]
+        facts = memory_for(conn, prefs)
+        schema = {"type": "object", "additionalProperties": False, "required": ["posts"],
+                  "properties": {"posts": {"type": "array", "items": {"type": "string"}}}}
+        answer = _ask(config, _series_request(items, parts, prefs, facts), _system(prefs), schema, "collection_series",
+                      max_tokens=max(800, prefs["length_words"] * 3 * parts))
+        if answer is None:
+            return {"status": "no_provider", "said": NO_PROVIDER}
+        data = answer.get("data") if isinstance(answer.get("data"), dict) else {}
+        posts = [clean_text_formatting(str(p or "")).strip() for p in (data.get("posts") or [])][:parts]
+        if len(posts) < parts or not all(posts):
+            raise ProviderError(f"{config.provider} ({config.model}) answered, but not with {parts} posts the studio "
+                                "could read. Nothing was changed.")
+        sources = [item["text"] for item in items] + [f["text"] for f in facts]
+        for post in posts:
+            problem = check(post, sources, conn)
+            if problem:
+                return {"status": "refused", "said": _refusal(problem)}
+        tags: List[str] = []
+        for item in items:
+            tags += [t for t in item.get("tags") or [] if t not in tags]
+        series = uuid.uuid4().hex[:10]
+        ids: List[str] = []
+        with conn:
+            for part, post in enumerate(posts, 1):
+                post_id = collection.new_draft(conn, post, tags)
+                made_with = {"items": [item["id"] for item in items], "remembered": [f["id"] for f in facts],
+                             "angle": False, "provider": config.provider, "model": config.model,
+                             "at": collection._now(), "series": {"id": series, "part": part, "of": parts}}
+                if via:
+                    made_with["via"] = via
+                conn.execute("UPDATE posts SET made_with = ? WHERE id = ?", (json.dumps(made_with), post_id))
+                ids.append(post_id)
+            collection.mark_used(conn, [item["id"] for item in items], ids[0])
+            remembered.mark_used(conn, [f["id"] for f in facts])
+    finally:
+        conn.close()
+    changes.publish("collection")
+    return {"status": "drafted", "ids": ids, "id": ids[0], "content": posts[0][:5000], "contents": posts,
+            "items": [item["id"] for item in items], "provider": config.provider, "model": config.model}
 
 
 def angles(item_id: Any) -> Dict[str, Any]:

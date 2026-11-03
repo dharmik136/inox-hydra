@@ -3875,6 +3875,13 @@ export async function writeFromCollection(items: number[], angle?: string): Prom
   });
 }
 
+/** Write it as a series (phase 6): the creator's number of drafts from a group, one a part; the first is returned. */
+export async function writeSeriesFromCollection(
+  ids: number[],
+): Promise<{ status: "drafted"; id: string; content: string; ids: string[] } | { status: "no_provider" | "refused"; said: string }> {
+  return call("/api/v1/collection/write", { method: "POST", body: JSON.stringify({ items: ids, series: true }) });
+}
+
 /** Angles: the creator's number of opening lines for a post from one item. */
 export async function anglesForItem(
   id: number,
@@ -3914,6 +3921,8 @@ export interface WritingPreferences {
   connect_shared: number;
   /** How many of the items one connects to are offered with it: listed, and written with it (phase 6). */
   connect_offer: number;
+  /** How many drafts Write it as a series writes (phase 6). */
+  series_parts: number;
 }
 
 /** One rewrite button: its label on the phone, and what it asks the writer for, in the creator's words. */
@@ -3939,6 +3948,7 @@ export interface WritingDescribed {
     ideas: number[];
     connect_shared: number[];
     connect_offer: number[];
+    series_parts: number[];
   };
   labels: {
     emojis: Record<string, string>;
@@ -4001,6 +4011,8 @@ export interface MadeWith {
   card_title?: string | null;
   /** Where it was asked for, when not the studio: "telegram" (phase 5). */
   via?: string;
+  /** A part of a series written from a group (phase 6): the series, this part, and how many. */
+  series?: { id: string; part: number; of: number };
 }
 
 /** A draft's own record of how it was made, or null for one written by hand. */

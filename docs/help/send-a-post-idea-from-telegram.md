@@ -240,6 +240,12 @@ You can type a time too: press and hold the bot's message about the draft ("Draf
 | `/plan` and words it cannot read | I did not read a day and a time there. Send, for example, /plan tomorrow 09:00 or /plan fri 18:30. |
 | `/plan` alone, with nothing queued | Nothing is planned in your Queue. Press Plan it under a draft I wrote, or plan one in your studio. |
 
+### A series from a group
+
+Under `/recall`'s answer for a word that two or more of your unused items hold, **Write it as a series** writes a series of drafts from them through your own AI provider: three unless you change **Drafts in a series** (2 to 5) under **Brand**, then **Writing**, each a post of its own that stands alone and leads to the next. The bot answers "Writing a series from 3 items in your collection.", then "A series of 3 drafts is ready in your studio." (with each part's first line only while **The bot may send me what it writes from my collection** is on) and **Plan the series**. Each part is checked as every draft is, and all are kept or none: if one brings in a figure or a name that is not in your notes, nothing is kept. In **Your collection**, an item's group carries **Write a series of 3 from these** too, and the Composer opens the first part; its **What this draft was written from** says which part of the series it is.
+
+**Plan the series** puts the parts into your Queue's next open slots, in order, each at least the Queue's 12 hours from every other post and after the part before, as **Plan it** plans one draft: nothing is posted, and nothing reaches LinkedIn. The message then says when each part is planned, on your computer's clock, with **Undo**, which makes them drafts again while each is still queued at its time. With too few open slots in the next two weeks, nothing is planned: "Nothing was planned: your Queue has too few open slots in the next two weeks. Add slots to your Queue, or plan each part in your studio.", and **Plan the series** stays. Each part comes back when it is due, as a planned draft does.
+
 ## Today's ideas on your phone
 
 Send `/ideas` and the bot answers with today's ideas from **From your record**, as your studio made them. It only reads them: it never makes the day's ideas itself and never asks your AI provider for one.
@@ -301,7 +307,7 @@ The commands are in Telegram's **/** menu of your chat too: type `/` in the chat
 | `/remember something` | It is kept in your things to remember, with **Undo** under the answer. See [Things to remember](#things-to-remember) |
 | `/forget words` | The one thing to remember that holds those words is removed; with several, nothing is, and the bot says how many |
 | `/recall` | Alone, how many unused items wait in your collection; and the newest of them, each with **Write up**, only with **The bot may send me what it writes from my collection** on. See [Things to remember](#things-to-remember) |
-| `/recall word` | How many items in your collection hold the word, as a word or a tag, with **Write one post from these**; and their first lines, each with **Write up**, only with **The bot may send me what it writes from my collection** on. `/recall #tag` counts the items that carry the tag. See [Things to remember](#things-to-remember) |
+| `/recall word` | How many items in your collection hold the word, as a word or a tag, with **Write one post from these**, and **Write it as a series** while two or more unused items hold it; and their first lines, each with **Write up**, only with **The bot may send me what it writes from my collection** on. `/recall #tag` counts the items that carry the tag. See [Things to remember](#things-to-remember) |
 | `/remembered` | How many things your studio remembers for its writing; and the newest of them, each with **Forget**, only with **The bot may send me what it writes from my collection** on. See [Things to remember](#things-to-remember) |
 | `/write word` or `/write #tag` | One draft from the unused items in your collection that hold the word, or carry the tag, newest first, up to your **Most items in one draft**, through your own AI provider as **Combine** writes: "Writing one post from 3 items in your collection.", then "Draft ready in your studio." Those items are then used. Nothing matching: "Nothing new in your collection holds that word, so nothing was written." |
 | Any other command | "I do not know that command. Send /help to see what I do." |
@@ -388,6 +394,9 @@ These messages carry buttons, which you press in Telegram:
 | `/recall`'s answer | **Write one post from these**, and with the words switch on **Write up 1**, **Write up 2** and so on | One draft from the unused items that hold the word, as `/write` writes it, or that item written up. Each works once; the others stay |
 | `/recall` alone, with the words switch on | **Write up 1**, **Write up 2** and so on | That item written up. Each works once; the others stay |
 | `/remembered`, with the words switch on | **Forget 1**, **Forget 2** and so on | Removes that thing to remember. Each works once; the others stay |
+| `/recall`'s answer, when two or more unused items hold the word | **Write it as a series** | A series of drafts from them. See [A series from a group](#a-series-from-a-group) |
+| "A series of 3 drafts is ready in your studio." | **Plan the series** | Puts the parts into your Queue's next open slots, in order. Nothing is posted |
+| "Planned, on your computer's clock:" | **Undo** | Makes each part a draft again, while it is still queued at its time |
 | "When should your studio bring this post back to you?" | A time, such as "Tomorrow 08:30" | Puts the draft in your Queue at that time. Nothing is posted |
 | "Planned for ..." | **Undo** | Makes it a draft again, while it is still queued at that time |
 | The same, and "Draft ready in your studio. It begins:", with **The bot may send me what it writes from my collection** on | **Send me the whole post**, or **Send me the posts** when several are due | Sends each post as a message of its own, to copy into the LinkedIn app. See [Post from your phone](#post-from-your-phone). The message keeps its other buttons |

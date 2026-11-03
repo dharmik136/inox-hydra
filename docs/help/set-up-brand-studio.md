@@ -72,6 +72,7 @@ How the studio writes for you. Every writing request reads these: **Make a post*
 | Most items in one draft | 10 items (2 to 20), for **Combine** in your collection and `/write` on your bot |
 | Words two items share to be connected | 2 words (1 to 5): what something new connects to, in your collection and on your bot |
 | Connected items offered with one | 3 items (1 to 9): listed with it, and written with it by **Write one post from these**, never more than **Most items in one draft** with it |
+| Drafts in a series | 3 drafts (2 to 5), for **Write it as a series** under `/recall` on your bot and in a group of your collection |
 | Rewrite buttons on your bot | **Shorter** ("Make it about a third shorter. Keep its point, its first line and its voice."), **New opening** ("Write a new first line for it, as the opening line preference says. Keep the rest as it is.") and **Another angle** ("Rewrite it from another angle on the same notes, at about the same length.") |
 
 **Rewrite buttons on your bot** are the buttons under a draft your Telegram bot wrote: each has the label your phone shows, up to 24 characters, and what it asks for, in your words, up to 200. Change either, **Remove** one, or **Add a rewrite button**, up to six; with none, a draft from the bot carries none. See [Rewrite a draft from your phone](send-a-post-idea-from-telegram.md#rewrite-a-draft-from-your-phone).

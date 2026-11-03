@@ -370,6 +370,76 @@ def _around(post_id: str, at: str) -> Dict[str, Any]:
     return {"near": near, "paused": bool(native_scheduler.is_queue_paused())}
 
 
+def series_slots(post_ids: List[str], now: datetime) -> List[datetime]:
+    """
+    The Queue's next open slots for a series (phase 6, item 5), one a part, in
+    order: each of the creator's weekly slots on the coming days, at least
+    AHEAD_MINUTES ahead, after the part before, and the Queue's cooldown from
+    every other queued, due or published post and from every part before it.
+    Fewer than the parts when the Queue has no more room in SLOT_DAYS.
+    """
+    try:
+        from .scheduler import native_scheduler
+    except ImportError:
+        from scheduler import native_scheduler
+    slots = native_scheduler.get_active_slots()
+    mine = set(post_ids)
+    others = [when for when, other, _status in native_scheduler.get_existing_post_datetimes()
+              if other not in mine]
+    cooldown = _cooldown_hours()
+    found: List[datetime] = []
+    today = now.astimezone().date()
+    for offset in range(SLOT_DAYS):
+        day = today + timedelta(days=offset)
+        for slot in sorted((s for s in slots if s.get("day_of_week") == day.weekday()),
+                           key=lambda s: str(s.get("time_slot"))):
+            try:
+                hour, minute = (int(part) for part in str(slot["time_slot"]).split(":")[:2])
+            except (KeyError, TypeError, ValueError):
+                continue
+            when = datetime(day.year, day.month, day.day, hour, minute).astimezone()
+            if when <= now + timedelta(minutes=AHEAD_MINUTES) or (found and when <= found[-1]):
+                continue
+            if any(abs((when - other).total_seconds()) / 3600.0 < cooldown for other in others + found):
+                continue
+            found.append(when)
+            if len(found) >= len(post_ids):
+                return found
+    return found
+
+
+def plan_series(post_ids: List[str], now: Optional[datetime] = None) -> Dict[str, Any]:
+    """
+    Plan the series (phase 6): each part into the Queue's next open slots, in
+    order, through plan(), as Plan it plans one draft; nothing is posted and
+    nothing reaches LinkedIn. Every part must still be a draft. Too few open
+    slots in SLOT_DAYS plans nothing ("short"); a part that changed meanwhile
+    takes back what was planned ("changed"). Returns {status: planned |
+    short | changed, times}.
+    """
+    post_ids = [str(post_id) for post_id in post_ids if post_id]
+    if not post_ids or any(state_of(post_id)["status"] != "draft" for post_id in post_ids):
+        return {"status": "changed"}
+    times = series_slots(post_ids, (now or datetime.now()).astimezone())
+    if len(times) < len(post_ids):
+        return {"status": "short", "found": len(times)}
+    done: List[Tuple[str, str]] = []
+    for post_id, when in zip(post_ids, times):
+        result = plan(post_id, when.astimezone(timezone.utc).isoformat())
+        if result["status"] != "planned":
+            for planned_id, planned_for in done:
+                unplan(planned_id, planned_for)
+            return {"status": "changed"}
+        done.append((post_id, result["for"]))
+    return {"status": "planned", "times": [planned_for for _post_id, planned_for in done]}
+
+
+def unplan_series(post_ids: List[str], planned_for: List[str]) -> str:
+    """Undo under a planned series: each part a draft again while it is still queued at its time from the phone."""
+    keys = [unplan(post_id, when) for post_id, when in zip(post_ids or [], planned_for or [])]
+    return "series_unplanned" if keys and all(key == "unplanned" for key in keys) else "series_unplan_changed"
+
+
 def unplan(post_id: Any, planned_for: Any) -> str:
     """
     Undo under a plan: the post a draft again, while it is still queued at

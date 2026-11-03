@@ -328,3 +328,14 @@ def test_phase_6_a_reply_to_a_draft_quotes_the_bot_the_composer_and_the_panel():
     assert f"before {writing.REPLY_LABEL}" in article
     assert "before {earlier.by}" in _ui("ComposerCollection.tsx")
     assert "What a reply to a draft does" in article and "What a reply to a draft does" in _panel()
+
+
+def test_phase_6_a_series_quotes_the_bot_the_box_and_the_writing_view():
+    """Phase 6, item 5: Write it as a series, what it says, Plan the series, the box's button and the preference."""
+    article = _article()
+    said = telegram_bot.SENTENCES
+    assert said["series_from"].format(count=2) in article and said["series_ready"].format(count=3) in article
+    for label in ("Write it as a series", "Plan the series"):
+        assert f"**{label}**" in article, label
+    assert "Drafts in a series" in article and "Drafts in a series" in _ui("WritingPreferences.tsx")
+    assert "Write a series of" in _ui("CollectionPanel.tsx")

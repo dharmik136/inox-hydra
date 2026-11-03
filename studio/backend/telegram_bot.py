@@ -117,7 +117,9 @@ BUTTON_LABELS = {"u": "Undo", "r": "Remind me in an hour", "d": "Done", "w": "Wr
                  # Phase 5, item 4: Remind me, and what comes back.
                  "k": "Remind me", "s": "Not now", "x": "Cancel",
                  # Phase 6, item 4: under the offer a reply to a draft is answered with.
-                 "l": "Rewrite it with what you said", "E": "Keep it as a note"}
+                 "l": "Rewrite it with what you said", "E": "Keep it as a note",
+                 # Phase 6, item 5: a series from a group.
+                 "S": "Write it as a series", "P": "Plan the series"}
 # Phase 5, item 2: one letter for each time Plan it offers (at most
 # phone_plans.TIMES_MAX or its slots); each button's label is the time as
 # the computer's clock says it, kept with the message.
@@ -137,6 +139,11 @@ RESHAPE_LETTERS = "efghij"
 REWRITTEN_WORDS = "Rewritten in your studio ({label}). It begins:"
 # Phase 6, item 4: a rewrite asked for in a reply, with the words switch on.
 REWRITTEN_ASKED_WORDS = "Rewritten in your studio as you asked. It begins:"
+# Phase 6, item 5: a series, its parts' first lines with the words switch on,
+# and the times it was planned for, on the computer's clock.
+SERIES_READY_WORDS = "A series of {count} drafts is ready in your studio. They begin:"
+SERIES_PLANNED_HEAD = "Planned, on your computer's clock:"
+SERIES_PLANNED_TAIL = "Each part is in your Queue, and I bring it back here at its time. Nothing is posted."
 BUTTON_ROWS = {"undo": (("u",),), "item": (("w", "a"), ("u",)), "item_bare": (("u",),),
                "due": (("r",), ("d",)), "morning": (("w", "n"),), "fact": (("u",),), "added": (("u",),),
                "kept": (("u",),), "tour_offer": (("b",),),
@@ -383,6 +390,16 @@ SENTENCES = {
     "draft_reply_no_provider": ("This needs an AI provider, and none is connected yet: connect yours on the Composer's "
                                 "Prompt tab in your studio, then press Rewrite it with what you said."),
     "rewritten_asked": "Rewritten in your studio as you asked.",
+    # Phase 6, item 5: a series from a group.
+    "series_from": "Writing a series from {count} items in your collection.",
+    "series_ready": "A series of {count} drafts is ready in your studio.",
+    "series_none": "Nothing was written: fewer than two unused items in your collection hold that word now.",
+    "series_planned": "Planned: each part is in your Queue at its own time, and nothing is posted.",
+    "series_short": ("Nothing was planned: your Queue has too few open slots in the next two weeks. Add slots to your "
+                     "Queue, or plan each part in your studio."),
+    "series_changed": "Nothing was planned: a part of the series has changed in your studio since.",
+    "series_unplanned": "Unplanned: each part is a draft again in your studio.",
+    "series_unplan_changed": "Not every part was unplanned: one has moved in your Queue since, so it was left as it is.",
 }
 
 # Phase 5, item 2: what a plan's messages say, with times on the computer's
@@ -958,8 +975,12 @@ def recall_answer(word: str) -> Tuple[str, Optional[tuple]]:
         listed = [item["id"] for item in shown]
         numbers = [str(n) for n, item in enumerate(shown, 1) if (item.get("text") or "").strip()]
         rows = [numbers[i:i + 5] for i in range(0, len(numbers), 5)]
-    if collection.unused_matching(word, writing.preferences()["combine_at_most"]):
+    unused = collection.unused_matching(word, writing.preferences()["combine_at_most"])
+    if unused:
         rows.append(["c"])
+    if len(unused) >= 2:
+        # A series from them (phase 6).
+        rows.append(["S"])
     if not rows:
         return said, None
     return said, ("recall", rows, {"items": listed, "word": word})
@@ -1025,6 +1046,36 @@ def remembered_answer() -> Tuple[str, Optional[tuple]]:
                   {"facts": [fact["id"] for fact in shown]})
 
 
+def _series_press(records: List[Dict[str, Any]], record: Dict[str, Any], letter: str, token: str,
+                  letters: List[str], chat_id: Any, conn) -> Dict[str, Any]:
+    """
+    Plan the series, and Undo under it (phase 6): each part into the Queue's
+    next open slots in order, through Plan it's own path, or each a draft
+    again. Too few open slots, or a part changed, plans nothing, and Plan the
+    series stays to be pressed again.
+    """
+    posts = [str(post) for post in record.get("posts") or []]
+    if letter == "u":
+        key = phone_plans.unplan_series(posts, record.get("times") or [])
+        record["used"] = _now()
+        _write_json(conn, BUTTONS_KEY, records)
+        said = str(record.get("said") or "")
+        return {"key": key, "answer": SENTENCES[key], "edit": f"{said}\n\n{SENTENCES[key]}" if said else SENTENCES[key],
+                "job": None, "markup": None, "send_with": []}
+    result = phone_plans.plan_series(posts)
+    if result["status"] != "planned":
+        key = "series_short" if result["status"] == "short" else "series_changed"
+        return {"key": key, "answer": SENTENCES[key], "edit": None, "job": None, "send": [], "send_with": [],
+                "keep": None, "kept": True, "same": True}
+    record["used"] = _now()
+    lines = [f"- part {n}: {phone_plans.full_time(_instant(when))}" for n, when in enumerate(result["times"], 1)]
+    text = "\n".join([SERIES_PLANNED_HEAD] + lines + ["", SERIES_PLANNED_TAIL])
+    markup = _new_record(records, chat_id, "series_planned", text, [["u"]], posts=posts, times=result["times"])
+    _write_json(conn, BUTTONS_KEY, records)
+    return {"key": "series_planned", "answer": SENTENCES["series_planned"], "edit": text, "job": None,
+            "markup": markup, "send_with": []}
+
+
 def _draft_reply_press(records: List[Dict[str, Any]], record: Dict[str, Any], letter: str, chat_id: Any,
                        conn) -> Dict[str, Any]:
     """
@@ -1082,6 +1133,15 @@ def _list_press(records: List[Dict[str, Any]], record: Dict[str, Any], letter: s
     job = None
     if not writing.model_gateway.get_current_ai_config().is_configured:
         key, answer = "no_provider", SENTENCES["no_provider"]
+    elif letter == "S":
+        # Write it as a series (phase 6): the unused items that hold the word, read at the press, as many as one
+        # draft is written from at most.
+        found = collection.unused_matching(record.get("word") or "", writing.preferences()["combine_at_most"])
+        if len(found) < 2:
+            key, answer = "series_none", SENTENCES["series_none"]
+        else:
+            key, answer = "series_from", SENTENCES["series_from"].format(count=len(found))
+            job = {"kind": "series", "items": [item["id"] for item in found]}
     elif letter == "c":
         found = collection.unused_matching(record.get("word") or "", writing.preferences()["combine_at_most"])
         if not found:
@@ -2302,6 +2362,10 @@ TOUR_STEPS = {
                 "needs": ("words",)},
     "card": {"say": ("Send /ideas for today's ideas from your record, each with Write up: press one and I write a "
                      "draft from it in your studio."), "needs": ("provider", "words")},
+    # Phase 6, item 5.
+    "series": {"say": ("Send /recall and a word that two or more of your notes hold, then press Write it as a series: I "
+                       "write a series of drafts from them, and Plan the series puts them in your Queue's next open "
+                       "slots. Nothing is posted."), "needs": ("provider",)},
     "recall": {"say": ("Send /recall and a word, such as /recall pricing. I say how many items hold it, with Write one "
                        "post from these; with the words switch on their first lines come too, each with Write up."),
                "needs": ()},
@@ -2312,7 +2376,7 @@ TOUR_PARTS = (
     ("send things in", ("saved", "link", "file")),
     ("make something of it", ("written", "reshaped", "replied", "several", "connected")),
     ("build it up and keep it", ("added", "edited", "remembered", "lists")),
-    ("plan it and come back to it", ("planned", "reminder", "back", "morning", "card", "recall")),
+    ("plan it and come back to it", ("planned", "reminder", "back", "morning", "card", "recall", "series")),
 )
 # The steps that leave something in the studio, as the panel lists them;
 # each is seen working once the profile holds what it leaves.
@@ -2332,6 +2396,7 @@ TOUR_EVIDENCE = {
     "reminder": "A reminder asked for on an item",
     "back": "An unused item brought back to your phone",
     "card": "A draft written from one of today's ideas",
+    "series": "A series written from your phone",
 }
 TOUR_NEEDS_PROVIDER = ("This needs an AI provider, and none is connected yet: connect yours on the Composer's Prompt "
                        "tab in your studio.")
@@ -2397,6 +2462,8 @@ def tour_seen(conn) -> Dict[str, bool]:
         # Phase 6: what the bot brought back last is kept, for the bot that told it.
         "back": held("SELECT 1 FROM settings WHERE key = ?", (BROUGHT_BACK_KEY,)),
         "card": any(m.get("card") for m in phone),
+        # Phase 6: a part of a series asked for on the phone.
+        "series": any(isinstance(m.get("series"), dict) for m in phone),
     }
 
 
@@ -2877,8 +2944,11 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 return {"key": "button_old", "answer": SENTENCES["button_old"], "edit": None}
             if record.get("used") or letter in (record.get("spent") or []):
                 return {"key": "button_used", "answer": SENTENCES["button_used"], "edit": None}
-            if record.get("kind") in LISTS and (letter.isdigit() or letter == "c"):
+            if record.get("kind") in LISTS and (letter.isdigit() or letter in ("c", "S")):
                 return _list_press(records, record, letter, token, letters, conn)
+            if record.get("kind") in ("series", "series_planned") and letter in ("P", "u"):
+                # A series (phase 6): planned into the Queue's next open slots, or taken back out.
+                return _series_press(records, record, letter, token, letters, chat_id, conn)
             if record.get("kind") == "draft_reply" and letter in ("l", "E"):
                 # A reply to a draft (phase 6): rewrite it with those words, or keep them as a note.
                 return _draft_reply_press(records, record, letter, chat_id, conn)
@@ -3053,6 +3123,9 @@ def run_job(job: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, 
             # /write (phase 4): the matching items, through Combine; or an
             # item and what it connects to (phase 6).
             result = writing.make_post(job.get("items") or [], via="telegram", connected=bool(job.get("connected")))
+        elif job.get("kind") == "series":
+            # A series from the items that hold a word (phase 6).
+            return _series_written(writing.make_series(job.get("items") or [], via="telegram"), chat_id)
         elif job.get("kind") == "card":
             # One of today's ideas (phase 5).
             result = writing.write_from_card(job.get("day"), job.get("card"), via="telegram")
@@ -3082,6 +3155,26 @@ def run_job(job: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, 
                                                        post=result.get("id"))
     text = SENTENCES["draft_ready_words"] + "\n\n" + _first_line(result.get("content") or "")
     return text, issue_buttons(chat_id, "draft", text, rows=draft_rows(), post=result.get("id"))
+
+
+def _series_written(result: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """
+    The bot's next message after a series is written (phase 6): how many
+    drafts, each part's first line only with the words switch on, and Plan
+    the series; or why nothing was kept.
+    """
+    status = result.get("status")
+    if status == "no_provider":
+        return SENTENCES["no_provider"], None
+    if status == "refused":
+        return SENTENCES["write_refused"], None
+    ids = result.get("ids") or []
+    if collection_words_on():
+        text = (SERIES_READY_WORDS.format(count=len(ids)) + "\n\n"
+                + "\n".join(f"{n}. {_first_line(words)}" for n, words in enumerate(result.get("contents") or [], 1)))
+    else:
+        text = SENTENCES["series_ready"].format(count=len(ids))
+    return text, issue_buttons(chat_id, "series", text, rows=[["P"]], posts=ids)
 
 
 def _reshaped(result: Dict[str, Any], chat_id: Any, asked: bool = False) -> Tuple[str, Optional[Dict[str, Any]]]:

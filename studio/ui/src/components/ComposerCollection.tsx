@@ -305,6 +305,7 @@ export function MadeWithNote({
           {made.card
             ? `from one of the ideas in From your record${made.card_title ? ` (${made.card_title})` : ""}`
             : `from ${count === 1 ? "one item" : `${count} items`} in your collection${made.angle ? ", starting from the angle you picked" : ""}`}
+          {made.series ? `, part ${made.series.part} of a series of ${made.series.of}` : ""}
           {made.via === "telegram" ? ", asked for on your phone" : ""}. It is your draft now: change anything.
         </p>
       ) : (
