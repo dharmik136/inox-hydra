@@ -70,19 +70,25 @@ export function CollectionPanel({
   const [confirming, setConfirming] = useState<number | null>(null);
   const [chosen, setChosen] = useState<number[]>([]);
   const [writingNow, setWritingNow] = useState<string | null>(null);
+  // An item's group (phase 6): the item and the unused items offered with it, which share its words.
+  const [group, setGroup] = useState<number | null>(null);
   const [described] = useWritingPreferences();
   const angleCount = described?.values.angles;
   // The most items one draft is written from: the creator's own (Brand, Writing), as the server reads it.
   const combineAtMost = described?.values.combine_at_most ?? COMBINE_DEFAULT;
 
   const load = useCallback(() => {
-    return fetchCollection({ status, kind, q: words })
+    return fetchCollection({ status, kind, q: words, around: group ?? undefined })
       .then((data) => {
         setListing(data);
         setFailed(false);
       })
-      .catch(() => setFailed(true));
-  }, [status, kind, words]);
+      .catch(() => {
+        // A group whose item is gone goes back to the whole collection.
+        if (group !== null) setGroup(null);
+        else setFailed(true);
+      });
+  }, [status, kind, words, group]);
 
   useEffect(() => {
     void load();
@@ -128,6 +134,7 @@ export function CollectionPanel({
       const made = await writeFromCollection(ids, angle);
       if (made.status === "drafted") {
         setChosen([]);
+        setGroup(null);
         await load();
         onOpenDraft?.({ id: made.id, content: made.content });
       } else {
@@ -175,6 +182,9 @@ export function CollectionPanel({
   }
 
   const counts = listing?.counts;
+  // The group shown, when one is open: its item first, then the ones offered with it.
+  const grouped = group !== null && listing ? listing.items : null;
+  const around = grouped?.find((item) => item.id === group) ?? null;
 
   return (
     <section aria-labelledby="collection-title" className="flex max-w-3xl flex-col gap-3">
@@ -195,8 +205,11 @@ export function CollectionPanel({
             <button
               key={id}
               type="button"
-              aria-pressed={status === id}
-              onClick={() => setStatus(id)}
+              aria-pressed={status === id && group === null}
+              onClick={() => {
+                setGroup(null);
+                setStatus(id);
+              }}
               className={cn(
                 "rounded-md px-2.5 py-1 text-[12px] transition-colors",
                 status === id ? "bg-soft text-ink-primary" : "text-ink-secondary hover:text-ink-primary",
@@ -213,7 +226,10 @@ export function CollectionPanel({
         <select
           id="collection-kind"
           value={kind}
-          onChange={(event) => setKind(event.target.value as CollectionKind | "")}
+          onChange={(event) => {
+            setGroup(null);
+            setKind(event.target.value as CollectionKind | "");
+          }}
           className="rounded-md border border-edge bg-ink px-2 py-1 text-[12px] text-ink-primary"
         >
           {KIND_CHOICES.map(([value, label]) => (
@@ -231,16 +247,49 @@ export function CollectionPanel({
           value={words}
           maxLength={200}
           placeholder="Find a word"
-          onChange={(event) => setWords(event.target.value)}
+          onChange={(event) => {
+            setGroup(null);
+            setWords(event.target.value);
+          }}
           className="min-w-[10rem] flex-1 rounded-md border border-edge bg-ink px-2 py-1 text-[12px] text-ink-primary placeholder:text-ink-muted"
         />
       </div>
 
       <WritingSummary
         described={described}
-        fields={["length_words", "tone", "language", "opening", "emojis", "hashtags", "line_breaks", "ending", "avoid", "angles", "combine_at_most", "memory"]}
+        fields={["length_words", "tone", "language", "opening", "emojis", "hashtags", "line_breaks", "ending", "avoid", "angles", "combine_at_most", "connect_shared", "connect_offer", "memory"]}
         title="How Make a post, Combine and Angles write"
       />
+
+      {grouped && (
+        <div role="group" aria-label="The group around one item" className="flex flex-col gap-1.5 rounded-md border border-edge px-3 py-2">
+          <p className="studio-meta text-ink-muted">
+            {grouped.length > 1
+              ? `THE ITEM AND THE ${grouped.length - 1} OFFERED WITH IT, WHICH SHARE ITS WORDS`
+              : "NOTHING UNUSED SHARES ITS WORDS NOW"}
+          </p>
+          <p className="text-[12px] leading-relaxed text-ink-secondary">
+            {around?.connected && around.connected.count > grouped.length - 1
+              ? `It shares words with ${around.connected.count} other unused items; the ${grouped.length - 1} that share the most are here, as many as Connected items offered with one, in Brand, under Writing.`
+              : "Matched on this computer by the words they share, as Brand, under Writing, sets it."}
+          </p>
+          <div className="flex flex-wrap items-center gap-3 text-[12px] text-ink-secondary">
+            {grouped.length > 1 && (
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => void write(grouped.slice(0, combineAtMost).map((item) => item.id))}
+                className="rounded-md border border-edge px-2 py-0.5 hover:text-ink-primary disabled:opacity-40"
+              >
+                Combine these {Math.min(grouped.length, combineAtMost)} into one post
+              </button>
+            )}
+            <button type="button" onClick={() => setGroup(null)} className="underline underline-offset-2 hover:text-ink-primary">
+              Back to your collection
+            </button>
+          </div>
+        </div>
+      )}
 
       {chosen.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 text-[12px] text-ink-secondary">
@@ -326,6 +375,23 @@ export function CollectionPanel({
                 >
                   {item.link}
                 </a>
+              )}
+              {item.connected && group === null && (
+                <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-[12px] text-ink-secondary">
+                  <span>
+                    {`Shares words with ${item.connected.count === 1 ? "1 other unused item" : `${item.connected.count} other unused items`}${
+                      item.connected.words.length ? `: ${item.connected.words.join(", ")}` : ""
+                    }`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setGroup(item.id)}
+                    aria-label={`Open the group: ${item.text.slice(0, 40)}`}
+                    className="underline underline-offset-2 hover:text-ink-primary"
+                  >
+                    Open the group
+                  </button>
+                </p>
               )}
               {item.angles && item.angles.length > 0 && (
                 <ol className="mt-1.5 flex list-decimal flex-col gap-1 pl-5 text-[12px] text-ink-secondary">

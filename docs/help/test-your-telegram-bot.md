@@ -78,6 +78,10 @@ These need a post to come due, or an hour to come round, so they take as long as
 8. `Schedule` plans for real: send `Schedule tomorrow 09:00: a post planned by its first word`. The bot answers "Saved as a draft in your studio. Planned for ..., on your computer's clock." with **Undo**, and the Queue shows the draft at that time. Send `Schedule someday: another` and the bot keeps it an ordinary draft and says the time was not read.
 9. After this update: if your bot was paired before it, the bot says once "Your studio was updated: your bot now also takes /tour, /plan and /ideas.", with **Start the tour**, outside quiet hours, and the / menu lists the three new commands.
 
+## Phase 6 on your phone (optional)
+
+1. What something connects to: send `Idea: pricing is a design decision`, then `Idea: the pricing page is a design brief`. The second answer says "Saved to your collection. It shares words with one other unused item in your collection." with **Write one post from these** under it; press it and the bot answers "Writing one post from 2 items in your collection.", then "Draft ready in your studio.". Send three more ideas about the pricing page and, in **Your collection**, an item that connects says "Shares words with" and the words they share, with **Open the group**, which lists the group with **Combine these 3 into one post**. **Words two items share to be connected** and **Connected items offered with one**, under **Brand**, then **Writing**, and **Say what something new connects to** in the panel, shape it.
+
 ## When a step does not match
 
 | You see | Look at |

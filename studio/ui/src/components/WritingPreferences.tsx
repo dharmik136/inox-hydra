@@ -36,6 +36,8 @@ const LABELS: Record<PreferenceField, string> = {
   ideas: "Ideas asked for each day",
   reshapes: "Rewrite buttons on your bot",
   combine_at_most: "Most items in one draft",
+  connect_shared: "Words two items share to be connected",
+  connect_offer: "Connected items offered with one",
 };
 
 /** The preferences this view edits with its Save; the others are set beside their own feature. */
@@ -51,6 +53,8 @@ const EDITED_HERE: PreferenceField[] = [
   "avoid",
   "angles",
   "combine_at_most",
+  "connect_shared",
+  "connect_offer",
   "reshapes",
 ];
 
@@ -92,6 +96,10 @@ export function preferenceWords(field: PreferenceField, values: WritingPreferenc
       return values.reshapes.length ? values.reshapes.map((button) => button.label).join(", ") : "none";
     case "combine_at_most":
       return `${values.combine_at_most} items`;
+    case "connect_shared":
+      return values.connect_shared === 1 ? "1 word" : `${values.connect_shared} words`;
+    case "connect_offer":
+      return values.connect_offer === 1 ? "1 item" : `${values.connect_offer} items`;
   }
 }
 
@@ -298,6 +306,40 @@ export function WritingPreferencesPanel({ children }: { children?: ReactNode } =
               </option>
             ))}
           </select>,
+        )}
+        {row(
+          "connect_shared",
+          "writing-connect-shared",
+          <>
+            <select id="writing-connect-shared" className={SELECT} value={draft.connect_shared} disabled={busy}
+              onChange={(event) => set("connect_shared", Number(event.target.value))}>
+              {choices.connect_shared.map((n) => (
+                <option key={n} value={n}>
+                  {n === 1 ? "1 word" : `${n} words`}
+                </option>
+              ))}
+            </select>
+            <span className="text-[11px] text-ink-secondary">
+              of their meaningful words or tags, for what something new connects to in your collection and on your bot
+            </span>
+          </>,
+        )}
+        {row(
+          "connect_offer",
+          "writing-connect-offer",
+          <>
+            <select id="writing-connect-offer" className={SELECT} value={draft.connect_offer} disabled={busy}
+              onChange={(event) => set("connect_offer", Number(event.target.value))}>
+              {choices.connect_offer.map((n) => (
+                <option key={n} value={n}>
+                  {n === 1 ? "1 item" : `${n} items`}
+                </option>
+              ))}
+            </select>
+            <span className="text-[11px] text-ink-secondary">
+              listed with it, and written with it by Write one post from these; never more than Most items in one draft
+            </span>
+          </>,
         )}
         <RewriteButtons
           value={draft.reshapes}

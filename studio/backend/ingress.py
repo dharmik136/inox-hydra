@@ -891,13 +891,14 @@ class TelegramIngressDaemon:
                                            _origin(update, from_telegram),
                                            group=message.get("media_group_id"), chat_id=chat_id,
                                            message_id=message.get("message_id"))
-                question, answer = False, telegram_bot.answer_for(stored)
+                # What it connects to, too (phase 6).
+                question, answer = False, telegram_bot.saved_answer(stored)
             elif command:
                 stored, answer, question = self._command(command, update, from_telegram)
             else:
                 stored = self._store(text, origin=_origin(update, from_telegram), from_telegram=from_telegram,
                                      forwarded=forwarded)
-                question, answer = False, telegram_bot.answer_for(stored)
+                question, answer = False, telegram_bot.saved_answer(stored)
             if from_telegram and stored is not None and stored.get("kind") not in ("too_big", "media_failed"):
                 _note_heard()
             if from_telegram and added is None:
@@ -1065,7 +1066,7 @@ class TelegramIngressDaemon:
                 return done, telegram_bot.SENTENCES["empty_idea"], False
             stored = self._store("Idea: " + argument, links=False, origin=_origin(update, from_telegram),
                                  from_telegram=from_telegram)
-            return stored, telegram_bot.answer_for(stored), False
+            return stored, telegram_bot.saved_answer(stored), False
         if name == "remember":
             # A thing to remember (phase 3): the creator's own fact, kept
             # for every writing request as they allow, with Undo.

@@ -85,6 +85,20 @@ Everything you send your bot lands in **From your record**, on its **Your collec
 
 **Make a post**, **Angles** and **Combine** write from your items through your own AI provider. See [Make something out of it](#make-something-out-of-it).
 
+### What something connects to
+
+When something you send with words shares words with other unused items in your collection, the bot says so in the answer it already sends: "Saved to your collection. It shares words with 3 other unused items in your collection." Two items are connected when they share at least two of their meaningful words or tags (words of four letters or more, leaving out common ones such as "about" or "would"), matched on your computer and nothing sent anywhere. Under the answer, **Write one post from these** writes one draft from the item and the ones it connects to, through your own AI provider, as **Combine** does: the bot answers "Writing one post from 4 items in your collection.", then "Draft ready in your studio." It reads the group again when you press it, so an item used or set aside since is left out; if nothing unused shares its words any more, it says "Nothing was written: nothing unused in your collection shares its words now." and only that button goes.
+
+With **The bot may send me what it writes from my collection** on, the answer also lists the first lines of the ones it offers with it, most shared first, then newest, saying "The 3 that share the most:" when more connect. Off, it says only how many.
+
+In **Your collection**, each new item that connects says "Shares words with 3 other unused items:" and the words they share most, with **Open the group**. The group lists the item and the ones offered with it, with **Combine these 4 into one post** and **Back to your collection**.
+
+Three choices shape it, each with its default named beside it:
+
+- **Words two items share to be connected**, under **Brand**, then **Writing**: 2, from 1 to 5. One shared word connects notes that have little else in common; more connects fewer.
+- **Connected items offered with one**, beside it: 3, from 1 to 9. How many the bot lists, how many **Write one post from these** writes with the item, and how many the group holds, never more than your **Most items in one draft** with the item.
+- **Say what something new connects to**, in the panel: on. Untick it and the answer is "Saved to your collection." alone.
+
 A link to one of your posts, and a short link, are also requests on Today, and the item says what became of the request. A link to someone else's post is a bookmark, which the studio never opens; your own browser does, if you click it. What you sent before this version is listed too, as used: each message the bot saved as a draft, and each link it asked Today to open.
 
 ### Photos, voice notes, documents and videos
@@ -326,6 +340,7 @@ These messages carry buttons, which you press in Telegram:
 | The same | The **Angles** button | Finds your number of opening lines for a post from it |
 | The same | **Undo** | Takes it out of your collection, while it is still new there: never used as a draft and never set aside |
 | The same, for anything with words | **Remind me** | Asks when to bring it back, and brings it back then. See [Remind me](#remind-me). The message keeps its other buttons |
+| The same, when it shares words with other unused items | **Write one post from these** | One draft from it and the items it connects to. See [What something connects to](#what-something-connects-to) |
 | "When should I bring it back?" | One of your moments, such as **This evening** | Keeps the reminder, with **Cancel** |
 | "I will bring it back ..." | **Cancel** | The reminder will not come |
 | "A reminder you asked for, for ..." | **Write it up**, and **Not now** while the item is new | Writes it up, or sets it aside in your collection |
@@ -378,6 +393,7 @@ Each message gets one short sentence back, the same words every time. None carri
 | What became of your message | The bot says |
 | --- | --- |
 | Kept in your collection | Saved to your collection. (With **Undo** under it.) |
+| Kept in your collection, sharing words with other unused items | Saved to your collection. It shares words with 3 other unused items in your collection. (Or "It shares words with one other unused item in your collection.") |
 | A link to one of your posts | Saved to your collection. Today will ask you to open this post's analytics at your computer. |
 | A short `lnkd.in` link | Saved to your collection. Today will ask you to open this link at your computer. |
 | A link to a post that is not yours | Saved to your collection as a bookmark. Your studio never opens other people's posts. |

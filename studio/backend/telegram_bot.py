@@ -140,6 +140,11 @@ BUTTON_ROWS = {"undo": (("u",),), "item": (("w", "a"), ("u",)), "item_bare": (("
 COLLECTION_WORDS_KEY = "telegram_collection_words"
 # Phase 4, item 6: a reply adds to what it replies to: on unless "off".
 REPLY_ADDS_KEY = "telegram_reply_adds"
+# Phase 6, item 1: "Saved to your collection." says what it connects to: on
+# unless "off". It adds a line and one button to an answer the bot already
+# sends, never a message of its own; the line is a count, and first lines go
+# only with the words switch on.
+CONNECT_KEY = "telegram_connect"
 # /recall lists at most "The bot lists at most" first lines, newest first (phone_plans, phase 5).
 # The morning idea, off by default: {on, days (0 is Monday), hour, since}.
 MORNING_KEY = "telegram_morning"
@@ -330,6 +335,13 @@ SENTENCES = {
     # Phase 5, item 6: Schedule <when>: with a time the bot could not read.
     "schedule_unread": ("The time after Schedule was not read, so it is not planned: write a day and a time, such as "
                         "Schedule tue 09:00: and your post."),
+    # Phase 6, item 1: what something new connects to, after "Saved to your collection.".
+    "connects_one": "It shares words with one other unused item in your collection.",
+    "connects": "It shares words with {count} other unused items in your collection.",
+    "connects_most": "The {count} that share the most:",
+    "connected_none": "Nothing was written: nothing unused in your collection shares its words now.",
+    "connected_used": "Nothing was written: you have used it or set it aside in your studio since.",
+    "connected_gone": "Nothing was written: it is no longer in your collection.",
 }
 
 # Phase 5, item 2: what a plan's messages say, with times on the computer's
@@ -1333,6 +1345,46 @@ def replies_add_on() -> bool:
     return (_setting(REPLY_ADDS_KEY) or "on") != "off"
 
 
+def connect_on() -> bool:
+    """Whether "Saved to your collection." says what it connects to, in the open profile (phase 6). On unless off."""
+    return (_setting(CONNECT_KEY) or "on") != "off"
+
+
+def connected_of(item: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    What a saved item connects to (phase 6, item 1), while the creator lets
+    the bot say it: {count, items, words} as collection.connections finds
+    them under Brand's Writing rule, or None when nothing connects.
+    """
+    if not item or not (item.get("text") or "").strip() or not connect_on():
+        return None
+    conn = get_db()
+    try:
+        found = collection.connections(conn, item, *writing.connect_rule(writing.preferences(conn)))
+    finally:
+        conn.close()
+    return found if found["count"] else None
+
+
+def saved_answer(record: Optional[Dict[str, Any]]) -> Optional[str]:
+    """
+    The answer to something saved, and, for an item with words that connects
+    to other unused items, how many (phase 6, item 1): a count, and the first
+    lines of the ones offered only with the words switch on, most shared first.
+    """
+    said = answer_for(record)
+    found = connected_of(item_of(record)) if said else None
+    if not found:
+        return said
+    count = found["count"]
+    text = f"{said} " + (SENTENCES["connects_one"] if count == 1 else SENTENCES["connects"].format(count=count))
+    if collection_words_on():
+        shown = found["items"]
+        head = SENTENCES["connects_most"].format(count=len(shown)) + "\n" if count > len(shown) else ""
+        text += "\n\n" + head + "\n".join(f"{n}. {_first_line(item['text'])}" for n, item in enumerate(shown, 1))
+    return text
+
+
 def added_sentence(item: Dict[str, Any]) -> str:
     """
     What the bot answers a reply that added to an item: the item's first line
@@ -1371,6 +1423,9 @@ def options() -> Dict[str, Any]:
             "morning_hour": early["hour"], "replies_add": replies_add_on(),
             # Shown beside the bot's button, set in Brand under Writing.
             "angles": writing.preferences()["angles"],
+            # Phase 6: what something new connects to, and the rule, set in Brand under Writing.
+            "connect": connect_on(), "connect_shared": writing.preferences()["connect_shared"],
+            "connect_offer": writing.preferences()["connect_offer"],
             # Phase 5: what Plan it offers, and how many lines a list shows, with their defaults.
             "plan": phone_plans.plan_offers(), "list_at_most": phone_plans.list_at_most(),
             "remind_moments": phone_reminders.moments(),
@@ -1387,7 +1442,8 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
                  morning_days: Optional[List[int]] = None, morning_hour: Optional[int] = None,
                  replies_add: Optional[bool] = None, plan: Optional[Dict[str, Any]] = None,
                  list_at_most: Optional[int] = None,
-                 remind_moments: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                 remind_moments: Optional[List[Dict[str, Any]]] = None,
+                 connect: Optional[bool] = None) -> Dict[str, Any]:
     """
     Saves the switches the panel sent; a switch not sent is left as it is.
     Quiet hours run from one whole hour to another that differs from it;
@@ -1425,6 +1481,8 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
         changes[COLLECTION_WORDS_KEY] = "on" if collection_words else "off"
     if replies_add is not None:
         changes[REPLY_ADDS_KEY] = "on" if replies_add else "off"
+    if connect is not None:
+        changes[CONNECT_KEY] = "on" if connect else "off"
     if morning_on is not None or morning_days is not None or morning_hour is not None:
         held = morning()
         days = held["days"] if morning_days is None else morning_days
@@ -1892,6 +1950,10 @@ TOUR_STEPS = {
                          "rewrite button such as Shorter."), "needs": ("provider", "words")},
     "several": {"say": "Send /write and a word, such as /write pricing: I write one draft from your unused items that "
                        "hold it.", "needs": ("provider",)},
+    # Phase 6, item 1.
+    "connected": {"say": ('Send an idea that shares words with others you sent, such as a second note about pricing. I '
+                          'answer "' + SENTENCES["collected"] + '" and how many unused items it shares words with, and '
+                          "Write one post from these writes one draft from them."), "needs": ("provider",)},
     "added": {"say": ("Reply to something you sent (press and hold it, then Reply). Your new words go on the same item, "
                       'and I answer "' + SENTENCES["added"] + '"'), "needs": ()},
     "edited": {"say": ('Edit a message you sent (press and hold it, then Edit). The item changes with it, and I answer "'
@@ -1914,7 +1976,7 @@ TOUR_STEPS = {
 # them: a few steps at a time, numbered across the parts.
 TOUR_PARTS = (
     ("send things in", ("saved", "link", "file")),
-    ("make something of it", ("written", "reshaped", "several")),
+    ("make something of it", ("written", "reshaped", "several", "connected")),
     ("build it up and keep it", ("added", "edited", "remembered")),
     ("plan it and come back to it", ("planned", "reminder", "card", "recall")),
 )
@@ -1927,6 +1989,7 @@ TOUR_EVIDENCE = {
     "written": "A draft written up from your phone",
     "reshaped": "A draft rewritten from your phone",
     "several": "One draft from several items, asked for with /write or /recall",
+    "connected": "A draft written from what an idea connects to",
     "added": "An item built up by a reply",
     "edited": "An edit on your phone followed",
     "remembered": "A thing to remember kept from your phone",
@@ -1981,6 +2044,8 @@ def tour_seen(conn) -> Dict[str, bool]:
         # The Composer keeps no versions: a draft's earlier texts come only from a rewrite on the phone.
         "reshaped": any(m.get("earlier") for m in made),
         "several": any(len(m.get("items") or []) >= 2 for m in phone),
+        # Phase 6: written from an item and what it connects to, pressed on the phone.
+        "connected": any(m.get("connected") for m in phone),
         # Two of the creator's messages on one item, an album's photos aside.
         "added": held("SELECT 1 FROM collection_messages m JOIN collection_items c ON c.id = m.item_id "
                       "WHERE m.whose = 'yours' AND m.message_id IS NOT NULL AND c.media_group IS NULL "
@@ -2188,12 +2253,51 @@ def plan_offer(records: List[Dict[str, Any]], record: Dict[str, Any], chat_id: A
 
 def item_rows(item: Dict[str, Any]) -> List[List[str]]:
     """
-    Under "Saved to your collection.": Write it up and the angles, then Remind
-    me (phase 5), Remember this for a note that fits, and Undo.
+    Under "Saved to your collection.": Write it up and the angles, Write one
+    post from these when it connects to other unused items (phase 6), then
+    Remind me (phase 5), Remember this for a note that fits, and Undo.
     """
+    rows = [["w", "a"]] + ([["c"]] if connected_of(item) else [])
     if collection.fits_a_fact(item):
-        return [["w", "a"], ["k", "m"], ["u"]]
-    return [["w", "a"], ["k", "u"]]
+        return rows + [["k", "m"], ["u"]]
+    return rows + [["k", "u"]]
+
+
+def _connected_press(records: List[Dict[str, Any]], record: Dict[str, Any], token: str, letters: List[str],
+                     conn) -> Dict[str, Any]:
+    """
+    Write one post from these, under "Saved to your collection." (phase 6):
+    the item and the unused items it connects to now, as many as are offered
+    with one, through Combine, beside the bot's loop. Read again at the press:
+    an item used, set aside or removed since, or with nothing unused left to
+    connect to, writes nothing and only this button goes. With no provider
+    nothing is written, and every button stays.
+    """
+    if not writing.model_gateway.get_current_ai_config().is_configured:
+        return {"key": "no_provider", "answer": SENTENCES["no_provider"], "edit": None, "job": None, "send": [],
+                "send_with": [], "keep": None, "kept": True, "same": True}
+    item = collection.get(conn, int(record["item"])) if str(record.get("item") or "").isdigit() else None
+    key, ids = None, []
+    if item is None:
+        key = "connected_gone"
+    elif item["status"] != "new" or not (item.get("text") or "").strip():
+        key = "connected_used"
+    else:
+        found = collection.connections(conn, item, *writing.connect_rule(writing.preferences(conn)))
+        ids = [item["id"]] + [one["id"] for one in found["items"]]
+        key = None if len(ids) >= 2 else "connected_none"
+    if key:
+        record["spent"] = list(record.get("spent") or []) + ["c"]
+        _write_json(conn, BUTTONS_KEY, records)
+        rest = [[x for x in row if x not in record["spent"]] for row in (record.get("rows") or [[x] for x in letters])]
+        return {"key": key, "answer": SENTENCES[key], "edit": None, "job": None, "send": [], "send_with": [],
+                "keep": _keyboard(token, rest, record.get("reshape_labels")) if any(rest) else None, "kept": True}
+    record["used"] = _now()
+    _write_json(conn, BUTTONS_KEY, records)
+    answer = SENTENCES["write_from"].format(count=len(ids))
+    said = str(record.get("said") or "")
+    return {"key": "write_from", "answer": answer, "edit": f"{said}\n\n{answer}" if said else answer,
+            "job": {"kind": "combine", "items": ids, "connected": True}, "markup": None, "send_with": []}
 
 
 def remind_offer(records: List[Dict[str, Any]], record: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[tuple]]:
@@ -2430,6 +2534,9 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 return {"key": "button_used", "answer": SENTENCES["button_used"], "edit": None}
             if record.get("kind") in LISTS and (letter.isdigit() or letter == "c"):
                 return _list_press(records, record, letter, token, letters, conn)
+            if letter == "c" and record.get("kind") == "item":
+                # Write one post from these, under what was saved (phase 6).
+                return _connected_press(records, record, token, letters, conn)
             if letter == "k":
                 # Remind me (phase 5): the moments in a message of their own; it stays, to be pressed again.
                 key, message = remind_offer(records, record, chat_id)
@@ -2589,8 +2696,9 @@ def run_job(job: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, 
         if job.get("kind") == "angles":
             result = writing.angles(job.get("item"))
         elif job.get("kind") == "combine":
-            # /write (phase 4): the matching items, through Combine.
-            result = writing.make_post(job.get("items") or [], via="telegram")
+            # /write (phase 4): the matching items, through Combine; or an
+            # item and what it connects to (phase 6).
+            result = writing.make_post(job.get("items") or [], via="telegram", connected=bool(job.get("connected")))
         elif job.get("kind") == "card":
             # One of today's ideas (phase 5).
             result = writing.write_from_card(job.get("day"), job.get("card"), via="telegram")

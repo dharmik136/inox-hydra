@@ -289,6 +289,28 @@ export function TelegramIngressPanel() {
                   , as set in Brand, under Writing. Each rewrites it through your own AI provider.
                 </p>
               )}
+              <OptionRow
+                label="Say what something new connects to"
+                detail="When something you send shares words with other unused items in your collection, my answer says how many, with Write one post from these, which writes one draft from it and them. Their first lines come only with The bot may send me what it writes from my collection on. It adds a line to the answer I already send, never a message of its own. On by default."
+                checked={state.options.connect}
+                disabled={busy}
+                onChange={(on) =>
+                  void setOption(
+                    { connect: on },
+                    on ? "The bot says what something new connects to." : "The bot no longer says what something new connects to.",
+                  )
+                }
+              />
+              {writing && (
+                <p className="pl-5 text-[12px] text-ink-secondary">
+                  {`Two items are connected when they share ${writing.values.connect_shared === 1 ? "1 word" : `${writing.values.connect_shared} words`}, and ${writing.values.connect_offer === 1 ? "1 item is" : `${writing.values.connect_offer} items are`} offered with one`}
+                  {writing.values.connect_shared === writing.defaults.connect_shared &&
+                  writing.values.connect_offer === writing.defaults.connect_offer
+                    ? " (the defaults)"
+                    : ` (defaults: ${writing.defaults.connect_shared} words, ${writing.defaults.connect_offer} items)`}
+                  , as set in Brand, under Writing.
+                </p>
+              )}
               {state.options.angles !== undefined && (
                 <p className="pl-5 text-[12px] text-ink-secondary">
                   {`Under what you send, the angles button says ${state.options.angles} angles`}

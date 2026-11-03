@@ -32,8 +32,9 @@ Strict Invariants:
 import json
 import re
 import uuid
+from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import unquote
 
 try:
@@ -501,11 +502,15 @@ def add(kind: str, text: str = "", *, link: Optional[str] = None, activity_urn: 
 
 
 def listing(status: str = "new", kind: Optional[str] = None, q: Optional[str] = None,
-            limit: int = PAGE, offset: int = 0) -> Dict[str, Any]:
+            limit: int = PAGE, offset: int = 0, connect: Optional[Tuple[int, int]] = None,
+            around: Optional[int] = None) -> Dict[str, Any]:
     """
     The box: items newest first, of one status (new by default) or all, of
     one kind or every kind, holding a word or not; and how many there are of
-    each status.
+    each status. With `connect` (phase 6: the words two items share to be
+    connected, and how many are offered with one), each new item with words
+    says what it connects to; with `around`, the box lists that item's group
+    instead: the item, then the ones offered with it.
     """
     if status not in STATUSES + ("all",):
         raise Refused("Show new, not now, used or all.")
@@ -525,17 +530,30 @@ def listing(status: str = "new", kind: Optional[str] = None, q: Optional[str] = 
     clause = (" WHERE " + " AND ".join(where)) if where else ""
     conn = get_db()
     try:
-        rows = conn.execute(f"SELECT * FROM collection_items{clause} ORDER BY received_at DESC, id DESC "
-                            "LIMIT ? OFFSET ?", params + [max(1, min(int(limit), 200)), max(0, int(offset))]).fetchall()
         counts = {s: 0 for s in STATUSES}
         for found_status, count in conn.execute("SELECT status, COUNT(*) FROM collection_items GROUP BY status"):
             counts[found_status] = count
         counts["all"] = sum(counts[s] for s in STATUSES)
-        items = [_row(conn, r) for r in rows]
+        pool = _pool(conn) if connect else []
+        if around is not None:
+            held = get(conn, int(around))
+            if held is None:
+                raise LookupError("That item is no longer in your collection.")
+            group = connections(conn, held, connect[0], connect[1], pool=pool) if connect else {"items": []}
+            items = [held] + group["items"]
+        else:
+            rows = conn.execute(f"SELECT * FROM collection_items{clause} ORDER BY received_at DESC, id DESC "
+                                "LIMIT ? OFFSET ?",
+                                params + [max(1, min(int(limit), 200)), max(0, int(offset))]).fetchall()
+            items = [_row(conn, r) for r in rows]
         # Phase 5: each item's reminders asked for on the phone and not yet told, which the box lists with Cancel.
         waiting = phone_reminders.waiting_for(conn, [item["id"] for item in items])
         for item in items:
             item["reminders"] = waiting.get(item["id"], [])
+            found = _scored(item, connect[0], pool) if connect else []
+            # Phase 6: what it connects to, and the words those share most, read on this computer.
+            item["connected"] = ({"count": len(found), "ids": [s[3]["id"] for s in found[:connect[1]]],
+                                  "words": _most_shared(found[:connect[1]])} if found else None)
         return {"status": "success", "items": items, "counts": counts}
     finally:
         conn.close()
@@ -715,6 +733,73 @@ def related(text: str, limit: int = 3) -> Dict[str, Any]:
         return {"status": "success", "items": [_row(conn, row) for _shared, _at, row in scored[:max(1, int(limit))]]}
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# What an item connects to (phase 6, item 1): the same scoring as the
+# Composer's, between two items of the collection
+# ---------------------------------------------------------------------------
+
+def _tags_of(row) -> List[str]:
+    try:
+        held = json.loads(row["tags"] or "[]")
+    except (TypeError, ValueError):
+        return []
+    return [str(tag).lower() for tag in held] if isinstance(held, list) else []
+
+
+def _meaning(text: str, tags: Iterable[Any]) -> set:
+    """What an item's words carry, read locally: its meaningful words, and its tags."""
+    return _keywords(text) | {str(tag).lower() for tag in (tags or [])}
+
+
+def _pool(conn) -> List[Tuple[Any, set]]:
+    """Every unused item with words (new, of a kind to write from), with what its words carry."""
+    marks = ", ".join("?" for _ in MATERIAL)
+    return [(row, _meaning(row["text"], _tags_of(row))) for row in conn.execute(
+        f"SELECT * FROM collection_items WHERE status = 'new' AND kind IN ({marks}) AND TRIM(text) != ''", MATERIAL)]
+
+
+def _scored(item: Dict[str, Any], shared_at_least: int, pool: List[Tuple[Any, set]]) -> List[tuple]:
+    """
+    The other unused items with words sharing at least `shared_at_least` of
+    this one's meaningful words and tags, most shared first, then newest: each
+    (how many, received, id, row, the words shared). None for an item that is
+    not itself new and with words.
+    """
+    if (not item or item.get("status") != "new" or item.get("kind") not in MATERIAL
+            or not (item.get("text") or "").strip()):
+        return []
+    mine = _meaning(item["text"], item.get("tags") or [])
+    found = []
+    for row, theirs in pool:
+        if row["id"] == item["id"]:
+            continue
+        both = mine & theirs
+        if len(both) >= max(1, int(shared_at_least)):
+            found.append((len(both), str(row["received_at"] or ""), row["id"], row, both))
+    found.sort(key=lambda one: (one[0], one[1], one[2]), reverse=True)
+    return found
+
+
+def _most_shared(found: List[tuple], most: int = 3) -> List[str]:
+    """The words the connected items share most with the item, the most often first, then by the alphabet."""
+    counted = Counter(word for *_rest, both in found for word in both)
+    return [word for word, _n in sorted(counted.items(), key=lambda pair: (-pair[1], pair[0]))][:most]
+
+
+def connections(conn, item: Dict[str, Any], shared_at_least: int, most: int,
+                pool: Optional[List[Tuple[Any, set]]] = None) -> Dict[str, Any]:
+    """
+    What an item connects to: how many other unused items with words share at
+    least `shared_at_least` of its meaningful words and tags, the first `most`
+    of them (most shared first, then newest), and the words those share most.
+    Matched on this computer; nothing leaves it. The bot's saved answer and
+    its Write one post from these read it, and so does Your collection.
+    """
+    found = _scored(item, shared_at_least, _pool(conn) if pool is None else pool)
+    offered = found[:max(1, int(most))]
+    return {"count": len(found), "items": [_row(conn, one[3]) for one in offered], "words": _most_shared(offered)}
 
 
 def used_in(item_id: int, post_id: str) -> Dict[str, Any]:

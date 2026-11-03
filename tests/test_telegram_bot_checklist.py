@@ -260,3 +260,23 @@ def test_phase_5_the_upgrade_notice_it_quotes_is_the_one_a_2_13_bot_gets():
     before = {name for name, _words in telegram_bot.COMMANDS_2_13}
     added = [name for name, _words in telegram_bot.BOT_COMMANDS if name not in before]
     assert telegram_bot.tour_notice_text(added).split(" Press")[0] in _article()
+
+
+def _ui(name):
+    return open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", name), encoding="utf-8").read()
+
+
+def test_phase_6_connections_quote_the_bot_the_box_the_writing_view_and_the_panel():
+    """Phase 6, item 1: the saved answer's count, its button and what it says, the box's group, the preferences."""
+    article = _article()
+    assert telegram_bot.SENTENCES["collected"] + " " + telegram_bot.SENTENCES["connects_one"] in article
+    assert telegram_bot.SENTENCES["write_from"].format(count=2) in article
+    assert "**Write one post from these**" in article
+    box = _ui("CollectionPanel.tsx")
+    for words in ("Shares words with", "Open the group"):
+        assert words in article and words in box, words
+    assert "**Combine these 3 into one post**" in article and "Combine these {" in box and "into one post" in box
+    writing_view = _ui("WritingPreferences.tsx")
+    for words in ("Words two items share to be connected", "Connected items offered with one"):
+        assert words in article and words in writing_view, words
+    assert "Say what something new connects to" in article and "Say what something new connects to" in _panel()

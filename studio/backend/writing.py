@@ -21,6 +21,10 @@ in the studio and on the bot:
                 bot wrote: each a label and what it asks
   combine_at_most  the most items one draft is written    Combine, /write (phase 4; it was a
                 from                                    fixed ten)
+  connect_shared  how many meaningful words two items   the bot's saved answer, Your collection
+                share to be connected                   (phase 6)
+  connect_offer  how many connected items are offered   the same, and Write one post from these
+                with one
 
 The defaults keep what Command said until now (its tone, its paragraphs,
 its first-line rule, its ending, its four phrases), so a fresh profile
@@ -46,7 +50,7 @@ import hashlib
 import json
 import re
 import uuid
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 try:
     from . import changes, collection, remembered, voice_pack
@@ -108,6 +112,14 @@ EARLIER_KEPT = 10
 # since phase 4, ten by default as it was fixed before, from 2 to 20.
 COMBINE_AT_MOST = 10
 COMBINE_CHOICES = tuple(range(2, 21))
+# Phase 6, item 1: what connects two items of the collection, and how many of
+# the items one connects to are offered with it. Two words by default: one
+# shared word ("today", "really") connects notes that have nothing else in
+# common, two ("pricing" and "page") rarely do.
+CONNECT_SHARED = 2
+CONNECT_SHARED_CHOICES = tuple(range(1, 6))
+CONNECT_OFFER = 3
+CONNECT_OFFER_CHOICES = tuple(range(1, 10))
 
 DEFAULTS: Dict[str, Any] = {
     "length_words": 150,
@@ -133,6 +145,10 @@ DEFAULTS: Dict[str, Any] = {
     "reshapes": [dict(b) for b in DEFAULT_RESHAPES],
     # The most items one draft is written from: Combine and /write (phase 4).
     "combine_at_most": COMBINE_AT_MOST,
+    # What connects two items, and how many connected items are offered with
+    # one: the bot's saved answer and Your collection (phase 6).
+    "connect_shared": CONNECT_SHARED,
+    "connect_offer": CONNECT_OFFER,
 }
 SOURCES = ("collection", "posts", "asks")
 MEMORY = ("all", "chosen", "off")
@@ -190,6 +206,10 @@ def _valid(field: str, value: Any) -> bool:
         return value in IDEA_COUNTS and not isinstance(value, bool)
     if field == "combine_at_most":
         return value in COMBINE_CHOICES and not isinstance(value, bool)
+    if field == "connect_shared":
+        return value in CONNECT_SHARED_CHOICES and not isinstance(value, bool)
+    if field == "connect_offer":
+        return value in CONNECT_OFFER_CHOICES and not isinstance(value, bool)
     if field == "reshapes":
         if not isinstance(value, list) or len(value) > RESHAPES_MAX:
             return False
@@ -274,7 +294,20 @@ _REFUSALS = {
                         "Nothing was saved."),
     "reshapes": (f"Rewrite buttons are at most {RESHAPES_MAX}, each with its own label of up to {RESHAPE_LABEL_MAX} "
                  f"characters and what it asks for in up to {RESHAPE_ASKS_MAX}. Nothing was saved."),
+    "connect_shared": (f"Two items are connected when they share {CONNECT_SHARED_CHOICES[0]} to "
+                       f"{CONNECT_SHARED_CHOICES[-1]} words. Nothing was saved."),
+    "connect_offer": (f"With one item, {CONNECT_OFFER_CHOICES[0]} to {CONNECT_OFFER_CHOICES[-1]} of the items it "
+                      "connects to are offered. Nothing was saved."),
 }
+
+
+def connect_rule(prefs: Dict[str, Any]) -> Tuple[int, int]:
+    """
+    What connects two items, and how many connected items go with one
+    (phase 6): the creator's two preferences, the second never so many that
+    the item and its group pass Most items in one draft.
+    """
+    return prefs["connect_shared"], max(1, min(prefs["connect_offer"], prefs["combine_at_most"] - 1))
 
 
 def words_for(prefs: Dict[str, Any]) -> Dict[str, str]:
@@ -309,6 +342,8 @@ def described() -> Dict[str, Any]:
             "memory": list(MEMORY),
             "ideas": list(IDEA_COUNTS),
             "combine_at_most": list(COMBINE_CHOICES),
+            "connect_shared": list(CONNECT_SHARED_CHOICES),
+            "connect_offer": list(CONNECT_OFFER_CHOICES),
         },
         # Each choice as the creator reads it, beside the feature it shapes.
         "labels": {
@@ -534,14 +569,16 @@ def _materials(conn, item_ids: Iterable[Any]) -> List[Dict[str, Any]]:
 
 
 def make_post(item_ids: Iterable[Any], angle: Optional[str] = None, form: Optional[str] = None,
-              via: Optional[str] = None) -> Dict[str, Any]:
+              via: Optional[str] = None, connected: bool = False) -> Dict[str, Any]:
     """
     Make a post (one item) or Combine (several): a draft written from the
     items' words, as the creator's preferences say, into the Composer. The
     items are used, and what they became is the draft. `via` names where it
     was asked for when that was not the studio ("telegram", phase 5), kept
-    on the draft. Returns {status: drafted | no_provider | refused, ...}; a
-    provider that fails raises ProviderError, which says why in plain words.
+    on the draft, and `connected` that the items were an item and what it
+    connects to (phase 6). Returns {status: drafted | no_provider | refused,
+    ...}; a provider that fails raises ProviderError, which says why in
+    plain words.
     """
     conn = get_db()
     try:
@@ -575,6 +612,8 @@ def make_post(item_ids: Iterable[Any], angle: Optional[str] = None, form: Option
                      "at": collection._now()}
         if via:
             made_with["via"] = via
+        if connected:
+            made_with["connected"] = True
         with conn:
             post_id = collection.new_draft(conn, draft, tags)
             conn.execute("UPDATE posts SET made_with = ? WHERE id = ?", (json.dumps(made_with), post_id))

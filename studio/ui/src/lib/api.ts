@@ -3785,6 +3785,12 @@ export interface CollectionItem {
   used_at: string | null;
   /** The reminders asked for on the phone (phase 5), not yet told, soonest first; Cancel removes one. */
   reminders?: ItemReminder[];
+  /**
+   * What a new item with words connects to (phase 6): how many other unused
+   * items share its words, the ones offered with it, and the words they share
+   * most. Null when nothing does.
+   */
+  connected?: { count: number; ids: number[]; words: string[] } | null;
 }
 
 export interface ItemReminder {
@@ -3801,12 +3807,14 @@ export interface CollectionListing {
 }
 
 export async function fetchCollection(
-  options: { status?: CollectionStatus | "all"; kind?: CollectionKind | ""; q?: string } = {},
+  options: { status?: CollectionStatus | "all"; kind?: CollectionKind | ""; q?: string; around?: number } = {},
 ): Promise<CollectionListing> {
   const params = new URLSearchParams();
   params.set("status", options.status ?? "new");
   if (options.kind) params.set("kind", options.kind);
   if (options.q?.trim()) params.set("q", options.q.trim());
+  // An item's group (phase 6): the item, then the items offered with it.
+  if (options.around) params.set("around", String(options.around));
   return call<CollectionListing>(`/api/v1/collection?${params.toString()}`);
 }
 
@@ -3902,6 +3910,10 @@ export interface WritingPreferences {
   reshapes: ReshapeButton[];
   /** The most items one draft is written from: Combine, and /write on the bot (phase 4; it was a fixed ten). */
   combine_at_most: number;
+  /** How many meaningful words two items of the collection share to be connected (phase 6). */
+  connect_shared: number;
+  /** How many of the items one connects to are offered with it: listed, and written with it (phase 6). */
+  connect_offer: number;
 }
 
 /** One rewrite button: its label on the phone, and what it asks the writer for, in the creator's words. */
@@ -3925,6 +3937,8 @@ export interface WritingDescribed {
     sources: IdeaSource[];
     memory: string[];
     ideas: number[];
+    connect_shared: number[];
+    connect_offer: number[];
   };
   labels: {
     emojis: Record<string, string>;
@@ -4198,6 +4212,11 @@ export interface IngressOptions {
   list_at_most: number;
   /** The moments Remind me offers under a saved item (phase 5), each with the creator's own label. */
   remind_moments: RemindMoment[];
+  /** "Saved to your collection." says what it connects to (phase 6). On unless turned off. */
+  connect: boolean;
+  /** What connects two items, and how many are offered with one, set in Brand under Writing; shown here. */
+  connect_shared?: number;
+  connect_offer?: number;
   /** The defaults of the phase 5 preferences, shown beside them. */
   defaults: { plan: PlanOffers; list_at_most: number; remind_moments: RemindMoment[] };
 }

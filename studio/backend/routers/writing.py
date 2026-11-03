@@ -47,6 +47,8 @@ class PreferencesPayload(BaseModel):
     memory: Optional[str] = Field(None, max_length=10, description="Things to remember: all, chosen or off")
     ideas: Optional[int] = Field(None, description="How many ideas the daily model stage asks for, 1 to 5")
     combine_at_most: Optional[int] = Field(None, description="The most items one draft is written from, 2 to 20")
+    connect_shared: Optional[int] = Field(None, description="How many words two items share to be connected, 1 to 5")
+    connect_offer: Optional[int] = Field(None, description="How many connected items are offered with one, 1 to 9")
     reshapes: Optional[List[ReshapeButton]] = Field(None, max_length=50,
                                                     description="The rewrite buttons under a draft the bot wrote")
 

@@ -56,9 +56,16 @@ def _answer(work):
 @router.get("/api/v1/collection", tags=["Collection"])
 def get_collection(status: str = Query("new", max_length=10), kind: Optional[str] = Query(None, max_length=20),
                    q: Optional[str] = Query(None, max_length=200), limit: int = Query(50, ge=1, le=200),
-                   offset: int = Query(0, ge=0)):
-    """The items newest first, of one status (new by default) or all, one kind or every kind, holding a word or not."""
-    return _answer(lambda: collection.listing(status=status, kind=kind, q=q, limit=limit, offset=offset))
+                   offset: int = Query(0, ge=0), around: Optional[int] = Query(None, ge=1)):
+    """
+    The items newest first, of one status (new by default) or all, one kind or
+    every kind, holding a word or not, each new one with words saying what it
+    connects to (phase 6), as Brand's Writing view sets it. With `around`, that
+    item's group: the item, then the items offered with it.
+    """
+    rule = writing.connect_rule(writing.preferences())
+    return _answer(lambda: collection.listing(status=status, kind=kind, q=q, limit=limit, offset=offset,
+                                              connect=rule, around=around))
 
 
 @router.post("/api/v1/collection/{item_id}/status", tags=["Collection"])

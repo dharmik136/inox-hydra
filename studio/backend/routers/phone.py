@@ -53,6 +53,7 @@ class IngressOptionsPayload(BaseModel):
     plan: Optional[Dict[str, Any]] = Field(None, description="What Plan it offers: {from, slots, times}")
     list_at_most: Optional[int] = Field(None, ge=1, le=10, description="How many lines /plan and /recall list")
     remind_moments: Optional[List[Dict[str, Any]]] = Field(None, description="The moments Remind me offers")
+    connect: Optional[bool] = Field(None, description="Saved to your collection says what it connects to")
 
 
 class IngressSettingsPayload(BaseModel):
@@ -112,7 +113,7 @@ def post_ingress_options(payload: IngressOptionsPayload):
                                   morning_on=payload.morning, morning_days=payload.morning_days,
                                   morning_hour=payload.morning_hour, replies_add=payload.replies_add,
                                   plan=payload.plan, list_at_most=payload.list_at_most,
-                                  remind_moments=payload.remind_moments)
+                                  remind_moments=payload.remind_moments, connect=payload.connect)
     except ValueError as refused:
         raise HTTPException(status_code=400, detail=str(refused))
     return ingress.describe_settings()
