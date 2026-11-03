@@ -314,3 +314,17 @@ def test_phase_6_the_upgrade_notice_it_quotes_is_the_one_a_2_14_bot_gets():
     added = [name for name, _words in telegram_bot.BOT_COMMANDS if name not in before]
     assert added == ["remembered"]
     assert telegram_bot.tour_notice_text(added).split(" Press")[0] in _article()
+
+
+def test_phase_6_a_reply_to_a_draft_quotes_the_bot_the_composer_and_the_panel():
+    """Phase 6, item 4: the offer, its two buttons, the rewrite's answer, the Composer's line and the panel's choice."""
+    article = _article()
+    said = telegram_bot.SENTENCES
+    for key in ("draft_reply_offer", "rewriting", "rewritten_asked"):
+        assert said[key] in article, key
+    for label in ("Rewrite it with what you said", "Keep it as a note"):
+        assert f"**{label}**" in article, label
+    import writing
+    assert f"before {writing.REPLY_LABEL}" in article
+    assert "before {earlier.by}" in _ui("ComposerCollection.tsx")
+    assert "What a reply to a draft does" in article and "What a reply to a draft does" in _panel()

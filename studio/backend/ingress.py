@@ -597,6 +597,28 @@ class TelegramIngressDaemon:
             return None
         return {"kind": "added", "item": item, "message": message.get("message_id")}
 
+    def _reply_about_a_draft(self, chat_id: str, message: Dict[str, Any], text: str,
+                             update: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        A reply (phase 6, item 4) to one of the bot's messages about a draft
+        (Draft ready, a rewrite, the times Plan it offers, a plan), while the
+        creator lets a reply to a draft offer its rewrite: not a note, but the
+        offer, with Rewrite it with what you said and Keep it as a note. The
+        reply's words wait with the offer's buttons. None for anything else.
+        """
+        replied = message.get("reply_to_message")
+        if not isinstance(replied, dict) or not (text or "").strip() or telegram_bot.draft_reply() != "rewrite":
+            return None
+        post_id = telegram_bot.post_of_message(chat_id, replied.get("message_id"))
+        if post_id is None:
+            return None
+        words = text.replace(chr(0x2014), " -- ").replace(chr(0x2013), "-").strip()
+        return {"kind": "draft_reply", "post": post_id,
+                "buttons": ("draft_reply", [["l"], ["E"]], {"post": post_id, "asks": words,
+                                                            "message": message.get("message_id"),
+                                                            "origin": _origin({"update_id": update.get("update_id"),
+                                                                               "message": message}, True)})}
+
     def _start_job(self, job: Dict[str, Any], chat_id: str) -> None:
         """
         What a press asked to be written (telegram_bot.run_job), on a thread of
@@ -882,11 +904,17 @@ class TelegramIngressDaemon:
         with (paths.using_profile(pinned) if pinned else nullcontext()):
             # A forwarded "/help" is someone else's words, not the creator's command.
             command = None if forwarded or media else telegram_bot.parse_command(text)
-            # A reply that adds to what it replies to (phase 4); a command in
-            # a reply is a command, and a file in one is an item of its own.
-            added = self._add_to_replied(chat_id, message, text) if from_telegram and not (
-                media or command or forwarded) else None
-            if added is not None:
+            # A reply under the bot's message about a draft (phase 6): an offer
+            # to rewrite that draft with its words. A reply that adds to what it
+            # replies to (phase 4); a command in a reply is a command, and a
+            # file in one is an item of its own.
+            plain = from_telegram and not (media or command or forwarded)
+            offer = self._reply_about_a_draft(chat_id, message, text, update) if plain else None
+            added = self._add_to_replied(chat_id, message, text) if plain and offer is None else None
+            if offer is not None:
+                # A question to the creator, answered whatever the confirmations switch says.
+                stored, question, answer = offer, True, telegram_bot.draft_reply_offer()
+            elif added is not None:
                 stored, question, answer = added, False, telegram_bot.added_sentence(added["item"])
             elif media:
                 stored = self._store_media(media, with_hidden_links(message.get("caption"),

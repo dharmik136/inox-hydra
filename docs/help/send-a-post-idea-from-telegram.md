@@ -118,7 +118,7 @@ Your collection is counted in **Storage and privacy** as "Your collection: what 
 
 Reply in Telegram to something you sent your bot, or to the bot's answer about it, and your new words go on that item in your collection, after its words, instead of making a new item: press and hold the message, choose **Reply**, and write. The bot answers "Added to the item in your collection.", with **Undo** under it, which takes those words back off while you have not used the item since. With **The bot may send me what it writes from my collection** on, the answer also says the item's first line, so you can see which it was. If the item already became a draft, the words still go on the item, and the bot adds "The draft made from it was not changed." In **Your collection**, an item built this way says "from 3 of your messages".
 
-A command in a reply is still a command, a photo or a file in a reply is an item of its own, and a reply to something no longer in your collection makes a new item. **A reply adds to what it replies to**, in the panel, is on until you untick it; off, a reply is an item of its own. To follow a reply, the studio keeps which of your messages, and which of the bot's answers, each item came from (their numbers in your chat with the bot), from this version on: a message sent before it cannot be replied to this way.
+A command in a reply is still a command, a photo or a file in a reply is an item of its own, and a reply to something no longer in your collection makes a new item. A reply to the bot's message about a draft is not added to anything: it offers to rewrite that draft. See [Reply to a draft with what to change](#reply-to-a-draft-with-what-to-change). **A reply adds to what it replies to**, in the panel, is on until you untick it; off, a reply is an item of its own. To follow a reply, the studio keeps which of your messages, and which of the bot's answers, each item came from (their numbers in your chat with the bot), from this version on: a message sent before it cannot be replied to this way.
 
 ### Edits follow
 
@@ -200,6 +200,16 @@ The draft in your studio then changes in place, if it is still a draft and nobod
 | You turned the words switch off since | Nothing was rewritten: your studio no longer sends your words here. Turn on The bot may send me what it writes from my collection under Local security. |
 
 No AI provider set up, a provider that fails, and a rewrite that is refused are said as for **Write it up**, and nothing changes.
+
+### Reply to a draft with what to change
+
+Press and hold the bot's message about a draft ("Draft ready", a rewrite, the times **Plan it** offers, or a plan), choose **Reply**, and write what to change, such as `make it about my first client`. Your reply is not kept as a note: the bot answers "Press Rewrite it with what you said to have your AI provider rewrite the draft with your words, or Keep it as a note.", with **Rewrite it with what you said** and **Keep it as a note**. Nothing is rewritten until you press.
+
+**Rewrite it with what you said** rewrites that draft through your own AI provider, as a rewrite button does, with your words as what to change: the draft as it is now, the notes it was written from, your things to remember as you chose and your writing preferences go with them. The bot answers "Rewriting it in your studio.", then "Rewritten in your studio as you asked.", with **Plan it** and **Undo**; with **The bot may send me what it writes from my collection** on, "Rewritten in your studio as you asked. It begins:" and the new first line, with the draft's own buttons. **Undo** puts the earlier text back, and the Composer lists it under **What this draft was written from**, "before your reply". A figure or a name in your reply counts as yours, so the rewrite may use it; anything else it brings in is refused, as for every draft. The draft must still be a draft, or one you planned from your phone and still queued at its time, whose plan it keeps; a post queued at your desk, due, published or handed to LinkedIn is not rewritten, and the bot says so. With no AI provider, the bot's answer says "This needs an AI provider, and none is connected yet: connect yours on the Composer's Prompt tab in your studio, then press Rewrite it with what you said." and the button stays for when you have.
+
+**Keep it as a note** keeps your reply as a note in your collection, as a reply to the bot's draft message was kept before this version: "Saved to your collection.", with the item's buttons.
+
+**What a reply to a draft does**, in the panel, is **Offer to rewrite the draft with it** until you choose **Keep it as a note, as until this version**; then a reply to a draft's message is a note at once. A command in such a reply, such as `/plan tomorrow 09:00`, is still a command, and a photo or a file is an item of its own. Your reply's words wait with the bot's answer until you press one of its buttons, and are then dropped from it.
 
 ### Plan it from your phone
 
@@ -371,6 +381,8 @@ These messages carry buttons, which you press in Telegram:
 | The same | **Done** | Clears the reminder, and that is all: nothing is marked as posted, and nothing is done on LinkedIn. The post stays due in your studio until you post it |
 | "Draft ready in your studio. It begins:" and "Rewritten in your studio (...). It begins:" | Your rewrite buttons (**Shorter**, **New opening**, **Another angle** unless you change them) | Rewrites the draft through your own AI provider. See [Rewrite a draft from your phone](#rewrite-a-draft-from-your-phone) |
 | "Rewritten in your studio (...). It begins:" | **Undo** | Puts the draft back as it was before that rewrite, while it is still as the rewrite left it |
+| The bot's answer to your reply to a draft's message | **Rewrite it with what you said** and **Keep it as a note** | Rewrites the draft with your words, or keeps them as a note. See [Reply to a draft with what to change](#reply-to-a-draft-with-what-to-change) |
+| "Rewritten in your studio as you asked." | **Plan it** and **Undo**, and with the words switch on the draft's own buttons | Plans it, or puts the earlier text back |
 | "Draft ready in your studio.", with the words switch on or off | **Plan it** | Offers a few times; the one you press puts the draft in your Queue then, and the bot brings it back at that time. See [Plan it from your phone](#plan-it-from-your-phone). The message keeps its other buttons |
 | `/ideas`' answer, with the words switch on | **Write up 1**, **Write up 2** and so on | That idea written up into a draft. Each works once; the others stay |
 | `/recall`'s answer | **Write one post from these**, and with the words switch on **Write up 1**, **Write up 2** and so on | One draft from the unused items that hold the word, as `/write` writes it, or that item written up. Each works once; the others stay |
@@ -430,6 +442,8 @@ Each message gets one short sentence back, the same words every time. None carri
 | **Remember this**, on a note you used since | Not kept: you have used it in your studio since, so nothing was done. |
 | A reply that added to an item | Added to the item in your collection. (With **Undo** under it; with the words switch on, "Added to the item in your collection that begins:" and its first line.) |
 | A reply that added to an item that became a draft | Added to the item in your collection. The draft made from it was not changed. |
+| A reply to the bot's message about a draft | Press Rewrite it with what you said to have your AI provider rewrite the draft with your words, or Keep it as a note. (With **Rewrite it with what you said** and **Keep it as a note** under it.) |
+| **Rewrite it with what you said**, done | Rewritten in your studio as you asked. (With the words switch on, "Rewritten in your studio as you asked. It begins:" and the new first line.) |
 | You edited a message on your phone | Updated in your collection. |
 | You edited a message whose item became a draft | Updated in your collection. The draft made from it was not changed. |
 | You edited a message that made nothing in your collection | That edit changed nothing in your studio: the message it edits made nothing in your collection. |

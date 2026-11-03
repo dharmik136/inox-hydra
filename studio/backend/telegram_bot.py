@@ -115,7 +115,9 @@ BUTTON_LABELS = {"u": "Undo", "r": "Remind me in an hour", "d": "Done", "w": "Wr
                  # Phase 5, item 3: under what /recall finds.
                  "c": "Write one post from these",
                  # Phase 5, item 4: Remind me, and what comes back.
-                 "k": "Remind me", "s": "Not now", "x": "Cancel"}
+                 "k": "Remind me", "s": "Not now", "x": "Cancel",
+                 # Phase 6, item 4: under the offer a reply to a draft is answered with.
+                 "l": "Rewrite it with what you said", "E": "Keep it as a note"}
 # Phase 5, item 2: one letter for each time Plan it offers (at most
 # phone_plans.TIMES_MAX or its slots); each button's label is the time as
 # the computer's clock says it, kept with the message.
@@ -133,6 +135,8 @@ RESHAPE_LETTERS = "efghij"
 # What a rewrite's message begins with, and the label of the button pressed:
 # the creator's own words, so it goes only with the words switch on.
 REWRITTEN_WORDS = "Rewritten in your studio ({label}). It begins:"
+# Phase 6, item 4: a rewrite asked for in a reply, with the words switch on.
+REWRITTEN_ASKED_WORDS = "Rewritten in your studio as you asked. It begins:"
 BUTTON_ROWS = {"undo": (("u",),), "item": (("w", "a"), ("u",)), "item_bare": (("u",),),
                "due": (("r",), ("d",)), "morning": (("w", "n"),), "fact": (("u",),), "added": (("u",),),
                "kept": (("u",),), "tour_offer": (("b",),),
@@ -147,6 +151,11 @@ REPLY_ADDS_KEY = "telegram_reply_adds"
 # sends, never a message of its own; the line is a count, and first lines go
 # only with the words switch on.
 CONNECT_KEY = "telegram_connect"
+# Phase 6, item 4: what a reply to the bot's message about a draft does:
+# "rewrite" (offer to rewrite that draft with it, the default) or "note"
+# (keep it as a note, as until phase 6).
+DRAFT_REPLY_KEY = "telegram_draft_reply"
+DRAFT_REPLY_CHOICES = ("rewrite", "note")
 # /recall lists at most "The bot lists at most" first lines, newest first (phone_plans, phase 5).
 # The morning idea, off by default: {on, days (0 is Monday), hour, since}.
 MORNING_KEY = "telegram_morning"
@@ -368,6 +377,12 @@ SENTENCES = {
     "remembered_where_one": "See it in your studio, in Brand, under Writing, Things to remember.",
     "remembered_off": "None of them goes with writing now: Which go with writing is set to None in Brand, under Writing.",
     "forget_gone": "Nothing to forget: that is no longer in your things to remember.",
+    # Phase 6, item 4: a reply to the bot's message about a draft.
+    "draft_reply_offer": ("Press Rewrite it with what you said to have your AI provider rewrite the draft with your "
+                          "words, or Keep it as a note."),
+    "draft_reply_no_provider": ("This needs an AI provider, and none is connected yet: connect yours on the Composer's "
+                                "Prompt tab in your studio, then press Rewrite it with what you said."),
+    "rewritten_asked": "Rewritten in your studio as you asked.",
 }
 
 # Phase 5, item 2: what a plan's messages say, with times on the computer's
@@ -1010,6 +1025,38 @@ def remembered_answer() -> Tuple[str, Optional[tuple]]:
                   {"facts": [fact["id"] for fact in shown]})
 
 
+def _draft_reply_press(records: List[Dict[str, Any]], record: Dict[str, Any], letter: str, chat_id: Any,
+                       conn) -> Dict[str, Any]:
+    """
+    Under the offer a reply to a draft is answered with (phase 6): Rewrite it
+    with what you said, written beside the bot's loop through the creator's
+    provider (with none, it says so and both buttons stay); or Keep it as a
+    note, which keeps the reply as a note, as a reply was kept before, linked
+    to its message so a reply to it adds to it and an edit follows it. The
+    reply's words are dropped from the record once either is pressed.
+    """
+    asks = str(record.get("asks") or "")
+    if letter == "l" and not writing.model_gateway.get_current_ai_config().is_configured:
+        return {"key": "no_provider", "answer": SENTENCES["no_provider"], "edit": None, "job": None, "send": [],
+                "send_with": [], "keep": None, "kept": True, "same": True}
+    said = str(record.get("said") or "")
+    record["used"] = _now()
+    record.pop("asks", None)
+    markup = job = None
+    if letter == "l":
+        key = "rewriting"
+        job = {"kind": "rewrite", "post": record.get("post"), "asks": asks}
+    else:
+        key = "collected"
+        item = collection.add("note", asks, source="telegram", origin_ref=record.get("origin") or None)
+        collection.link_message(item["id"], record.get("chat"), record.get("message"), "yours", words=asks)
+        shown = f"{said}\n\n{SENTENCES['collected']}" if said else SENTENCES["collected"]
+        markup = _new_record(records, chat_id, "item", shown, item_rows(item), item=item["id"])
+    _write_json(conn, BUTTONS_KEY, records)
+    return {"key": key, "answer": SENTENCES[key], "edit": f"{said}\n\n{SENTENCES[key]}" if said else SENTENCES[key],
+            "job": job, "markup": markup, "send_with": []}
+
+
 def _forget_press(records: List[Dict[str, Any]], record: Dict[str, Any], letter: str, token: str,
                   letters: List[str], conn) -> Dict[str, Any]:
     """Forget under /remembered's list (phase 6): that thing removed, as /forget removes one; the others stay."""
@@ -1477,6 +1524,19 @@ def replies_add_on() -> bool:
     return (_setting(REPLY_ADDS_KEY) or "on") != "off"
 
 
+def draft_reply() -> str:
+    """What a reply to the bot's message about a draft does, in the open profile (phase 6): rewrite or note."""
+    held = _setting(DRAFT_REPLY_KEY)
+    return held if held in DRAFT_REPLY_CHOICES else "rewrite"
+
+
+def draft_reply_offer() -> str:
+    """The offer a reply to a draft is answered with: saying first, with no provider, how to connect one."""
+    if not writing.model_gateway.get_current_ai_config().is_configured:
+        return SENTENCES["draft_reply_no_provider"]
+    return SENTENCES["draft_reply_offer"]
+
+
 def connect_on() -> bool:
     """Whether "Saved to your collection." says what it connects to, in the open profile (phase 6). On unless off."""
     return (_setting(CONNECT_KEY) or "on") != "off"
@@ -1651,6 +1711,8 @@ def options() -> Dict[str, Any]:
             # Phase 6: what something new connects to, and the rule, set in Brand under Writing.
             "connect": connect_on(), "connect_shared": writing.preferences()["connect_shared"],
             "connect_offer": writing.preferences()["connect_offer"],
+            # Phase 6: what a reply to a draft does.
+            "draft_reply": draft_reply(),
             # Phase 6: bring back an unused idea.
             "back": back["on"], "back_days": back["days"], "back_hour": back["hour"], "back_older": back["older"],
             # Phase 5: what Plan it offers, and how many lines a list shows, with their defaults.
@@ -1658,7 +1720,8 @@ def options() -> Dict[str, Any]:
             "remind_moments": phone_reminders.moments(),
             "defaults": {"plan": phone_plans.PLAN_DEFAULT, "list_at_most": phone_plans.LIST_DEFAULT,
                          "remind_moments": phone_reminders.MOMENTS_DEFAULT,
-                         "back": {"on": False, "days": list(BACK_DAYS), "hour": BACK_HOUR, "older": BACK_OLDER}}}
+                         "back": {"on": False, "days": list(BACK_DAYS), "hour": BACK_HOUR, "older": BACK_OLDER},
+                         "draft_reply": "rewrite"}}
 
 
 def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
@@ -1673,7 +1736,7 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
                  remind_moments: Optional[List[Dict[str, Any]]] = None,
                  connect: Optional[bool] = None, back_on: Optional[bool] = None,
                  back_days: Optional[List[int]] = None, back_hour: Optional[int] = None,
-                 back_older: Optional[int] = None) -> Dict[str, Any]:
+                 back_older: Optional[int] = None, draft_reply_does: Optional[str] = None) -> Dict[str, Any]:
     """
     Saves the switches the panel sent; a switch not sent is left as it is.
     Quiet hours run from one whole hour to another that differs from it;
@@ -1713,6 +1776,10 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
         changes[REPLY_ADDS_KEY] = "on" if replies_add else "off"
     if connect is not None:
         changes[CONNECT_KEY] = "on" if connect else "off"
+    if draft_reply_does is not None:
+        if draft_reply_does not in DRAFT_REPLY_CHOICES:
+            raise ValueError("A reply to a draft offers to rewrite it, or is kept as a note. Nothing was saved.")
+        changes[DRAFT_REPLY_KEY] = draft_reply_does
     if morning_on is not None or morning_days is not None or morning_hour is not None:
         held = morning()
         days = held["days"] if morning_days is None else morning_days
@@ -2200,6 +2267,10 @@ TOUR_STEPS = {
                         + SENTENCES["draft_ready"] + '", and the draft is in the Composer.'), "needs": ("provider",)},
     "reshaped": {"say": ('Under "Draft ready", press Send me the whole post to copy it into the LinkedIn app, or a '
                          "rewrite button such as Shorter."), "needs": ("provider", "words")},
+    # Phase 6, item 4.
+    "replied": {"say": ('Reply to "Draft ready" (press and hold it, then Reply) with what to change, such as make it '
+                        "about my first client, and press Rewrite it with what you said: I rewrite the draft with your "
+                        "words, and Undo puts it back."), "needs": ("provider",)},
     "several": {"say": "Send /write and a word, such as /write pricing: I write one draft from your unused items that "
                        "hold it.", "needs": ("provider",)},
     # Phase 6, item 1.
@@ -2239,7 +2310,7 @@ TOUR_STEPS = {
 # them: a few steps at a time, numbered across the parts.
 TOUR_PARTS = (
     ("send things in", ("saved", "link", "file")),
-    ("make something of it", ("written", "reshaped", "several", "connected")),
+    ("make something of it", ("written", "reshaped", "replied", "several", "connected")),
     ("build it up and keep it", ("added", "edited", "remembered", "lists")),
     ("plan it and come back to it", ("planned", "reminder", "back", "morning", "card", "recall")),
 )
@@ -2251,6 +2322,7 @@ TOUR_EVIDENCE = {
     "file": "A photo, a voice note or a file, kept as it is",
     "written": "A draft written up from your phone",
     "reshaped": "A draft rewritten from your phone",
+    "replied": "A draft rewritten with your reply",
     "several": "One draft from several items, asked for with /write or /recall",
     "connected": "A draft written from what an idea connects to",
     "added": "An item built up by a reply",
@@ -2307,6 +2379,9 @@ def tour_seen(conn) -> Dict[str, bool]:
         "written": bool(phone),
         # The Composer keeps no versions: a draft's earlier texts come only from a rewrite on the phone.
         "reshaped": any(m.get("earlier") for m in made),
+        # Phase 6: a text kept before a rewrite asked for in a reply.
+        "replied": any(isinstance(e, dict) and e.get("by") == writing.REPLY_LABEL
+                       for m in made for e in (m.get("earlier") or [])),
         "several": any(len(m.get("items") or []) >= 2 for m in phone),
         # Phase 6: written from an item and what it connects to, pressed on the phone.
         "connected": any(m.get("connected") for m in phone),
@@ -2650,8 +2725,9 @@ def _new_record(records: List[Dict[str, Any]], chat_id: Any, kind: str, said: st
 
 
 # The kinds of message about a draft whose Telegram id is kept, so a reply to
-# one with /plan finds its draft (phase 5).
-ABOUT_A_DRAFT = ("draft", "reshaped", "plan", "planned")
+# one with /plan finds its draft (phase 5), and a plain reply offers its
+# rewrite (phase 6), the offer itself among them.
+ABOUT_A_DRAFT = ("draft", "reshaped", "plan", "planned", "draft_reply")
 
 
 def note_message(token: Any, message_id: Any) -> None:
@@ -2803,6 +2879,9 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 return {"key": "button_used", "answer": SENTENCES["button_used"], "edit": None}
             if record.get("kind") in LISTS and (letter.isdigit() or letter == "c"):
                 return _list_press(records, record, letter, token, letters, conn)
+            if record.get("kind") == "draft_reply" and letter in ("l", "E"):
+                # A reply to a draft (phase 6): rewrite it with those words, or keep them as a note.
+                return _draft_reply_press(records, record, letter, chat_id, conn)
             if record.get("kind") == "remembered" and letter.startswith("o"):
                 # Forget, under /remembered's list (phase 6).
                 return _forget_press(records, record, letter, token, letters, conn)
@@ -2963,6 +3042,9 @@ def run_job(job: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, 
     try:
         if job.get("kind") == "reshape":
             return _reshaped(writing.reshape(job.get("post"), job.get("label")), chat_id)
+        if job.get("kind") == "rewrite":
+            # A reply's words, as the instruction (phase 6).
+            return _reshaped(writing.rewrite_as_asked(job.get("post"), job.get("asks")), chat_id, asked=True)
         # A draft asked for on the phone says so (phase 5), which the tour's
         # "written up from your phone" reads.
         if job.get("kind") == "angles":
@@ -3002,11 +3084,13 @@ def run_job(job: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, 
     return text, issue_buttons(chat_id, "draft", text, rows=draft_rows(), post=result.get("id"))
 
 
-def _reshaped(result: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[str, Any]]]:
+def _reshaped(result: Dict[str, Any], chat_id: Any, asked: bool = False) -> Tuple[str, Optional[Dict[str, Any]]]:
     """
     The bot's next message after a rewrite: its first line with the whole
     post, the rewrite buttons and Undo, while the words switch is on; or why
-    nothing was rewritten.
+    nothing was rewritten. A rewrite asked for in a reply (phase 6, `asked`)
+    says so, and with the words switch off still carries Plan it and Undo,
+    which carry no words.
     """
     status = result.get("status")
     if status != "rewritten":
@@ -3015,8 +3099,13 @@ def _reshaped(result: Dict[str, Any], chat_id: Any) -> Tuple[str, Optional[Dict[
                                                                                                  "write_failed")
         return SENTENCES[key], None
     if not collection_words_on():
+        if asked:
+            return SENTENCES["rewritten_asked"], issue_buttons(chat_id, "reshaped", SENTENCES["rewritten_asked"],
+                                                               rows=[["t"], ["u"]], post=result.get("id"),
+                                                               mark=result.get("mark"))
         return SENTENCES["rewritten"], None
-    text = REWRITTEN_WORDS.format(label=result["label"]) + "\n\n" + _first_line(result.get("content") or "")
+    head = REWRITTEN_ASKED_WORDS if asked else REWRITTEN_WORDS.format(label=result["label"])
+    text = head + "\n\n" + _first_line(result.get("content") or "")
     return text, issue_buttons(chat_id, "reshaped", text, rows=draft_rows(undo=True), post=result.get("id"),
                                mark=result.get("mark"))
 

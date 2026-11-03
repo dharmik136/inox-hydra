@@ -108,6 +108,9 @@ DEFAULT_RESHAPES = (
 )
 # The texts a draft's rewrites replaced, kept on it, the newest last.
 EARLIER_KEPT = 10
+# Phase 6, item 4: what a rewrite asked for in a reply on the phone is said
+# as, beside the text it replaced ("before your reply").
+REPLY_LABEL = "your reply"
 # The most items one draft is written from (Combine, /write): a preference
 # since phase 4, ten by default as it was fixed before, from 2 to 20.
 COMBINE_AT_MOST = 10
@@ -800,6 +803,35 @@ def _reshape_request(draft: str, items: List[Dict[str, Any]], asks: str, prefs: 
     return "\n".join(lines) + remembered.block(facts) + _voice()
 
 
+_HOLDS_PREFIX = "linkedin_holds:"
+
+
+def _made_with(raw: Any) -> Dict[str, Any]:
+    try:
+        made = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        made = {}
+    return made if isinstance(made, dict) else {}
+
+
+def _rewritable(conn, post) -> bool:
+    """
+    Whether a post may be rewritten from the phone: a draft; or, since phase
+    6, a draft planned from the phone that is still queued at its planned
+    time, whose plan is kept. Never one queued at the desk, due, published,
+    or handed to LinkedIn.
+    """
+    if post["published_at"] or post["activity_urn"]:
+        return False
+    if conn.execute("SELECT 1 FROM settings WHERE key = ?", (_HOLDS_PREFIX + post["id"],)).fetchone():
+        return False
+    if post["status"] == "draft" and not post["scheduled_for"]:
+        return True
+    planned = _made_with(post["made_with"]).get("planned")
+    return (post["status"] == "scheduled" and isinstance(planned, dict) and bool(planned.get("for"))
+            and planned.get("for") == post["scheduled_for"])
+
+
 def reshape(post_id: str, label: str) -> Dict[str, Any]:
     """
     One of the creator's rewrite buttons on a draft the studio wrote: the
@@ -807,25 +839,61 @@ def reshape(post_id: str, label: str) -> Dict[str, Any]:
     collection), the things to remember as chosen and the writing
     preferences, with the button's own instruction, to the creator's own
     provider. Kept only if it passes the check every draft passes, and only
-    while the draft is still a draft and unchanged since it was read: one
-    conditional update. The text it replaced is kept on the draft (its
-    made_with's "earlier", the newest EARLIER_KEPT), since the Composer keeps
-    no versions. Returns {status: rewritten | no_provider | refused |
-    changed | not_draft | gone | old, ...}; a provider that fails raises
-    ProviderError.
+    while the draft is still a draft (or planned from the phone and still
+    at its time, phase 6) and unchanged since it was read: one conditional
+    update. The text it replaced is kept on the draft (its made_with's
+    "earlier", the newest EARLIER_KEPT), since the Composer keeps no
+    versions. Returns {status: rewritten | no_provider | refused | changed |
+    not_draft | gone | old, ...}; a provider that fails raises ProviderError.
     """
+    conn = get_db()
+    try:
+        button = reshape_button(preferences(conn), label)
+    finally:
+        conn.close()
+    if button is None:
+        held = _post_state(post_id)
+        return {"status": held} if held in ("gone", "not_draft") else {"status": "old"}
+    return _rewrite(post_id, button["label"], button["asks"])
+
+
+def rewrite_as_asked(post_id: str, asks: str) -> Dict[str, Any]:
+    """
+    A reply under the bot's message about a draft, pressed as Rewrite it with
+    what you said (phase 6, item 4): the creator's own words as the
+    instruction, in place of a button's, by the same path as a rewrite
+    button. The text it replaced is kept for Undo, said as before your reply.
+    """
+    asks = " ".join(str(asks or "").split())
+    if not asks:
+        return {"status": "changed"}
+    return _rewrite(post_id, REPLY_LABEL, asks)
+
+
+def _post_state(post_id: Any) -> str:
+    conn = get_db()
+    try:
+        post = conn.execute("SELECT id, status, made_with, scheduled_for, published_at, activity_urn FROM posts "
+                            "WHERE id = ?", (str(post_id or ""),)).fetchone()
+        if post is None:
+            return "gone"
+        return "draft" if _rewritable(conn, post) else "not_draft"
+    finally:
+        conn.close()
+
+
+def _rewrite(post_id: Any, label: str, asks: str) -> Dict[str, Any]:
+    """A rewrite of a draft from the phone, a button's or a reply's: see reshape."""
     conn = get_db()
     try:
         post = conn.execute("SELECT id, content, status, made_with, scheduled_for, published_at, activity_urn "
                             "FROM posts WHERE id = ?", (str(post_id or ""),)).fetchone()
         if post is None:
             return {"status": "gone"}
-        if post["status"] != "draft" or post["scheduled_for"] or post["published_at"] or post["activity_urn"]:
+        if not _rewritable(conn, post):
             return {"status": "not_draft"}
         prefs = preferences(conn)
-        button = reshape_button(prefs, label)
-        if button is None:
-            return {"status": "old"}
+        button = {"label": label, "asks": asks}
         config = model_gateway.get_current_ai_config()
         if not config.is_configured:
             return {"status": "no_provider", "said": NO_PROVIDER}
@@ -857,10 +925,13 @@ def reshape(post_id: str, label: str) -> Dict[str, Any]:
         earlier.append({"text": before, "at": collection._now(), "by": button["label"]})
         made["earlier"] = earlier[-EARLIER_KEPT:]
         with conn:
+            # Only on the post as it was read: its words, its status and its time (a plan kept).
             done = conn.execute(
-                "UPDATE posts SET content = ?, made_with = ? WHERE id = ? AND status = 'draft' AND content = ? "
-                "AND scheduled_for IS NULL AND published_at IS NULL AND activity_urn IS NULL",
-                (draft[:5000], json.dumps(made), post["id"], before)).rowcount
+                "UPDATE posts SET content = ?, made_with = ? WHERE id = ? AND status = ? AND content = ? "
+                "AND COALESCE(scheduled_for, '') = ? AND published_at IS NULL AND activity_urn IS NULL "
+                "AND NOT EXISTS (SELECT 1 FROM settings WHERE key = ?)",
+                (draft[:5000], json.dumps(made), post["id"], post["status"], before, post["scheduled_for"] or "",
+                 _HOLDS_PREFIX + post["id"])).rowcount
             if done:
                 remembered.mark_used(conn, [f["id"] for f in facts])
     finally:
@@ -880,10 +951,11 @@ def undo_reshape(post_id: str, mark: str) -> str:
     """
     conn = get_db()
     try:
-        post = conn.execute("SELECT content, made_with, status FROM posts WHERE id = ?", (str(post_id or ""),)).fetchone()
+        post = conn.execute("SELECT id, content, made_with, status, scheduled_for, published_at, activity_urn "
+                            "FROM posts WHERE id = ?", (str(post_id or ""),)).fetchone()
         if post is None:
             return "undo_gone"
-        if post["status"] != "draft" or content_mark(post["content"]) != mark:
+        if not _rewritable(conn, post) or content_mark(post["content"]) != mark:
             return "undo_changed"
         try:
             made = json.loads(post["made_with"] or "{}")
@@ -895,8 +967,10 @@ def undo_reshape(post_id: str, mark: str) -> str:
         last = earlier.pop()
         made["earlier"] = earlier
         with conn:
-            done = conn.execute("UPDATE posts SET content = ?, made_with = ? WHERE id = ? AND status = 'draft' "
-                                "AND content = ?", (last["text"], json.dumps(made), post_id, post["content"])).rowcount
+            done = conn.execute("UPDATE posts SET content = ?, made_with = ? WHERE id = ? AND status = ? "
+                                "AND content = ? AND COALESCE(scheduled_for, '') = ?",
+                                (last["text"], json.dumps(made), post_id, post["status"], post["content"],
+                                 post["scheduled_for"] or "")).rowcount
     finally:
         conn.close()
     if done:

@@ -259,6 +259,41 @@ export function TelegramIngressPanel() {
                   void setOption({ replies_add: on }, on ? "A reply adds to what it replies to." : "A reply is an item of its own.")
                 }
               />
+              <fieldset
+                role="radiogroup"
+                aria-label="What a reply to a draft does"
+                className="flex flex-col gap-1 text-[12px] leading-relaxed"
+              >
+                <legend className="text-ink-primary">What a reply to a draft does</legend>
+                <p className="text-ink-secondary">
+                  Reply in Telegram to my message about a draft (Draft ready, a rewrite, a plan) with what to change, and
+                  I offer to rewrite that draft with your words through your AI provider; the answer also lets you keep
+                  your reply as a note instead. Nothing is rewritten until you press.{" "}
+                  {state.options.draft_reply === state.options.defaults.draft_reply
+                    ? "(The default.)"
+                    : "(Default: offer to rewrite the draft with it.)"}
+                </p>
+                <label className="flex items-center gap-2 text-ink-secondary">
+                  <input
+                    type="radio"
+                    name="draft-reply"
+                    checked={state.options.draft_reply === "rewrite"}
+                    disabled={busy}
+                    onChange={() => void setOption({ draft_reply: "rewrite" }, "A reply to a draft offers its rewrite.")}
+                  />
+                  <span>Offer to rewrite the draft with it</span>
+                </label>
+                <label className="flex items-center gap-2 text-ink-secondary">
+                  <input
+                    type="radio"
+                    name="draft-reply"
+                    checked={state.options.draft_reply === "note"}
+                    disabled={busy}
+                    onChange={() => void setOption({ draft_reply: "note" }, "A reply to a draft is kept as a note.")}
+                  />
+                  <span>Keep it as a note, as until this version</span>
+                </label>
+              </fieldset>
               <OptionRow
                 label="The bot may answer with your figures"
                 detail="When on, /today answers with your latest post's figures, how many replies are waiting and when your next post is scheduled. Those figures then sit on Telegram's servers, as everything in the chat does. Never anyone else's name or comment."

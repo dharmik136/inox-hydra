@@ -4214,6 +4214,8 @@ export interface IngressOptions {
   remind_moments: RemindMoment[];
   /** "Saved to your collection." says what it connects to (phase 6). On unless turned off. */
   connect: boolean;
+  /** What a reply to the bot's message about a draft does (phase 6): offer its rewrite, or keep it as a note. */
+  draft_reply: "rewrite" | "note";
   /**
    * Bring back an unused idea (phase 6): on these days (0 is Monday), at this
    * whole hour, an item older than so many days. Off unless turned on.
@@ -4231,6 +4233,7 @@ export interface IngressOptions {
     list_at_most: number;
     remind_moments: RemindMoment[];
     back: { on: boolean; days: number[]; hour: number; older: number };
+    draft_reply: "rewrite" | "note";
   };
 }
 
