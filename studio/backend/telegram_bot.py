@@ -302,7 +302,6 @@ SENTENCES = {
     "recall": "{count} items in your collection hold that word.",
     "recall_one": "One item in your collection holds that word.",
     "recall_none": "Nothing in your collection holds that word.",
-    "empty_recall": "Send /recall with a word, for example /recall pricing.",
     # Phase 5, item 1: the tour.
     "tour_started": "The tour is below, a few steps at a time.",
     "tour_next": "The next part of the tour.",
@@ -355,6 +354,20 @@ SENTENCES = {
     "connected_none": "Nothing was written: nothing unused in your collection shares its words now.",
     "connected_used": "Nothing was written: you have used it or set it aside in your studio since.",
     "connected_gone": "Nothing was written: it is no longer in your collection.",
+    # Phase 6, item 3: /recall alone, and /remembered.
+    "waiting": "{count} unused items wait in your collection.",
+    "waiting_one": "One unused item waits in your collection.",
+    "waiting_none": "Nothing waits in your collection: everything you sent is used or set aside.",
+    "waiting_where": "See them in your studio, under From your record, Your collection.",
+    "waiting_where_one": "See it in your studio, under From your record, Your collection.",
+    "remembered_count": "Your studio remembers {count} things for its writing.",
+    "remembered_one": "Your studio remembers one thing for its writing.",
+    "remembered_none": ("Your studio remembers nothing for its writing yet. Send /remember and a sentence, for example "
+                        "/remember offer: a workshop for small studios."),
+    "remembered_where": "See them in your studio, in Brand, under Writing, Things to remember.",
+    "remembered_where_one": "See it in your studio, in Brand, under Writing, Things to remember.",
+    "remembered_off": "None of them goes with writing now: Which go with writing is set to None in Brand, under Writing.",
+    "forget_gone": "Nothing to forget: that is no longer in your things to remember.",
 }
 
 # Phase 5, item 2: what a plan's messages say, with times on the computer's
@@ -390,6 +403,9 @@ RECALL_NEWEST = "The newest {count}:"
 BACK_WORDS = "Back from your collection: {kind} you saved {ago}, on {day}, and have not used yet."
 KIND_WORDS = {"note": "a note", "idea": "an idea", "forward": "a forwarded message", "bookmark": "a bookmark",
               "photo": "a photo", "voice": "a voice note", "document": "a document", "video": "a video"}
+# Phase 6, item 3: a thing to remember left out of writing while only the
+# ticked ones go, as /remembered says it.
+REMEMBERED_UNTICKED = " (not ticked, so it does not go with writing)"
 # The kinds of message whose buttons each act once, the others staying: a list.
 LISTS = ("recall", "ideas")
 
@@ -429,8 +445,30 @@ BOT_COMMANDS = (
              "plan it"),
     ("remember", "A fact after it about you, your audience, an offer or a date, which your studio's writing reads"),
     ("forget", "Words after it from something you asked me to remember, which is then removed"),
-    ("recall", "A word after it, and I say how many items in your collection hold it"),
+    # Phase 6, item 3.
+    ("remembered", "What your studio remembers for its writing, each with Forget; their words only if you allow them"),
+    ("recall", "Alone, your newest unused items; with a word after it, how many items in your collection hold it"),
     # Phase 5, item 5.
+    ("ideas", "Today's ideas from your record, each to write up; their words only if you allow them"),
+    ("ask", "What your studio should keep in mind when it picks what to write about, after it"),
+    ("status", "Whether your studio and its bridge are running, and when it last checked for your messages"),
+    ("today", "Your latest post's figures, replies waiting and your next scheduled post, only if you allow "
+              "figures in your studio"),
+    ("drafts", "How many drafts were made from what you sent in the last seven days"),
+)
+# The list 2.14.0 registered, word for word (phase 6): its menu record kept
+# the names, and the fingerprint is matched too, so the one-time notice after
+# this upgrade names only the commands a later list adds.
+COMMANDS_2_14 = (
+    ("help", "What I do, how to pair a chat, and what I send only if you allow it"),
+    ("tour", "What to try on your phone, a few steps at a time, and what you will see"),
+    ("idea", "Your idea after it, kept in your collection as an idea"),
+    ("write", "A word or a #tag after it, and I write one draft from your unused items that hold it"),
+    ("plan", "Alone, what is planned in your Queue; as a reply to my message about a draft, a day and a time to "
+             "plan it"),
+    ("remember", "A fact after it about you, your audience, an offer or a date, which your studio's writing reads"),
+    ("forget", "Words after it from something you asked me to remember, which is then removed"),
+    ("recall", "A word after it, and I say how many items in your collection hold it"),
     ("ideas", "Today's ideas from your record, each to write up; their words only if you allow them"),
     ("ask", "What your studio should keep in mind when it picks what to write about, after it"),
     ("status", "Whether your studio and its bridge are running, and when it last checked for your messages"),
@@ -454,7 +492,7 @@ COMMANDS_2_13 = (
               "figures in your studio"),
     ("drafts", "How many drafts were made from what you sent in the last seven days"),
 )
-EARLIER_COMMANDS = (COMMANDS_2_13,)
+EARLIER_COMMANDS = (COMMANDS_2_13, COMMANDS_2_14)
 # What Telegram took, so it is not sent again at every start: a fingerprint
 # of the chat and the list, the chat, when, and (since phase 5) the
 # commands' names. A refusal is tried again after this long, never at every
@@ -506,7 +544,8 @@ _HELP_AFTER = (
 HELP = _help()
 
 # Commands answered whatever the confirmations switch says: they are questions.
-QUESTIONS = ("start", "help", "status", "today", "drafts", "forget", "recall", "write", "tour", "plan", "ideas")
+QUESTIONS = ("start", "help", "status", "today", "drafts", "forget", "recall", "write", "tour", "plan", "ideas",
+             "remembered")
 _COMMAND = re.compile(r"^/([A-Za-z][A-Za-z0-9_]{0,31})(?:@[A-Za-z0-9_]{1,64})?(?:\s+(.*))?$", re.DOTALL)
 
 
@@ -909,6 +948,80 @@ def recall_answer(word: str) -> Tuple[str, Optional[tuple]]:
     if not rows:
         return said, None
     return said, ("recall", rows, {"items": listed, "word": word})
+
+
+def recall_waiting() -> Tuple[str, Optional[tuple]]:
+    """
+    /recall alone (phase 6, item 3): how many unused items wait in the
+    collection, and, only with the words switch on, the newest of them up to
+    "The bot lists at most", each line its first words (an item without
+    words said as its kind), each with words carrying its Write up button,
+    acting once as under /recall's list. Off: the count and where to see
+    them. Returns the answer and its buttons, or None.
+    """
+    conn = get_db()
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM collection_items WHERE status = 'new'").fetchone()[0]
+    finally:
+        conn.close()
+    if not count:
+        return SENTENCES["waiting_none"], None
+    said = SENTENCES["waiting_one"] if count == 1 else SENTENCES["waiting"].format(count=count)
+    if not collection_words_on():
+        return said + " " + SENTENCES["waiting_where_one" if count == 1 else "waiting_where"], None
+    shown = collection.newest_unused(phone_plans.list_at_most())
+    if count > len(shown):
+        said += "\n\n" + RECALL_NEWEST.format(count=len(shown))
+    lines = [f"{n}. {_first_line(item['text']) or KIND_WORDS.get(item['kind'], 'an item') + ', with no words'}"
+             for n, item in enumerate(shown, 1)]
+    said += ("\n" if count > len(shown) else "\n\n") + "\n".join(lines)
+    numbers = [str(n) for n, item in enumerate(shown, 1) if (item.get("text") or "").strip()]
+    if not numbers:
+        return said, None
+    return said, ("recall", [numbers[i:i + 5] for i in range(0, len(numbers), 5)],
+                  {"items": [item["id"] for item in shown], "word": ""})
+
+
+def remembered_answer() -> Tuple[str, Optional[tuple]]:
+    """
+    /remembered (phase 6, item 3): how many things the studio remembers for
+    its writing, and, only with the words switch on, the newest of them up to
+    "The bot lists at most", each with what it is about, numbered, each with
+    Forget; one left out of writing by "Which go with writing" is said so.
+    Off: the count and where they are in the studio.
+    """
+    facts = list(reversed(remembered.listing()))
+    if not facts:
+        return SENTENCES["remembered_none"], None
+    count = len(facts)
+    said = SENTENCES["remembered_one"] if count == 1 else SENTENCES["remembered_count"].format(count=count)
+    if not collection_words_on():
+        return said + " " + SENTENCES["remembered_where_one" if count == 1 else "remembered_where"], None
+    mode = writing.preferences()["memory"]
+    shown = facts[:phone_plans.list_at_most()]
+    lines = [f"{n}. {fact['about_said']}: {fact['text']}"
+             + (REMEMBERED_UNTICKED if mode == "chosen" and not fact["in_use"] else "")
+             for n, fact in enumerate(shown, 1)]
+    said += "\n\n" + (RECALL_NEWEST.format(count=len(shown)) + "\n" if count > len(shown) else "") + "\n".join(lines)
+    if mode == "off":
+        said += "\n\n" + SENTENCES["remembered_off"]
+    letters = [f"o{n}" for n in range(1, len(shown) + 1)]
+    return said, ("remembered", [letters[i:i + 5] for i in range(0, len(letters), 5)],
+                  {"facts": [fact["id"] for fact in shown]})
+
+
+def _forget_press(records: List[Dict[str, Any]], record: Dict[str, Any], letter: str, token: str,
+                  letters: List[str], conn) -> Dict[str, Any]:
+    """Forget under /remembered's list (phase 6): that thing removed, as /forget removes one; the others stay."""
+    facts = record.get("facts") or []
+    index = int(letter[1:]) - 1 if letter[1:].isdigit() else -1
+    gone = 0 <= index < len(facts) and remembered.remove(facts[index])
+    key = "forgot" if gone else "forget_gone"
+    record["spent"] = list(record.get("spent") or []) + [letter]
+    _write_json(conn, BUTTONS_KEY, records)
+    rest = [[x for x in row if x not in record["spent"]] for row in (record.get("rows") or [[x] for x in letters])]
+    return {"key": key, "answer": SENTENCES[key], "edit": None, "job": None, "send": [], "send_with": [],
+            "keep": _keyboard(token, rest, record.get("labels")) if any(rest) else None, "kept": True}
 
 
 def _list_press(records: List[Dict[str, Any]], record: Dict[str, Any], letter: str, token: str,
@@ -2099,6 +2212,10 @@ TOUR_STEPS = {
                        + SENTENCES["edited"] + '"'), "needs": ()},
     "remembered": {"say": "Send /remember and something about you, such as /remember I write for founders. Your "
                           "studio's writing reads it, and /forget takes it away.", "needs": ()},
+    # Phase 6, item 3.
+    "lists": {"say": ("Send /recall alone for your newest unused items, and /remembered for what your studio remembers, "
+                      "each with Forget. With the words switch off, I say how many and where they are in your studio."),
+              "needs": ()},
     "planned": {"say": ('Under "Draft ready", press Plan it and pick a time. The draft goes into your Queue, I bring it '
                         "back here then, and nothing is posted. Send /plan to see what is planned."),
                 "needs": ("provider",)},
@@ -2123,7 +2240,7 @@ TOUR_STEPS = {
 TOUR_PARTS = (
     ("send things in", ("saved", "link", "file")),
     ("make something of it", ("written", "reshaped", "several", "connected")),
-    ("build it up and keep it", ("added", "edited", "remembered")),
+    ("build it up and keep it", ("added", "edited", "remembered", "lists")),
     ("plan it and come back to it", ("planned", "reminder", "back", "morning", "card", "recall")),
 )
 # The steps that leave something in the studio, as the panel lists them;
@@ -2303,6 +2420,9 @@ def _label(letter: str) -> str:
         return f"{writing.preferences()['angles']} angles"
     if letter.isdigit():
         return f"Write up {letter}"
+    if letter.startswith("o") and letter[1:].isdigit():
+        # Phase 6: Forget, under /remembered's list.
+        return f"Forget {letter[1:]}"
     return BUTTON_LABELS[letter]
 
 
@@ -2683,6 +2803,9 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 return {"key": "button_used", "answer": SENTENCES["button_used"], "edit": None}
             if record.get("kind") in LISTS and (letter.isdigit() or letter == "c"):
                 return _list_press(records, record, letter, token, letters, conn)
+            if record.get("kind") == "remembered" and letter.startswith("o"):
+                # Forget, under /remembered's list (phase 6).
+                return _forget_press(records, record, letter, token, letters, conn)
             if letter == "c" and record.get("kind") == "item":
                 # Write one post from these, under what was saved (phase 6).
                 return _connected_press(records, record, token, letters, conn)

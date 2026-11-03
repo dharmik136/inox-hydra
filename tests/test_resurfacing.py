@@ -164,4 +164,5 @@ def test_recall_says_how_many_match_and_their_first_lines_only_with_the_switch(b
     assert "pricing pages lie less when founders write them" in said and "and more" not in said
     assert _recall(bot, "zebras") == SAID["recall_none"]
     assert _recall(bot, "hiring").startswith(SAID["recall_one"]), "one item is not said as one"
-    assert _recall(bot, "") == SAID["empty_recall"]
+    # Phase 6: /recall alone lists the newest unused items, where it used to say how to send a word.
+    assert _recall(bot, "").startswith(SAID["waiting"].format(count=3))

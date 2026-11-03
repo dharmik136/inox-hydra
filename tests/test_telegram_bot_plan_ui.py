@@ -70,10 +70,11 @@ def test_the_bot_lists_at_most_shows_its_default_and_saves(page, studio, fake):
     _saved_in_the_panel(page, studio)
     most = page.get_by_role("combobox", name="The bot lists at most")
     expect(most).to_have_value("5")
-    expect(page.get_by_text("in /plan and /recall (the default)")).to_be_visible()
+    # Phase 6: /remembered reads it too.
+    expect(page.get_by_text("in /plan, /recall and /remembered (the default)")).to_be_visible()
     most.select_option("3")
-    expect(page.get_by_text("The bot lists at most 3 in /plan and /recall.")).to_be_visible()
-    expect(page.get_by_text("in /plan and /recall (default: 5)")).to_be_visible()
+    expect(page.get_by_text("The bot lists at most 3 in /plan, /recall and /remembered.")).to_be_visible()
+    expect(page.get_by_text("in /plan, /recall and /remembered (default: 5)")).to_be_visible()
     assert phone_plans.list_at_most() == 3
     expect(most).to_be_enabled()
     assert _axe(page, PANEL) == []

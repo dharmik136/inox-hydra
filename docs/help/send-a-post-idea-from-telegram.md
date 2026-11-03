@@ -263,7 +263,11 @@ Or keep a note you sent as one: under "Saved to your collection.", a note or an 
 
 `/forget` and words from one of them removes it: "Forgotten: one thing you asked me to remember." If the words match several, nothing is removed and the bot says how many, so you can say more of it, or remove it in your studio. It never guesses.
 
+`/remembered` lists what your studio remembers. With **The bot may send me what it writes from my collection** on, it says, for example, "Your studio remembers 4 things for its writing." and the newest of them, numbered, each with what it is about ("1. About you: I write for founders of small design studios"), as many as **The bot lists at most** (saying "The newest 5:" when there are more), with **Forget 1**, **Forget 2** and so on: each removes that one ("Forgotten: one thing you asked me to remember."), and the others stay. While **Which go with writing** is **Only the ones ticked**, one left unticked says so; with **None**, the list says that none goes with writing now. With the switch off, the bot says only how many, and "See them in your studio, in Brand, under Writing, Things to remember."
+
 In the studio they are listed under **Brand**, then **Writing**, under **Things to remember**, where you can add, edit, tick, untick and remove them, and choose which go with writing: all of them (the default), only the ones ticked, or none. See [Set up your Brand and your Settings](set-up-brand-studio.md#things-to-remember).
+
+`/recall` alone lists your newest unused items. With **The bot may send me what it writes from my collection** on, it says, for example, "23 unused items wait in your collection." and the first lines of the newest, numbered, as many as **The bot lists at most** ("The newest 5:" when there are more), an item without words said as what it is ("a photo, with no words"), and **Write up 1**, **Write up 2** and so on under the ones with words, each writing that item up and staying until pressed once. With the switch off, it says only how many, and "See them in your studio, under From your record, Your collection."
 
 `/recall` and a word answers with how many items in your collection hold it, for example "2 items in your collection hold that word.", with **Write one post from these** under it while an unused item with words matches: it writes one draft from the unused items that hold the word, newest first, up to your **Most items in one draft**, exactly as `/write` does, and the bot says how many ("Writing one post from 2 items in your collection."). Only with **The bot may send me what it writes from my collection** on, it also lists their first lines, numbered, newest first, as many as **The bot lists at most** in the panel (five unless you change it), saying "The newest 5:" when more match, with **Write up 1**, **Write up 2** and so on, each writing that item up as **Write it up** does. Each button works once, and the others stay. Writing needs your AI provider: without one, the bot says so and every button stays.
 
@@ -286,11 +290,13 @@ The commands are in Telegram's **/** menu of your chat too: type `/` in the chat
 | `/drafts` | How many drafts were made from what you sent in the last seven days: "Drafts made from what you sent, in the last seven days: 5." A `Draft:` message, or an item you used as a draft. A count, never their words |
 | `/remember something` | It is kept in your things to remember, with **Undo** under the answer. See [Things to remember](#things-to-remember) |
 | `/forget words` | The one thing to remember that holds those words is removed; with several, nothing is, and the bot says how many |
+| `/recall` | Alone, how many unused items wait in your collection; and the newest of them, each with **Write up**, only with **The bot may send me what it writes from my collection** on. See [Things to remember](#things-to-remember) |
 | `/recall word` | How many items in your collection hold the word, as a word or a tag, with **Write one post from these**; and their first lines, each with **Write up**, only with **The bot may send me what it writes from my collection** on. `/recall #tag` counts the items that carry the tag. See [Things to remember](#things-to-remember) |
+| `/remembered` | How many things your studio remembers for its writing; and the newest of them, each with **Forget**, only with **The bot may send me what it writes from my collection** on. See [Things to remember](#things-to-remember) |
 | `/write word` or `/write #tag` | One draft from the unused items in your collection that hold the word, or carry the tag, newest first, up to your **Most items in one draft**, through your own AI provider as **Combine** writes: "Writing one post from 3 items in your collection.", then "Draft ready in your studio." Those items are then used. Nothing matching: "Nothing new in your collection holds that word, so nothing was written." |
 | Any other command | "I do not know that command. Send /help to see what I do." |
 
-`/start`, `/help`, `/tour`, `/plan`, `/ideas`, `/status`, `/today`, `/drafts`, `/forget`, `/recall` and `/write` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
+`/start`, `/help`, `/tour`, `/plan`, `/ideas`, `/status`, `/today`, `/drafts`, `/forget`, `/remembered`, `/recall` and `/write` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
 
 ## Your figures on Telegram, only if you allow it
 
@@ -368,6 +374,8 @@ These messages carry buttons, which you press in Telegram:
 | "Draft ready in your studio.", with the words switch on or off | **Plan it** | Offers a few times; the one you press puts the draft in your Queue then, and the bot brings it back at that time. See [Plan it from your phone](#plan-it-from-your-phone). The message keeps its other buttons |
 | `/ideas`' answer, with the words switch on | **Write up 1**, **Write up 2** and so on | That idea written up into a draft. Each works once; the others stay |
 | `/recall`'s answer | **Write one post from these**, and with the words switch on **Write up 1**, **Write up 2** and so on | One draft from the unused items that hold the word, as `/write` writes it, or that item written up. Each works once; the others stay |
+| `/recall` alone, with the words switch on | **Write up 1**, **Write up 2** and so on | That item written up. Each works once; the others stay |
+| `/remembered`, with the words switch on | **Forget 1**, **Forget 2** and so on | Removes that thing to remember. Each works once; the others stay |
 | "When should your studio bring this post back to you?" | A time, such as "Tomorrow 08:30" | Puts the draft in your Queue at that time. Nothing is posted |
 | "Planned for ..." | **Undo** | Makes it a draft again, while it is still queued at that time |
 | The same, and "Draft ready in your studio. It begins:", with **The bot may send me what it writes from my collection** on | **Send me the whole post**, or **Send me the posts** when several are due | Sends each post as a message of its own, to copy into the LinkedIn app. See [Post from your phone](#post-from-your-phone). The message keeps its other buttons |
@@ -430,7 +438,10 @@ Each message gets one short sentence back, the same words every time. None carri
 | `/forget`, with several matches | 2 things to remember hold those words. Say more of it, or remove it in your studio. |
 | `/forget`, with none | Nothing you asked me to remember holds those words. |
 | `/recall` | 2 items in your collection hold that word. (Or "One item in your collection holds that word.", or "Nothing in your collection holds that word.") |
-| `/idea`, `/ask`, `/remember`, `/forget`, `/recall` or `/write` with nothing after it | How to send one, with an example |
+| `/recall` alone | 23 unused items wait in your collection. See them in your studio, under From your record, Your collection. (With the words switch on, the newest of them instead of the last sentence; "Nothing waits in your collection: everything you sent is used or set aside." when nothing does.) |
+| `/remembered` | Your studio remembers 4 things for its writing. See them in your studio, in Brand, under Writing, Things to remember. (With the words switch on, the newest of them instead of the last sentence, each with **Forget**.) |
+| **Forget 1** under `/remembered`'s list, for one removed since | Nothing to forget: that is no longer in your things to remember. |
+| `/idea`, `/ask`, `/remember`, `/forget` or `/write` with nothing after it | How to send one, with an example |
 | `/write` | Writing one post from 3 items in your collection. (Or "Writing one post from one item in your collection.") Then, as for **Write it up**, "Draft ready in your studio." |
 | `/write`, with nothing new that matches | Nothing new in your collection holds that word, so nothing was written. |
 

@@ -557,7 +557,7 @@ export function TelegramIngressPanel() {
                   disabled={busy}
                   onChange={(event) => {
                     const most = Number(event.target.value);
-                    void setOption({ list_at_most: most }, `The bot lists at most ${most} in /plan and /recall.`);
+                    void setOption({ list_at_most: most }, `The bot lists at most ${most} in /plan, /recall and /remembered.`);
                   }}
                 >
                   {LIST_CHOICES.map((count) => (
@@ -567,7 +567,7 @@ export function TelegramIngressPanel() {
                   ))}
                 </select>
                 <span>
-                  {`in /plan and /recall ${
+                  {`in /plan, /recall and /remembered ${
                     state.options.list_at_most === state.options.defaults.list_at_most
                       ? "(the default)"
                       : `(default: ${state.options.defaults.list_at_most})`

@@ -256,9 +256,15 @@ def test_phase_5_schedule_quotes_the_bot():
 
 
 def test_phase_5_the_upgrade_notice_it_quotes_is_the_one_a_2_13_bot_gets():
-    """Phase 5: the notice a bot paired under 2.13.0 is told once, word for word, with the commands it adds."""
+    """
+    Phase 5: the notice 2.14.0 told a bot paired under 2.13.0, word for word,
+    with the commands 2.14.0 added (since phase 6, read from 2.14.0's own
+    list, kept in the code: a 2.13.0 bot updated now is told of every command
+    added since, /remembered too).
+    """
     before = {name for name, _words in telegram_bot.COMMANDS_2_13}
-    added = [name for name, _words in telegram_bot.BOT_COMMANDS if name not in before]
+    added = [name for name, _words in telegram_bot.COMMANDS_2_14 if name not in before]
+    assert added == ["tour", "plan", "ideas"]
     assert telegram_bot.tour_notice_text(added).split(" Press")[0] in _article()
 
 
@@ -290,3 +296,21 @@ def test_phase_6_bring_back_quotes_the_bot_and_the_panel():
         assert words in article and words in _panel(), words
     for label in ("Write it up", "Remind me", "Not now"):
         assert f"**{label}**" in article, label
+
+
+def test_phase_6_the_lists_quote_the_bot():
+    """Phase 6, item 3: /recall alone, /remembered, their buttons and Forget's answer."""
+    article = _article()
+    said = telegram_bot.SENTENCES
+    assert said["waiting"].format(count=3) + " " + said["waiting_where"] in article
+    assert said["remembered_count"].format(count=2) in article and said["forgot"] in article
+    for label in ("Write up 1", "Forget 1", "Forget 2"):
+        assert f"**{label}**" in article, label
+
+
+def test_phase_6_the_upgrade_notice_it_quotes_is_the_one_a_2_14_bot_gets():
+    """Phase 6: the notice a bot paired under 2.14.0 is told once, word for word, naming only what 2.15 adds."""
+    before = {name for name, _words in telegram_bot.COMMANDS_2_14}
+    added = [name for name, _words in telegram_bot.BOT_COMMANDS if name not in before]
+    assert added == ["remembered"]
+    assert telegram_bot.tour_notice_text(added).split(" Press")[0] in _article()

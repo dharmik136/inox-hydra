@@ -885,6 +885,17 @@ def matching(word: str) -> List[Dict[str, Any]]:
         conn.close()
 
 
+def newest_unused(most: int) -> List[Dict[str, Any]]:
+    """/recall alone (phase 6): the newest unused items, of every kind, at most `most`."""
+    conn = get_db()
+    try:
+        return [_row(conn, row) for row in conn.execute(
+            "SELECT * FROM collection_items WHERE status = 'new' ORDER BY received_at DESC, id DESC LIMIT ?",
+            (max(1, int(most)),))]
+    finally:
+        conn.close()
+
+
 def least_offered(conn) -> Optional[Dict[str, Any]]:
     """The morning idea's pick: a new item with words, never offered first, then the one offered longest ago."""
     marks = ", ".join("?" for _ in MATERIAL)

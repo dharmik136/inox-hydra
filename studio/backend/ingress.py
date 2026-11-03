@@ -1088,10 +1088,13 @@ class TelegramIngressDaemon:
             key, count = remembered.forget_matching(argument)
             return done, telegram_bot.SENTENCES[key].format(count=count), True
         if name == "recall":
-            if not argument.strip():
-                return done, telegram_bot.SENTENCES["empty_recall"], True
-            # What it finds can be written up from here (phase 5).
-            said, buttons = telegram_bot.recall_answer(argument)
+            # Alone, the newest unused items (phase 6); with a word, what holds it, to write up from here (phase 5).
+            said, buttons = (telegram_bot.recall_answer(argument) if argument.strip()
+                             else telegram_bot.recall_waiting())
+            return ({**done, "buttons": buttons} if buttons else done), said, True
+        if name == "remembered":
+            # What the studio remembers (phase 6): their words only with the words switch, each with Forget.
+            said, buttons = telegram_bot.remembered_answer()
             return ({**done, "buttons": buttons} if buttons else done), said, True
         if name == "write":
             # One draft from the unused items that match (phase 4), written
