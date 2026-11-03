@@ -59,6 +59,18 @@ capability first and merged on a release branch. Ten tabs on one post went
 from 620 requests to 3. Records: `docs/quality/cycle4/t1-phase2.md`,
 `t4-phase-b.md`, `t7-phase2.md`.
 
+## In 2.15.0
+
+The Telegram bot, phase 6, on the owner's "ok continue" of 2026-11-03: what
+something new connects to (on the bot and in Your collection), bringing back an
+unused idea, /recall alone and /remembered, a reply to a draft offering to
+rewrite it, and a series from a group, with every count, threshold, day and
+hour the creator's preference. No migration: the schema stays at 43. Also
+fixed: the Composer blanking on a draft planned from the phone with Schedule
+(live in 2.14.0), and test files whose modules could shadow each other.
+Records: `docs/quality/cycle4/bot-phase6.md` (the PRD) and the phase 6 section
+of `docs/quality/cycle4/telegram-bot.md`.
+
 ## In 2.14.0
 
 The Telegram bot, phase 5, on the owner's "continue" of 2026-11-02: a guided

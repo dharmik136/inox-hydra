@@ -5,6 +5,56 @@ asks for an entry per release (`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`
 section 5.5); this file starts with the work since v2.5.2, which was never
 released. Version numbers follow `studio/__version__.py`.
 
+## 2.15.0
+
+The bot connects what you save, brings old ideas back, shows what you have,
+and rewrites a draft from your reply.
+
+### Before you use 2.15.0
+
+- **No database upgrade.** The schema stays at 43: everything new is kept in
+  your settings.
+- **No hand reload.** An extension loaded from the studio's folder reloads
+  itself when the studio is updated.
+
+### Added
+
+- **What something new connects to.** When you save something with words, the
+  bot's answer says how many of your unused items share words with it, with
+  Write one post from these; their first lines only with the words switch on.
+  Your collection shows the same groups on each item, with Open the group and
+  Combine. Your settings: how many shared words make a connection (2, from 1
+  to 5) and how many connected items are offered (3, from 1 to 9), in Brand >
+  Writing; the sentence can be turned off in the Telegram panel.
+- **Bring back an unused idea.** Off until you turn it on in the Telegram
+  panel. On the days and at the hour you pick (Fridays at 16:00 to start), the
+  bot brings back your oldest unused idea older than the age you choose (14
+  days to start), with Write it up, Remind me and Not now. Never one set aside,
+  used or with a reminder waiting, and never the same one twice in a row;
+  quiet hours hold it. The tour now has a step for it and one for the morning
+  idea.
+- **/recall alone** lists your latest unused items, and **/remembered** lists
+  what your studio remembers, each with Forget; their words only with the words
+  switch on. "The bot lists at most" covers both. A bot paired before this
+  version is told once that it now also takes /remembered.
+- **Reply to a draft with what to change.** A reply to the bot's message about
+  a draft offers Rewrite it with what you said and Keep it as a note. The
+  rewrite follows your writing preferences and keeps the earlier text for
+  Undo, and the Composer shows the text from before your reply. Your setting,
+  in the Telegram panel: what a reply to a draft does (offer the rewrite, to
+  start).
+- **A series from a group.** From /recall's list or a connected group, Write it
+  as a series writes the number of drafts you choose (3, from 2 to 5), all of
+  them or none, and Plan the series puts them in your Queue's next open slots,
+  in order. Nothing is posted for you: a planned post only becomes due.
+
+### Fixed
+
+- A draft saved from your phone with `Schedule <when>:` blanked the Composer
+  when it was opened from the Queue's Edit text. It opens again.
+- Any set of the test files now runs together: a tool's module of the same
+  name could take the backend's place.
+
 ## 2.14.0
 
 The bot shows you around, plans your posts, brings an idea back when you ask,
