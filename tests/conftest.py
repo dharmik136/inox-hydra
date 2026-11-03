@@ -197,6 +197,29 @@ def pytest_configure(config):
                 conn.close()
         except Exception as e:
             sys.stderr.write(f"Notice: Sandbox risk acknowledgement seed encountered: {e}\n")
+    _bind_the_backends_library_bundle()
+
+
+def _bind_the_backends_library_bundle():
+    """
+    The backend's library_bundle, bound once for the session, before any test
+    file is imported. tools/library_bundle.py, the vendor's signing command,
+    has the same name, and several test files put tools/ first on sys.path
+    when they are imported or while they run: an app imported after one of
+    them found the tool instead, and every route that names the library failed
+    (docs/quality/cycle4/bot-phase6.md, item 0). The tool is only ever run as a
+    command, and imports the backend's itself, so nothing needs it by this
+    name. Bound here, after the sandbox home is set, so the database module it
+    imports names no one's real data.
+    """
+    try:
+        import library_bundle
+    except Exception as e:
+        sys.stderr.write(f"Notice: the backend's library_bundle could not be imported: {e}\n")
+        return
+    held = os.path.realpath(getattr(library_bundle, "__file__", "") or "")
+    if os.path.dirname(held) != os.path.realpath(_BACKEND_DIR):
+        sys.stderr.write(f"Notice: library_bundle resolved to {held}, not the backend's\n")
 
 
 # ---------------------------------------------------------------------------

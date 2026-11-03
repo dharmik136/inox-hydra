@@ -113,7 +113,8 @@ def test_the_renderer_refuses_what_it_does_not_understand():
     The property the whole arrangement rests on: an unknown construct raises
     instead of vanishing. Checked by handing the renderer one.
     """
-    sys.path.insert(0, os.path.join(REPO, "tools"))
+    # Loaded by its file: tools/ is never put on the path, where its
+    # library_bundle would shadow the backend's (bot phase 6, item 0).
     import importlib.util
     spec = importlib.util.spec_from_file_location("build_privacy_page", TOOL)
     module = importlib.util.module_from_spec(spec)
