@@ -750,6 +750,10 @@ HELP_SECTIONS = [
             # Phase 5: a guided first run, plans and reminders from the phone;
             # written before its code. Its record is in telegram-bot.md.
             "quality/cycle4/bot-phase5.md",
+            # Phase 6: what connects, what comes back, what you have, and a
+            # reply that rewrites; written before its code. Its record is in
+            # telegram-bot.md.
+            "quality/cycle4/bot-phase6.md",
             # Cycle 4, track 6: the phone pairing design (item 27) and the
             # answer on LinkedIn's public-client OAuth flow (decision D2).
             "PHONE_PAIRING_DESIGN.md",
