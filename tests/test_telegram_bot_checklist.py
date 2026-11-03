@@ -280,3 +280,13 @@ def test_phase_6_connections_quote_the_bot_the_box_the_writing_view_and_the_pane
     for words in ("Words two items share to be connected", "Connected items offered with one"):
         assert words in article and words in writing_view, words
     assert "Say what something new connects to" in article and "Say what something new connects to" in _panel()
+
+
+def test_phase_6_bring_back_quotes_the_bot_and_the_panel():
+    """Phase 6, item 2: the message an idea comes back with, its buttons, and the panel's switch and next time."""
+    article = _article()
+    assert telegram_bot.BACK_WORDS.split(" {kind}")[0] in article
+    for words in ("Bring back an unused idea", "NEXT ONE BROUGHT BACK:"):
+        assert words in article and words in _panel(), words
+    for label in ("Write it up", "Remind me", "Not now"):
+        assert f"**{label}**" in article, label

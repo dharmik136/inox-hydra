@@ -705,11 +705,14 @@ class TelegramIngressDaemon:
                                          item=item["reminder"]["item"]) if rows else None
             elif item.get("morning"):
                 keyboard = self._buttons(chat, item["text"], "morning", **item["morning"])
+            elif item.get("back"):
+                # An unused idea brought back (phase 6): Write it up, Remind me and Not now.
+                keyboard = self._buttons(chat, item["text"], "back", item=item["back"]["item"])
             else:
                 keyboard = None
-            # The morning idea and a reminder are about one item: a reply to either adds to that item.
-            self.outbox.put(chat, item["text"], keyboard,
-                            about=self._about(chat, (item.get("morning") or item.get("reminder") or {}).get("item")))
+            # The morning idea, a reminder and an idea brought back are about one item: a reply adds to it.
+            about = (item.get("morning") or item.get("reminder") or item.get("back") or {}).get("item")
+            self.outbox.put(chat, item["text"], keyboard, about=self._about(chat, about))
         if said:
             self.flush_replies()
 
@@ -1853,6 +1856,8 @@ def describe_settings() -> Dict[str, Any]:
         "quiet_now": telegram_bot.in_quiet_hours(),
         # When the next weekly summary goes, on this computer's clock; None while it is off.
         "weekly_next": telegram_bot.weekly_next(),
+        # Phase 6: when the next unused idea is brought back; None while it is off.
+        "back_next": telegram_bot.back_next(),
         "last_send_error": ingress_daemon.outbox.last_error if running_here else None,
         "replies_waiting": ingress_daemon.outbox.waiting() if running_here else 0,
         # Phase 4, item 2: the last successful check of Telegram, and a day

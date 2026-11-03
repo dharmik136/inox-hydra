@@ -145,7 +145,8 @@ def test_the_bots_switches_for_the_collection_show_their_defaults_and_save(page,
     expect(page.get_by_text("IT CARRIES YOUR WORDS, SO IT WAITS", exact=False)).to_be_visible()
     words.click()
     expect(page.get_by_text("The bot may send you what it writes from your collection.")).to_be_visible()
-    page.get_by_role("checkbox", name="Sat").click()
+    # The morning idea's Saturday, named exactly: Bring back an unused idea has its own days (phase 6).
+    page.get_by_role("checkbox", name="Sat", exact=True).click()
     expect(page.get_by_text("The morning idea comes on 6 days a week.")).to_be_visible()
     page.get_by_role("checkbox", name="your posts, for the angle").click()
     expect(page.get_by_text("Angles leave your posts alone.")).to_be_visible()

@@ -247,6 +247,14 @@ Tick **Send me an idea from my collection each morning** in the panel, and pick 
 
 It carries your words, so it comes only while **The bot may send me what it writes from my collection** is on, and it waits through quiet hours like every notification. **Ideas draw on**, beside it, says whether the idea comes from your collection and whether its angle comes from your posts. A day with nothing new to offer sends nothing.
 
+## Bring back an unused idea
+
+Tick **Bring back an unused idea** in the panel, and pick the days (Fridays unless you change them), the hour (16:00) and how old an idea must be (older than 14 days; 3, 7, 14, 21, 30, 60 or 90). At that time the bot brings back one item from your collection you have not used: the oldest of those older than you chose. It never brings back one you set aside or used, one with a reminder waiting, the one it brought back last time, or the one the morning idea offered last, so neither repeats the other.
+
+It says, for example, "Back from your collection: an idea you saved 22 days ago, on Mon 12 Oct, and have not used yet.", and, only while **The bot may send me what it writes from my collection** is on, the idea's first line under it; otherwise it says only what kind of item it is and how old. Under it, **Write it up** writes it up as under "Saved to your collection.", **Remind me** asks when to bring it back, as for anything you send, and **Not now** sets it aside ("Set aside: it is under Not now in your collection."). A reply to it adds to the item.
+
+It comes once on each day you picked, after [quiet hours](#quiet-hours) like every notification, and the first comes at the first of your moments after you tick it or change it, never at once. A day with nothing old enough to bring back sends nothing. The panel says when the next one comes, for example "NEXT ONE BROUGHT BACK: FRI 06 NOV, 16:00". Your studio keeps which item it brought back last, so it is not the next one; removing the bot, or deleting everything, forgets it.
+
 ## Things to remember
 
 Tell the studio facts about you that every writing request should know: about you, your audience, an offer, or a date. Send `/remember` and a sentence, for example `/remember I write for founders of small design studios`. Start it with `audience:`, `offer:` or `date:` to say what it is about, as in `/remember offer: a workshop for small studios`; without one, it is about you. The bot answers "Kept in your things to remember.", with **Undo** under it.
@@ -322,7 +330,7 @@ It never carries a person's name or a comment, nor the words of your posts or dr
 
 ## Quiet hours
 
-The notifications wait during quiet hours and go when they end, each still sent once: a post that came due at 02:00 is told at 07:00, if it is still due then, and three that came due in the night are told in one message. A reminder you asked for with **Remind me in an hour**, and the weekly summary, wait the same way.
+The notifications wait during quiet hours and go when they end, each still sent once: a post that came due at 02:00 is told at 07:00, if it is still due then, and three that came due in the night are told in one message. A reminder you asked for with **Remind me in an hour**, the weekly summary, the morning idea and an unused idea brought back wait the same way.
 
 **Hold notifications during quiet hours** is ticked, from 23:00 to 07:00 on this computer's clock, until you change it in the panel: pick whole hours beside **From** and **to**, or untick it to have notifications at any hour. While it is quiet, the panel says "QUIET NOW: NOTIFICATIONS WAIT UNTIL 07:00". A start and an end on the same hour are refused with a sentence, and nothing is saved.
 
@@ -349,6 +357,7 @@ These messages carry buttons, which you press in Telegram:
 | A part of the tour | **Next**, **Stop the tour**, and on the last part **From the start** | Shows the next part in the same message, ends the tour, or goes back to its first part |
 | "Kept in your things to remember. In your collection it is set as used." | **Undo** | Removes that thing to remember, and the item is new again: "Undone: it is no longer kept, and it is new in your collection again." |
 | "An idea from your collection:" | **Write it up** and **Not today** | See [A morning idea](#a-morning-idea) |
+| "Back from your collection: ..." | **Write it up**, **Remind me** and **Not now** | Writes it up, asks when to bring it back, or sets it aside. See [Bring back an unused idea](#bring-back-an-unused-idea) |
 | "Kept in your things to remember." | **Undo** | Removes it from your things to remember: "Undone: it is no longer kept." |
 | "Added to the item in your collection." | **Undo** | Takes those words back off the item, while you have not used it since: "Undone: those words are taken back off the item." Otherwise "Not undone: you have used the item in your studio since, so the words stay on it." |
 | "Saved as a draft in your studio." | **Undo** | Removes that draft from your studio, and its line in your collection, while it is untouched there: still a draft, with the words, tags and media the bot saved, never queued or published. A draft you changed is kept |

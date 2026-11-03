@@ -206,6 +206,15 @@ def waiting_for(conn, item_ids: Iterable[int]) -> Dict[int, List[Dict[str, Any]]
     return found
 
 
+def waiting_items(conn) -> set:
+    """The items with a reminder not yet told, which an idea brought back passes over (phase 6)."""
+    try:
+        return {row[0] for row in conn.execute(f"SELECT DISTINCT item_id FROM {TABLE} WHERE told_at IS NULL")}
+    except Exception:
+        # A database from before reminders were kept holds none.
+        return set()
+
+
 def claim_due(conn, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
     """
     The reminders whose moment has come, each claimed (told) by one

@@ -135,7 +135,9 @@ RESHAPE_LETTERS = "efghij"
 REWRITTEN_WORDS = "Rewritten in your studio ({label}). It begins:"
 BUTTON_ROWS = {"undo": (("u",),), "item": (("w", "a"), ("u",)), "item_bare": (("u",),),
                "due": (("r",), ("d",)), "morning": (("w", "n"),), "fact": (("u",),), "added": (("u",),),
-               "kept": (("u",),), "tour_offer": (("b",),)}
+               "kept": (("u",),), "tour_offer": (("b",),),
+               # Phase 6, item 2: an unused idea brought back.
+               "back": (("w", "k"), ("s",))}
 # The bot may send what it writes from the collection (its words): off unless "on".
 COLLECTION_WORDS_KEY = "telegram_collection_words"
 # Phase 4, item 6: a reply adds to what it replies to: on unless "off".
@@ -149,6 +151,17 @@ CONNECT_KEY = "telegram_connect"
 # The morning idea, off by default: {on, days (0 is Monday), hour, since}.
 MORNING_KEY = "telegram_morning"
 MORNING_DAYS, MORNING_HOUR = (0, 1, 2, 3, 4), 8
+# Phase 6, item 2: bring back an unused idea, off by default: {on, days (0 is
+# Monday), hour, older (in days), since}, on the computer's own clock. Once a
+# week on Friday at 16:00 (near the end of the working week, when the next is
+# planned, and clear of the morning idea and the weekly summary), for an item
+# older than two weeks, unless changed.
+BACK_KEY = "telegram_bring_back"
+BACK_DAYS, BACK_HOUR, BACK_OLDER = (4,), 16, 14
+BACK_AGES = (3, 7, 14, 21, 30, 60, 90)
+# Which item it brought back last, and when ({item, at}), so it never brings
+# the same one twice in a row. Kept only for the bot it was told by.
+BROUGHT_BACK_KEY = "telegram_brought_back"
 
 # The worker looks for something to tell between polls, at most this often.
 NOTIFY_EVERY_SECONDS = 60.0
@@ -372,6 +385,11 @@ IDEAS_MORE = "And {count} more in your studio, which carry no words to send here
 IDEAS_MODEL_WAITING = "The idea from your AI provider comes when you open From your record in your studio."
 # Phase 5, item 3: /recall lists the newest when more match than it shows.
 RECALL_NEWEST = "The newest {count}:"
+# Phase 6, item 2: an item brought back, with its kind, its age and its day
+# on the computer's clock; its first line follows only with the words switch.
+BACK_WORDS = "Back from your collection: {kind} you saved {ago}, on {day}, and have not used yet."
+KIND_WORDS = {"note": "a note", "idea": "an idea", "forward": "a forwarded message", "bookmark": "a bookmark",
+              "photo": "a photo", "voice": "a voice note", "document": "a document", "video": "a video"}
 # The kinds of message whose buttons each act once, the others staying: a list.
 LISTS = ("recall", "ideas")
 
@@ -1224,10 +1242,11 @@ def gap_to_tell() -> Optional[str]:
 
 def forget_checks(conn) -> None:
     """
-    A new bot, or none: another bot's last check, its notice, and the notice
-    that an upgrade added commands (phase 5) say nothing about this one.
+    A new bot, or none: another bot's last check, its notice, the notice
+    that an upgrade added commands (phase 5), and which item it brought back
+    last (phase 6) say nothing about this one.
     """
-    conn.execute("DELETE FROM settings WHERE key IN (?, ?, ?)", (CHECKED_KEY, GAP_KEY, TOUR_KEY))
+    conn.execute("DELETE FROM settings WHERE key IN (?, ?, ?, ?)", (CHECKED_KEY, GAP_KEY, TOUR_KEY, BROUGHT_BACK_KEY))
 
 
 def replies_on() -> bool:
@@ -1413,9 +1432,102 @@ def morning() -> Dict[str, Any]:
             "since": held.get("since") if isinstance(held.get("since"), str) else None}
 
 
+def bring_back() -> Dict[str, Any]:
+    """
+    Bring back an unused idea, in the open profile (phase 6): {on, days,
+    hour, older, since}. Off, Fridays at 16:00, for an item older than 14
+    days, unless changed.
+    """
+    try:
+        held = json.loads(_setting(BACK_KEY) or "{}")
+    except (TypeError, ValueError):
+        held = {}
+    held = held if isinstance(held, dict) else {}
+    days = held.get("days")
+    if not (isinstance(days, list) and days and all(isinstance(d, int) and not isinstance(d, bool) and 0 <= d <= 6
+                                                    for d in days)):
+        days = list(BACK_DAYS)
+    older = held.get("older")
+    return {"on": held.get("on") is True, "days": sorted(set(days)), "hour": _hour(held.get("hour"), BACK_HOUR),
+            "older": older if older in BACK_AGES and not isinstance(older, bool) else BACK_OLDER,
+            "since": held.get("since") if isinstance(held.get("since"), str) else None}
+
+
+def back_line(item: Dict[str, Any]) -> str:
+    """An item brought back, as the bot says it without its words: its kind, its age and the day it came."""
+    return BACK_WORDS.format(kind=KIND_WORDS.get(item.get("kind"), "an item"), ago=ago(_instant(item.get("received_at"))),
+                             day=_said_day(item.get("received_at")))
+
+
+def _back_due(told: List[str]) -> Optional[str]:
+    """Today's key when an idea is due to be brought back: on, a chosen day, its hour passed, after it was set."""
+    setting = bring_back()
+    if not setting["on"]:
+        return None
+    now = local_now()
+    if now.weekday() not in setting["days"]:
+        return None
+    moment = datetime.combine(now.date(), day_time(hour=setting["hour"])).astimezone()
+    since = _instant(setting["since"])
+    key = f"back:{now.date().isoformat()}"
+    if now < moment or (since is not None and since >= moment) or key in told:
+        return None
+    return key
+
+
+def _brought_back(conn, told: List[str]) -> Optional[Tuple[str, Optional[Dict[str, Any]]]]:
+    """
+    An unused idea brought back, when it is due (phase 6, item 2): the oldest
+    item with words, new and older than the creator's age, never one set
+    aside or used, one with a reminder waiting, the one brought back last
+    time, or the one the morning idea offered last. Its first line goes only
+    with the words switch on; otherwise its kind and its age. Marked offered,
+    so the morning idea passes over it, and kept as the one brought back.
+    Returns (today's key, the message or None): a day with nothing to bring
+    back is marked told all the same.
+    """
+    key = _back_due(told)
+    if key is None:
+        return None
+    cutoff = datetime.now(timezone.utc) - timedelta(days=bring_back()["older"])
+    last = _read_json(conn, BROUGHT_BACK_KEY, {}).get("item")
+    item = collection.oldest_unused(conn, cutoff, skip=(last, collection.last_offered(conn)))
+    if item is None:
+        return key, None
+    text = back_line(item)
+    if collection_words_on():
+        text += "\n\n" + _first_line(item["text"])
+    collection.offered(conn, item["id"])
+    _write_json(conn, BROUGHT_BACK_KEY, {"item": item["id"], "at": _now()})
+    return key, {"text": text, "due": None, "back": {"item": item["id"]}}
+
+
+def back_next() -> Optional[str]:
+    """When the next idea is brought back, as the panel says it, or None while it is off."""
+    setting = bring_back()
+    if not setting["on"]:
+        return None
+    conn = get_db()
+    try:
+        told = _told(conn)
+    finally:
+        conn.close()
+    now = local_now()
+    since = _instant(setting["since"])
+    for offset in range(0, 15):
+        day = now.date() + timedelta(days=offset)
+        moment = datetime.combine(day, day_time(hour=setting["hour"])).astimezone()
+        # A moment passed today and not yet told goes at the next check, so it is the next one.
+        if (day.weekday() not in setting["days"] or f"back:{day.isoformat()}" in told
+                or (since is not None and since >= moment)):
+            continue
+        return moment.strftime("%a %d %b, %H:%M")
+    return None
+
+
 def options() -> Dict[str, Any]:
     """The bot's switches, as the panel shows them."""
-    quiet, week, early = quiet_hours(), weekly(), morning()
+    quiet, week, early, back = quiet_hours(), weekly(), morning(), bring_back()
     return {"replies": replies_on(), "figures": figures_on(), "notify_due": notify_due_on(),
             "notify_24h": notify_24h_on(), "quiet_hours": quiet["on"], "quiet_from": quiet["from"],
             "quiet_to": quiet["to"], "weekly": week["on"], "weekly_day": week["day"], "weekly_hour": week["hour"],
@@ -1426,11 +1538,14 @@ def options() -> Dict[str, Any]:
             # Phase 6: what something new connects to, and the rule, set in Brand under Writing.
             "connect": connect_on(), "connect_shared": writing.preferences()["connect_shared"],
             "connect_offer": writing.preferences()["connect_offer"],
+            # Phase 6: bring back an unused idea.
+            "back": back["on"], "back_days": back["days"], "back_hour": back["hour"], "back_older": back["older"],
             # Phase 5: what Plan it offers, and how many lines a list shows, with their defaults.
             "plan": phone_plans.plan_offers(), "list_at_most": phone_plans.list_at_most(),
             "remind_moments": phone_reminders.moments(),
             "defaults": {"plan": phone_plans.PLAN_DEFAULT, "list_at_most": phone_plans.LIST_DEFAULT,
-                         "remind_moments": phone_reminders.MOMENTS_DEFAULT}}
+                         "remind_moments": phone_reminders.MOMENTS_DEFAULT,
+                         "back": {"on": False, "days": list(BACK_DAYS), "hour": BACK_HOUR, "older": BACK_OLDER}}}
 
 
 def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
@@ -1443,7 +1558,9 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
                  replies_add: Optional[bool] = None, plan: Optional[Dict[str, Any]] = None,
                  list_at_most: Optional[int] = None,
                  remind_moments: Optional[List[Dict[str, Any]]] = None,
-                 connect: Optional[bool] = None) -> Dict[str, Any]:
+                 connect: Optional[bool] = None, back_on: Optional[bool] = None,
+                 back_days: Optional[List[int]] = None, back_hour: Optional[int] = None,
+                 back_older: Optional[int] = None) -> Dict[str, Any]:
     """
     Saves the switches the panel sent; a switch not sent is left as it is.
     Quiet hours run from one whole hour to another that differs from it;
@@ -1495,6 +1612,20 @@ def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None,
         changes[MORNING_KEY] = json.dumps({"on": held["on"] if morning_on is None else bool(morning_on),
                                            "days": sorted(set(days)), "hour": hour,
                                            "since": local_now().astimezone(timezone.utc).isoformat()})
+    if back_on is not None or back_days is not None or back_hour is not None or back_older is not None:
+        held = bring_back()
+        days = held["days"] if back_days is None else back_days
+        hour = held["hour"] if back_hour is None else back_hour
+        older = held["older"] if back_older is None else back_older
+        if (not isinstance(days, list) or not days
+                or not all(isinstance(d, int) and not isinstance(d, bool) and 0 <= d <= 6 for d in days)
+                or _hour(hour, -1) < 0 or older not in BACK_AGES or isinstance(older, bool)):
+            raise ValueError("An unused idea comes back on one or more days of the week at a whole hour, 00:00 to "
+                             f"23:00, for an item older than {', '.join(str(n) for n in BACK_AGES[:-1])} or "
+                             f"{BACK_AGES[-1]} days. Nothing was saved.")
+        changes[BACK_KEY] = json.dumps({"on": held["on"] if back_on is None else bool(back_on),
+                                        "days": sorted(set(days)), "hour": hour, "older": older,
+                                        "since": local_now().astimezone(timezone.utc).isoformat()})
     if plan is not None:
         # Phase 5: refused with the panel's sentence (phone_plans.Refused is a ValueError).
         changes[phone_plans.PLAN_KEY] = json.dumps(phone_plans.check_plan_offers(plan))
@@ -1622,6 +1753,7 @@ def notifications() -> List[Dict[str, Any]]:
     and Done are about, or is None.
     """
     due_on, day_on, week_on, early_on = notify_due_on(), notify_24h_on(), weekly()["on"], morning()["on"]
+    back_on = bring_back()["on"]
     conn = get_db()
     try:
         # Planned from the phone (phase 5): planning was asking to be told,
@@ -1630,7 +1762,7 @@ def notifications() -> List[Dict[str, Any]]:
         if not due_on:
             # Unticked, no reminder comes either, but for posts planned from the phone.
             _keep_reminders_of(conn, planned)
-        if not (due_on or planned or day_on or week_on or early_on):
+        if not (due_on or planned or day_on or week_on or early_on or back_on):
             return []
         try:
             from . import post_identity
@@ -1677,6 +1809,13 @@ def notifications() -> List[Dict[str, Any]]:
         idea = _morning_idea(conn, told) if early_on else None
         if idea is not None:
             key, offered = idea
+            newly.append(key)
+            if offered:
+                said.append(offered)
+        # Phase 6: an unused idea brought back, after the morning's, which it never repeats.
+        back = _brought_back(conn, told) if back_on else None
+        if back is not None:
+            key, offered = back
             newly.append(key)
             if offered:
                 said.append(offered)
@@ -1966,6 +2105,13 @@ TOUR_STEPS = {
     "reminder": {"say": ('Under "Saved to your collection.", press Remind me and pick a moment. I bring the item back '
                          "then, with Write it up and Not now, and Your collection lists the reminder with Cancel."),
                  "needs": ()},
+    # Phase 6, item 2, and the morning idea it never repeats.
+    "back": {"say": ("In your studio, under Local security, tick Bring back an unused idea and pick the days, the hour "
+                     "and how old: then I bring back the oldest idea you have not used, with Write it up, Remind me and "
+                     "Not now."), "needs": ()},
+    "morning": {"say": ("Tick Send me an idea from my collection each morning under Local security: on the mornings you "
+                        "pick, I send one of your unused ideas with an angle from what worked in your posts."),
+                "needs": ("words",)},
     "card": {"say": ("Send /ideas for today's ideas from your record, each with Write up: press one and I write a "
                      "draft from it in your studio."), "needs": ("provider", "words")},
     "recall": {"say": ("Send /recall and a word, such as /recall pricing. I say how many items hold it, with Write one "
@@ -1978,7 +2124,7 @@ TOUR_PARTS = (
     ("send things in", ("saved", "link", "file")),
     ("make something of it", ("written", "reshaped", "several", "connected")),
     ("build it up and keep it", ("added", "edited", "remembered")),
-    ("plan it and come back to it", ("planned", "reminder", "card", "recall")),
+    ("plan it and come back to it", ("planned", "reminder", "back", "morning", "card", "recall")),
 )
 # The steps that leave something in the studio, as the panel lists them;
 # each is seen working once the profile holds what it leaves.
@@ -1995,6 +2141,7 @@ TOUR_EVIDENCE = {
     "remembered": "A thing to remember kept from your phone",
     "planned": "A draft planned from your phone",
     "reminder": "A reminder asked for on an item",
+    "back": "An unused item brought back to your phone",
     "card": "A draft written from one of today's ideas",
 }
 TOUR_NEEDS_PROVIDER = ("This needs an AI provider, and none is connected yet: connect yours on the Composer's Prompt "
@@ -2055,6 +2202,8 @@ def tour_seen(conn) -> Dict[str, bool]:
         # A plan from the phone is kept on its draft until Undo takes it off.
         "planned": any(isinstance(m.get("planned"), dict) for m in made),
         "reminder": held("SELECT 1 FROM item_reminders LIMIT 1"),
+        # Phase 6: what the bot brought back last is kept, for the bot that told it.
+        "back": held("SELECT 1 FROM settings WHERE key = ?", (BROUGHT_BACK_KEY,)),
         "card": any(m.get("card") for m in phone),
     }
 

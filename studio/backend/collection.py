@@ -895,9 +895,37 @@ def least_offered(conn) -> Optional[Dict[str, Any]]:
 
 
 def offered(conn, item_id: int) -> None:
-    """The morning idea offered this item now."""
+    """The morning idea, or an idea brought back (phase 6), offered this item now."""
     with conn:
         conn.execute("UPDATE collection_items SET offered_at = ? WHERE id = ?", (_now(), int(item_id)))
+
+
+def last_offered(conn) -> Optional[int]:
+    """The item the bot offered last, by the morning idea or by bringing it back, or None."""
+    row = conn.execute("SELECT id FROM collection_items WHERE offered_at IS NOT NULL "
+                       "ORDER BY offered_at DESC, id DESC LIMIT 1").fetchone()
+    return row[0] if row else None
+
+
+def oldest_unused(conn, before: datetime, skip: Iterable[Any] = ()) -> Optional[Dict[str, Any]]:
+    """
+    Bring back an unused idea (phase 6): the oldest new item with words that
+    came before `before`, never one set aside or used, one with a reminder
+    waiting, or one of `skip`. None when there is none.
+    """
+    skipped = {int(item_id) for item_id in skip if str(item_id or "").isdigit()}
+    waiting = phone_reminders.waiting_items(conn)
+    marks = ", ".join("?" for _ in MATERIAL)
+    for row in conn.execute(f"SELECT * FROM collection_items WHERE status = 'new' AND kind IN ({marks}) "
+                            "AND TRIM(text) != '' ORDER BY received_at, id", MATERIAL):
+        came = _when(row["received_at"])
+        if came is None or came >= before:
+            # Oldest first: every row after this one came later.
+            break
+        if row["id"] in skipped or row["id"] in waiting:
+            continue
+        return _row(conn, row)
+    return None
 
 
 def forget_draft(conn, post_id: str) -> None:

@@ -4214,11 +4214,24 @@ export interface IngressOptions {
   remind_moments: RemindMoment[];
   /** "Saved to your collection." says what it connects to (phase 6). On unless turned off. */
   connect: boolean;
+  /**
+   * Bring back an unused idea (phase 6): on these days (0 is Monday), at this
+   * whole hour, an item older than so many days. Off unless turned on.
+   */
+  back: boolean;
+  back_days: number[];
+  back_hour: number;
+  back_older: number;
   /** What connects two items, and how many are offered with one, set in Brand under Writing; shown here. */
   connect_shared?: number;
   connect_offer?: number;
   /** The defaults of the phase 5 preferences, shown beside them. */
-  defaults: { plan: PlanOffers; list_at_most: number; remind_moments: RemindMoment[] };
+  defaults: {
+    plan: PlanOffers;
+    list_at_most: number;
+    remind_moments: RemindMoment[];
+    back: { on: boolean; days: number[]; hour: number; older: number };
+  };
 }
 
 /** A moment Remind me offers: its label, so many days from today, at a time on the computer's clock. */
@@ -4284,6 +4297,8 @@ export interface IngressSettings {
   quiet_now: boolean;
   /** When the next weekly summary goes, on this computer's clock, such as "Mon 02 Nov, 09:00"; null while it is off. */
   weekly_next: string | null;
+  /** When the next unused idea is brought back (phase 6), on this computer's clock; null while it is off. */
+  back_next: string | null;
   /** Why the bot's last message to Telegram did not go, in plain words; null when it went. */
   last_send_error: string | null;
   replies_waiting: number;

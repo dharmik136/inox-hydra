@@ -81,6 +81,7 @@ These need a post to come due, or an hour to come round, so they take as long as
 ## Phase 6 on your phone (optional)
 
 1. What something connects to: send `Idea: pricing is a design decision`, then `Idea: the pricing page is a design brief`. The second answer says "Saved to your collection. It shares words with one other unused item in your collection." with **Write one post from these** under it; press it and the bot answers "Writing one post from 2 items in your collection.", then "Draft ready in your studio.". Send three more ideas about the pricing page and, in **Your collection**, an item that connects says "Shares words with" and the words they share, with **Open the group**, which lists the group with **Combine these 3 into one post**. **Words two items share to be connected** and **Connected items offered with one**, under **Brand**, then **Writing**, and **Say what something new connects to** in the panel, shape it.
+2. Bring back an unused idea: tick **Bring back an unused idea** in the panel, tick today among its days, pick the next whole hour, and choose **older than** 3 days (an idea you sent at least that long ago and have not used comes back). The panel says "NEXT ONE BROUGHT BACK:" with that time. At that hour (after quiet hours) the bot says "Back from your collection:" and what kind of item it is and how old, with its first line only while the words switch is on, and **Write it up**, **Remind me** and **Not now**. Pick your own days and hour afterwards.
 
 ## When a step does not match
 

@@ -291,7 +291,7 @@ export function TelegramIngressPanel() {
               )}
               <OptionRow
                 label="Say what something new connects to"
-                detail="When something you send shares words with other unused items in your collection, my answer says how many, with Write one post from these, which writes one draft from it and them. Their first lines come only with The bot may send me what it writes from my collection on. It adds a line to the answer I already send, never a message of its own. On by default."
+                detail="When something you send shares words with other unused items in your collection, my answer says how many, with Write one post from these, which writes one draft from it and them. Their first lines come only while the switch that lets the bot send what it writes is on. It adds a line to the answer I already send, never a message of its own. On by default."
                 checked={state.options.connect}
                 disabled={busy}
                 onChange={(on) =>
@@ -443,6 +443,7 @@ export function TelegramIngressPanel() {
                   IT CARRIES YOUR WORDS, SO IT WAITS FOR THE SWITCH THAT LETS THE BOT SEND WHAT IT WRITES
                 </p>
               )}
+              <BringBackControl options={state.options} next={state.back_next} disabled={busy} onSave={setOption} />
               {writing && (
                 <div className="flex flex-wrap items-center gap-3 pl-5 text-[12px] text-ink-secondary">
                   <span>Ideas draw on</span>
@@ -716,6 +717,114 @@ export function TelegramIngressPanel() {
         </p>
       </div>
     </section>
+  );
+}
+
+/** How old an unused idea is before it may come back, in days (phase 6). */
+const BACK_AGES = [3, 7, 14, 21, 30, 60, 90];
+
+function backSaid(days: number[], hour: number, older: number): string {
+  const named = days.length === 7 ? "every day" : [...days].sort((a, b) => a - b).map((day) => `${DAYS[day]}s`).join(", ");
+  return `${named} at ${clock(hour)}, for one older than ${older} days`;
+}
+
+/**
+ * Bring back an unused idea (phase 6): off by default; on the days and at
+ * the hour picked, the oldest idea not used yet, older than the age picked,
+ * with Write it up, Remind me and Not now. The defaults are said beside it,
+ * and when the next one comes.
+ */
+function BringBackControl({
+  options,
+  next,
+  disabled,
+  onSave,
+}: {
+  options: IngressOptions;
+  next: string | null;
+  disabled: boolean;
+  onSave: (change: Partial<IngressOptions>, said: string) => Promise<void>;
+}) {
+  const fallback = options.defaults.back;
+  const isDefault =
+    JSON.stringify([...options.back_days].sort()) === JSON.stringify([...fallback.days].sort()) &&
+    options.back_hour === fallback.hour &&
+    options.back_older === fallback.older;
+  return (
+    <>
+      <OptionRow
+        label="Bring back an unused idea"
+        detail="On the days and at the hour you pick: the oldest item in your collection you have not used, older than you choose, with Write it up, Remind me and Not now under it. Never one you set aside or used, one with a reminder waiting, or the one it brought back last time. Its first line comes only while the switch that lets the bot send what it writes is on; otherwise it says only what kind of item it is and how old."
+        checked={options.back}
+        disabled={disabled}
+        onChange={(on) =>
+          void onSave(
+            { back: on },
+            on ? `An unused idea comes back ${backSaid(options.back_days, options.back_hour, options.back_older)}.` : "No unused idea comes back.",
+          )
+        }
+      />
+      <div className="flex flex-wrap items-center gap-2 pl-5 text-[12px] text-ink-secondary">
+        {DAYS.map((name, index) => (
+          <label key={name} className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              aria-label={`Bring back an unused idea on ${name}`}
+              checked={options.back_days.includes(index)}
+              disabled={disabled || !options.back}
+              onChange={(event) => {
+                const days = event.target.checked
+                  ? [...options.back_days, index]
+                  : options.back_days.filter((day) => day !== index);
+                if (days.length)
+                  void onSave({ back_days: days }, `An unused idea comes back ${backSaid(days, options.back_hour, options.back_older)}.`);
+              }}
+            />
+            <span>{name.slice(0, 3)}</span>
+          </label>
+        ))}
+        <span>at</span>
+        <select
+          aria-label="Bring back an unused idea at"
+          className={SELECT}
+          value={options.back_hour}
+          disabled={disabled || !options.back}
+          onChange={(event) => {
+            const hour = Number(event.target.value);
+            void onSave({ back_hour: hour }, `An unused idea comes back ${backSaid(options.back_days, hour, options.back_older)}.`);
+          }}
+        >
+          {HOURS.map((hour) => (
+            <option key={hour} value={hour}>
+              {clock(hour)}
+            </option>
+          ))}
+        </select>
+        <span>older than</span>
+        <select
+          aria-label="Bring back an unused idea older than"
+          className={SELECT}
+          value={options.back_older}
+          disabled={disabled || !options.back}
+          onChange={(event) => {
+            const older = Number(event.target.value);
+            void onSave({ back_older: older }, `An unused idea comes back ${backSaid(options.back_days, options.back_hour, older)}.`);
+          }}
+        >
+          {BACK_AGES.map((days) => (
+            <option key={days} value={days}>
+              {days} days
+            </option>
+          ))}
+        </select>
+        <span className="text-ink-muted">
+          {isDefault
+            ? "(the default)"
+            : `(default: ${backSaid(fallback.days, fallback.hour, fallback.older)})`}
+        </span>
+      </div>
+      {next && <p className="studio-meta pl-5 text-ink-muted">{`NEXT ONE BROUGHT BACK: ${next.toUpperCase()}`}</p>}
+    </>
   );
 }
 
