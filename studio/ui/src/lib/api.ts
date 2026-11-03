@@ -3967,10 +3967,14 @@ export async function markCollectionUsed(id: number, postId: string): Promise<vo
   await call(`/api/v1/collection/${id}/used`, { method: "POST", body: JSON.stringify({ post_id: postId }) });
 }
 
-/** What a draft the studio wrote was written from, and with which things to remember, by id. */
+/**
+ * What a draft the studio wrote was written from, and with which things to
+ * remember, by id. Every field may be missing: a draft the creator wrote and
+ * planned from the phone with Schedule keeps only its plan here (phase 5).
+ */
 export interface MadeWith {
-  items: number[];
-  remembered: number[];
+  items?: number[];
+  remembered?: number[];
   angle?: boolean;
   provider?: string;
   model?: string;

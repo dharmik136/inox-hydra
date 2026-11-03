@@ -258,7 +258,7 @@ export function MadeWithNote({
       .then((found) => {
         if (shown.current !== asked) return;
         setMade(found);
-        if (!found || found.remembered.length === 0) return;
+        if (!found || (found.remembered ?? []).length === 0) return;
         fetchRemembered()
           .then((held) => shown.current === asked && setFacts(held.facts))
           .catch(() => shown.current === asked && setFacts([]));
@@ -280,9 +280,17 @@ export function MadeWithNote({
   useRefresh(load, undefined, ["collection"]);
 
   if (!made) return null;
-  const count = made.items.length;
-  const named = (facts ?? []).filter((fact) => made.remembered.includes(fact.id));
-  const gone = facts ? made.remembered.length - named.length : 0;
+  // A record says only what it holds (bot phase 6): a draft planned from the
+  // phone with Schedule keeps its plan here and nothing about how it was
+  // written, and one unplanned keeps nothing at all.
+  const items = made.items ?? [];
+  const rememberedIds = made.remembered ?? [];
+  const earlierTexts = made.earlier ?? [];
+  const written = Boolean(made.provider || made.card || items.length > 0);
+  if (!written && earlierTexts.length === 0) return null;
+  const count = items.length;
+  const named = (facts ?? []).filter((fact) => rememberedIds.includes(fact.id));
+  const gone = facts ? rememberedIds.length - named.length : 0;
   const by = made.provider ? `${made.provider}${made.model ? ` (${made.model})` : ""}` : "your AI provider";
 
   return (
@@ -290,21 +298,27 @@ export function MadeWithNote({
       <h2 id="composer-made-with" className="studio-label">
         What this draft was written from
       </h2>
-      <p className="mt-1 text-[12px] leading-snug text-ink-secondary">
-        Written by {by}
-        {made.at ? ` on ${formatLocal(made.at)}` : ""},{" "}
-        {made.card
-          ? `from one of the ideas in From your record${made.card_title ? ` (${made.card_title})` : ""}`
-          : `from ${count === 1 ? "one item" : `${count} items`} in your collection${made.angle ? ", starting from the angle you picked" : ""}`}
-        {made.via === "telegram" ? ", asked for on your phone" : ""}. It is your draft now: change anything.
-      </p>
-      {made.earlier && made.earlier.length > 0 && (
+      {written ? (
+        <p className="mt-1 text-[12px] leading-snug text-ink-secondary">
+          Written by {by}
+          {made.at ? ` on ${formatLocal(made.at)}` : ""},{" "}
+          {made.card
+            ? `from one of the ideas in From your record${made.card_title ? ` (${made.card_title})` : ""}`
+            : `from ${count === 1 ? "one item" : `${count} items`} in your collection${made.angle ? ", starting from the angle you picked" : ""}`}
+          {made.via === "telegram" ? ", asked for on your phone" : ""}. It is your draft now: change anything.
+        </p>
+      ) : (
+        <p className="mt-1 text-[12px] leading-snug text-ink-secondary">
+          You wrote this draft, and it was rewritten from your phone. It is your draft: change anything.
+        </p>
+      )}
+      {earlierTexts.length > 0 && (
         <div className="mt-1.5">
           <p className="text-[12px] leading-snug text-ink-secondary">
             Rewritten from your phone. What each rewrite replaced, the newest first:
           </p>
           <ul className="mt-0.5 flex flex-col gap-1 pl-3">
-            {[...made.earlier].reverse().map((earlier) => (
+            {[...earlierTexts].reverse().map((earlier) => (
               <li key={`${earlier.at}-${earlier.by}`} className="flex flex-wrap items-baseline gap-x-2 text-[12px] leading-snug">
                 <span className="text-ink-primary">{firstWords(earlier.text, 64)}</span>
                 <span className="text-ink-muted">
@@ -333,7 +347,7 @@ export function MadeWithNote({
           )}
         </div>
       )}
-      {made.remembered.length === 0 ? (
+      {!written ? null : rememberedIds.length === 0 ? (
         <p className="mt-1 text-[12px] leading-snug text-ink-muted">No things to remember went with it.</p>
       ) : facts === null ? (
         <p className="studio-meta mt-1 text-ink-muted">READING</p>
